@@ -425,8 +425,13 @@ void CVCheckResizeCursors(CharView *cv) {
 		    usemymetrics==NULL )
 		cv->expandedge = ee_right;
 	    if ( cv->showvmetrics && cv->b.sc->parent->hasvmetrics && cv->b.container==NULL &&
+#if 0
 		    cv->info.y > /*cv->b.sc->parent->vertical_origin*/-cv->b.sc->vwidth-fudge &&
 		    cv->info.y < /*cv->b.sc->parent->vertical_origin*/-cv->b.sc->vwidth+fudge )
+#endif
+			// 20130714: advanceHeight線の上でカーソルが変わるようにするための修正。
+		    cv->info.y > -cv->b.sc->vwidth - fudge + cv->b.sc->parent->ascent &&
+		    cv->info.y < -cv->b.sc->vwidth + fudge + cv->b.sc->parent->ascent )
 		cv->expandedge = ee_down;
 	}
     }
@@ -522,8 +527,15 @@ return;
 		cv->p.cx<cv->b.sc->top_accent_horiz+fs->fudge &&
 		cv->b.container==NULL );
     dovwidth = ( cv->showvmetrics && cv->b.sc->parent->hasvmetrics && cv->b.container == NULL &&
+#if 0
 		cv->p.cy>/*cv->b.sc->parent->vertical_origin*/-cv->b.sc->vwidth-fs->fudge &&
 		cv->p.cy</*cv->b.sc->parent->vertical_origin*/-cv->b.sc->vwidth+fs->fudge &&
+#endif
+		// 20130714: advanceHeight線のy原点が箱の上端になるようにするための修正。
+		// ここはデータ上のy位置。表示上のy位置はcharview.cのCVExpose函数の最後のほう、
+		// 2381行目あたりで処理。
+		cv->p.cy > -cv->b.sc->vwidth + cv->b.sc->parent->ascent - fs->fudge &&
+		cv->p.cy < -cv->b.sc->vwidth + cv->b.sc->parent->ascent + fs->fudge &&
 		usemymetrics==NULL );
     cv->nearcaret = nearcaret = -1;
     if ( cv->showhmetrics ) nearcaret = NearCaret(cv->b.sc,cv->p.cx,fs->fudge);

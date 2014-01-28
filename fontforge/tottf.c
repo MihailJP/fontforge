@@ -733,7 +733,7 @@ static void ttfdumpmetrics(SplineChar *sc,struct glyphinfo *gi,DBounds *b) {
     if ( sc->parent->hasvmetrics ) {
 	if ( sc->ttf_glyph<=gi->lastvwidth )
 	    putshort(gi->vmtx,vwidth);
-	putshort(gi->vmtx,/*sc->parent->vertical_origin-*/b->maxy);
+	putshort(gi->vmtx, sc->parent->ascent - b->maxy);	//	putshort(gi->vmtx,/*sc->parent->vertical_origin-*/b->maxy);	// 20130714: topSideBearingの修正。これがないとglyphが下へ大幅にずれる。
     }
     if ( sc->ttf_glyph==gi->lasthwidth )
 	gi->hfullcnt = sc->ttf_glyph+1;
