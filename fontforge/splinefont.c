@@ -115,7 +115,7 @@ SplineChar *SCBuildDummy(SplineChar *dummy,SplineFont *sf,EncMap *map,int i) {
 	    dummy->name = namebuf;
 	}
     }
-    dummy->width = dummy->vwidth = sf->ascent+sf->descent;
+    dummy->vwidth = dummy->width = dummy->vwidth = sf->ascent + sf->descent;	//    dummy->width = dummy->vwidth = sf->ascent+sf->descent;	//  20130714: vwidthもwidthと同時に作る。
     if ( dummy->unicodeenc>0 && dummy->unicodeenc<0x10000 &&
 	    iscombining(dummy->unicodeenc)) {
 	/* Mark characters should be 0 width */
@@ -192,6 +192,7 @@ return( sc );
 	sc->unicodeenc = dummy.unicodeenc;
 	sc->name = copy(dummy.name);
 	sc->width = dummy.width;
+	sc->vwidth = dummy.vwidth;	//  20130714 added.
 	sc->orig_pos = 0xffff;
 	if ( sf->cidmaster!=NULL )
 	    sc->altuni = CIDSetAltUnis(FindCidMap(sf->cidmaster->cidregistry,sf->cidmaster->ordering,sf->cidmaster->supplement,sf->cidmaster),enc);

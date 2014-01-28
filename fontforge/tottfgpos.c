@@ -1707,13 +1707,16 @@ static void dumpgposAnchorData(FILE *gpos,AnchorClass *_ac,
 }
 
 static void dumpGSUBsimplesubs(FILE *gsub,SplineFont *sf,struct lookup_subtable *sub) {
-    int cnt, diff, ok = true;
+    int cnt;	//    int cnt, diff, ok = true;
     int32 coverage_pos, end;
     SplineChar **glyphs, ***maps;
 
     glyphs = SFOrderedGlyphsWithPSTinSubtable(sf,sub);
     maps = generateMapList(glyphs,sub);
 
+	// 20130714: GSUBでdeltaを使うと少なくともXPでは縦書きにならん。
+    for (cnt=0; glyphs[cnt] != NULL; ++cnt);	// これだけはcntのために残す必要あり。
+#if 0
     diff = (*maps[0])->ttf_glyph - glyphs[0]->ttf_glyph;
     for ( cnt=0; glyphs[cnt]!=NULL; ++cnt)
 	if ( diff!= maps[cnt][0]->ttf_glyph-glyphs[cnt]->ttf_glyph ) ok = false;
@@ -1724,13 +1727,14 @@ static void dumpGSUBsimplesubs(FILE *gsub,SplineFont *sf,struct lookup_subtable 
 	putshort(gsub,0);		/* offset to coverage table */
 	putshort(gsub,diff);
     } else {
+#endif
 	putshort(gsub,2);		/* glyph list format */
 	coverage_pos = ftell(gsub);
 	putshort(gsub,0);		/* offset to coverage table */
 	putshort(gsub,cnt);
 	for ( cnt = 0; glyphs[cnt]!=NULL; ++cnt )
 	    putshort(gsub,(*maps[cnt])->ttf_glyph);
-    }
+//    }
     end = ftell(gsub);
     fseek(gsub,coverage_pos,SEEK_SET);
     putshort(gsub,end-coverage_pos+2);

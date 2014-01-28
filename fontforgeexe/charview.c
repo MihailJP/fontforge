@@ -102,7 +102,7 @@ struct cvshows CVShows = {
 	1,		/* show x minimum distances */
 	1,		/* show y minimum distances */
 	1,		/* show horizontal metrics */
-	0,		/* show vertical metrics */
+	1,	//	0,		/* show vertical metrics */	// 20130714: vertical metrics を既定でオンに。
 	0,		/* mark extrema */
 	0,		/* show points of inflection */
 	1,		/* show blue values */
@@ -2619,12 +2619,20 @@ return;				/* no points. no side bearings */
 	y2 = cv->height-cv->yoff-rint(-sc->parent->descent*cv->scale);
 	DrawPLine(cv,pixmap,x,y,x,y2,metricslabelcol);
 	 /* arrow heads */
+#if 0
 	 DrawPLine(cv,pixmap,x,y,x-4,y-4,metricslabelcol);
 	 DrawPLine(cv,pixmap,x,y,x+4,y-4,metricslabelcol);
 	 DrawPLine(cv,pixmap,x,y2,x+4,y2+4,metricslabelcol);
 	 DrawPLine(cv,pixmap,x,y2,x-4,y2+4,metricslabelcol);
-	dtos( buf, bounds[2]->y-sc->parent->descent);
-	y = y + (y-y2-cv->sfh)/2;
+#endif
+	//  20130714: bottomSideBearingの矢印の向きが逆なのを修正。
+	 DrawPLine(cv,pixmap, x, y, x - 4, y + 4, metricslabelcol);
+	 DrawPLine(cv,pixmap, x, y, x + 4, y + 4, metricslabelcol);
+	 DrawPLine(cv,pixmap, x, y2, x + 4, y2 - 4, metricslabelcol);
+	 DrawPLine(cv,pixmap, x, y2, x - 4, y2 - 4, metricslabelcol);
+
+	dtos( buf, bounds[2]->y + sc->parent->descent);	//	dtos( buf, bounds[2]->y-sc->parent->descent);	// 20130714: bottomSideBearingをちゃんと表示。
+	y = y - (y - y2 - cv->sfh) / 2;	//	y = y + (y-y2-cv->sfh)/2;	//  20130714: bottomSideBearingの数値の表示位置を修正。
 	GDrawDrawText8(pixmap,x+4,y,buf,-1,metricslabelcol);
 
 	x = rint(bounds[3]->x*cv->scale) + cv->xoff;
@@ -2636,7 +2644,7 @@ return;				/* no points. no side bearings */
 	 DrawPLine(cv,pixmap,x,y,x+4,y-4,metricslabelcol);
 	 DrawPLine(cv,pixmap,x,y2,x+4,y2+4,metricslabelcol);
 	 DrawPLine(cv,pixmap,x,y2,x-4,y2+4,metricslabelcol);
-	dtos( buf, sc->vwidth-bounds[3]->y);
+	dtos( buf, sc->parent->ascent - bounds[3]->y);	//	dtos( buf, sc->vwidth-bounds[3]->y);	// 20130714: topSideBearingをちゃんと表示。
 	x = x + (x2-x-GDrawGetText8Width(pixmap,buf,-1))/2;
 	GDrawDrawText8(pixmap,x,y-4,buf,-1,metricslabelcol);
     }
@@ -2766,7 +2774,7 @@ static void CVExpose(CharView *cv, GWindow pixmap, GEvent *event ) {
 	    DrawLine(cv,pixmap,-8096,-sf->descent,8096,-sf->descent,coordcol);
 	}
 	if ( cv->showvmetrics ) {
-	    DrawLine(cv,pixmap,(sf->ascent+sf->descent)/2,-8096,(sf->ascent+sf->descent)/2,8096,coordcol);
+//	    DrawLine(cv,pixmap,(sf->ascent+sf->descent)/2,-8096,(sf->ascent+sf->descent)/2,8096,coordcol);	//  20130714: この縦線は何？　中心線を意図したもの？
 	    /*DrawLine(cv,pixmap,-8096,sf->vertical_origin,8096,sf->vertical_origin,coordcol);*/
 	}
 
@@ -2980,9 +2988,16 @@ static void CVExpose(CharView *cv, GWindow pixmap, GEvent *event ) {
 		    NULL,_("TopAccent"));
     }
     if ( cv->showvmetrics ) {
+#if 0
 	int len, y = -cv->yoff + cv->height - rint((/*sf->vertical_origin*/-cv->b.sc->vwidth)*cv->scale);
 	DrawLine(cv,pixmap,-32768,/*sf->vertical_origin*/-cv->b.sc->vwidth,
 			    32767,/*sf->vertical_origin*/-cv->b.sc->vwidth,
+#endif
+	// 20130714: vmetric線の原点を上端にするための変更。
+	const int vertical_height = -cv->b.sc->vwidth + cv->b.sc->parent->ascent;
+	int len, y = -cv->yoff + cv->height - rint(vertical_height * cv->scale);
+	DrawLine(cv,pixmap,-32768, vertical_height, 32767, vertical_height,
+
 		(!cv->inactive && cv->vwidthsel)?widthselcol:widthcol);
 	if ( y>-40 && y<cv->height+40 ) {
 	    dtos( buf, cv->b.sc->vwidth);
@@ -12346,7 +12361,7 @@ static void _CharViewCreate(CharView *cv, SplineChar *sc, FontView *fv,int enc,i
     cv->showmdx = CVShows.showmdx;
     cv->showmdy = CVShows.showmdy;
     cv->showhmetrics = CVShows.showhmetrics;
-    cv->showvmetrics = CVShows.showvmetrics;
+    cv->showvmetrics = sc->parent->hasvmetrics ? CVShows.showvmetrics : 0;	//    cv->showvmetrics = CVShows.showvmetrics;	//  20130714: hasvmetricsによって振り分けるように変更。
     cv->markextrema = CVShows.markextrema;
     cv->showsidebearings = CVShows.showsidebearings;
     cv->showrefnames = CVShows.showrefnames;
