@@ -2763,7 +2763,7 @@ typedef struct sfd_getfontmetadatadata
 
 } SFD_GetFontMetaDataData;
 extern void SFD_GetFontMetaDataData_Init( SFD_GetFontMetaDataData* d );
-extern void SFD_GetFontMetaData( FILE *sfd,
+extern int SFD_GetFontMetaData( FILE *sfd,
 				 char *tok,
 				 SplineFont *sf,
 				 SFD_GetFontMetaDataData* d );

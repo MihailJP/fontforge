@@ -7326,7 +7326,7 @@ void SFD_GetFontMetaDataData_Init( SFD_GetFontMetaDataData* d )
 }
 
 
-void SFD_GetFontMetaData( FILE *sfd,
+int SFD_GetFontMetaData( FILE *sfd,
 			  char *tok,
 			  SplineFont *sf,
 			  SFD_GetFontMetaDataData* d )
@@ -7336,6 +7336,7 @@ void SFD_GetFontMetaData( FILE *sfd,
     KernClass* kc = 0;
     int old;
 	char val[2000];
+    int isdone = 0;
 
     // This allows us to assume we can dereference d
     // at all times
@@ -7355,79 +7356,96 @@ void SFD_GetFontMetaData( FILE *sfd,
     {
 	geteol(sfd,val);
 	sf->fontname = copy(val);
+	isdone = 1;
     }
     else if ( strmatch(tok,"FullName:")==0 )
     {
 	geteol(sfd,val);
 	sf->fullname = copy(val);
+	isdone = 1;
     }
     else if ( strmatch(tok,"FamilyName:")==0 )
     {
 	geteol(sfd,val);
 	sf->familyname = copy(val);
+	isdone = 1;
     }
     else if ( strmatch(tok,"DefaultBaseFilename:")==0 )
     {
 	geteol(sfd,val);
 	sf->defbasefilename = copy(val);
+	isdone = 1;
     }
     else if ( strmatch(tok,"Weight:")==0 )
     {
 	getprotectedname(sfd,val);
 	sf->weight = copy(val);
+	isdone = 1;
     }
     else if ( strmatch(tok,"Copyright:")==0 )
     {
 	sf->copyright = getquotedeol(sfd);
+	isdone = 1;
     }
     else if ( strmatch(tok,"Comments:")==0 )
     {
 	char *temp = getquotedeol(sfd);
 	sf->comments = latin1_2_utf8_copy(temp);
 	free(temp);
+	isdone = 1;
     }
     else if ( strmatch(tok,"UComments:")==0 )
     {
 	sf->comments = SFDReadUTF7Str(sfd);
+	isdone = 1;
     }
     else if ( strmatch(tok,"FontLog:")==0 )
     {
 	sf->fontlog = SFDReadUTF7Str(sfd);
+	isdone = 1;
     }
     else if ( strmatch(tok,"Version:")==0 )
     {
 	geteol(sfd,val);
 	sf->version = copy(val);
+	isdone = 1;
     }
     else if ( strmatch(tok,"FONDName:")==0 )
     {
 	geteol(sfd,val);
 	sf->fondname = copy(val);
+	isdone = 1;
     }
     else if ( strmatch(tok,"ItalicAngle:")==0 )
     {
 	getreal(sfd,&sf->italicangle);
+	isdone = 1;
     }
     else if ( strmatch(tok,"StrokeWidth:")==0 )
     {
 	getreal(sfd,&sf->strokewidth);
+	isdone = 1;
     }
     else if ( strmatch(tok,"UnderlinePosition:")==0 )
     {
 	getreal(sfd,&sf->upos);
+	isdone = 1;
     }
     else if ( strmatch(tok,"UnderlineWidth:")==0 )
     {
 	getreal(sfd,&sf->uwidth);
+	isdone = 1;
     }
     else if ( strmatch(tok,"ModificationTime:")==0 )
     {
 	getlonglong(sfd,&sf->modificationtime);
+	isdone = 1;
     }
     else if ( strmatch(tok,"CreationTime:")==0 )
     {
 	getlonglong(sfd,&sf->creationtime);
 	d->hadtimes = true;
+	isdone = 1;
     }
     else if ( strmatch(tok,"PfmFamily:")==0 )
     {
@@ -7435,32 +7453,39 @@ void SFD_GetFontMetaData( FILE *sfd,
 	getint(sfd,&temp);
 	sf->pfminfo.pfmfamily = temp;
 	sf->pfminfo.pfmset = true;
+	isdone = 1;
     }
     else if ( strmatch(tok,"LangName:")==0 )
     {
 	sf->names = SFDGetLangName(sfd,sf->names);
+	isdone = 1;
     }
     else if ( strmatch(tok,"GaspTable:")==0 )
     {
 	SFDGetGasp(sfd,sf);
+	isdone = 1;
     }
     else if ( strmatch(tok,"DesignSize:")==0 )
     {
 	SFDGetDesignSize(sfd,sf);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OtfFeatName:")==0 )
     {
 	SFDGetOtfFeatName(sfd,sf);
+	isdone = 1;
     }
     else if ( strmatch(tok,"PfmWeight:")==0 || strmatch(tok,"TTFWeight:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.weight);
 	sf->pfminfo.pfmset = true;
+	isdone = 1;
     }
     else if ( strmatch(tok,"TTFWidth:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.width);
 	sf->pfminfo.pfmset = true;
+	isdone = 1;
     }
     else if ( strmatch(tok,"Panose:")==0 )
     {
@@ -7471,84 +7496,102 @@ void SFD_GetFontMetaData( FILE *sfd,
 	    sf->pfminfo.panose[i] = temp;
 	}
 	sf->pfminfo.panose_set = true;
+	isdone = 1;
     }
     else if ( strmatch(tok,"LineGap:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.linegap);
 	sf->pfminfo.pfmset = true;
+	isdone = 1;
     }
     else if ( strmatch(tok,"VLineGap:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.vlinegap);
 	sf->pfminfo.pfmset = true;
+	isdone = 1;
     }
     else if ( strmatch(tok,"HheadAscent:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.hhead_ascent);
+	isdone = 1;
     }
     else if ( strmatch(tok,"HheadAOffset:")==0 )
     {
 	int temp;
 	getint(sfd,&temp); sf->pfminfo.hheadascent_add = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"HheadDescent:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.hhead_descent);
+	isdone = 1;
     }
     else if ( strmatch(tok,"HheadDOffset:")==0 )
     {
 	int temp;
 	getint(sfd,&temp); sf->pfminfo.hheaddescent_add = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2TypoLinegap:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_typolinegap);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2TypoAscent:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_typoascent);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2TypoAOffset:")==0 )
     {
 	int temp;
 	getint(sfd,&temp); sf->pfminfo.typoascent_add = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2TypoDescent:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_typodescent);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2TypoDOffset:")==0 )
     {
 	int temp;
 	getint(sfd,&temp); sf->pfminfo.typodescent_add = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2WinAscent:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_winascent);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2WinDescent:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_windescent);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2WinAOffset:")==0 )
     {
 	int temp;
 	getint(sfd,&temp); sf->pfminfo.winascent_add = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2WinDOffset:")==0 )
     {
 	int temp;
 	getint(sfd,&temp); sf->pfminfo.windescent_add = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"HHeadAscent:")==0 )
     {
 	// DUPLICATE OF ABOVE
 	getsint(sfd,&sf->pfminfo.hhead_ascent);
+	isdone = 1;
     }
     else if ( strmatch(tok,"HHeadDescent:")==0 )
     {
 	// DUPLICATE OF ABOVE
 	getsint(sfd,&sf->pfminfo.hhead_descent);
+	isdone = 1;
     }
 
     else if ( strmatch(tok,"HHeadAOffset:")==0 )
@@ -7556,61 +7599,75 @@ void SFD_GetFontMetaData( FILE *sfd,
 	// DUPLICATE OF ABOVE
 	int temp;
 	getint(sfd,&temp); sf->pfminfo.hheadascent_add = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"HHeadDOffset:")==0 )
     {
 	// DUPLICATE OF ABOVE
 	int temp;
 	getint(sfd,&temp); sf->pfminfo.hheaddescent_add = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"MacStyle:")==0 )
     {
 	getsint(sfd,&sf->macstyle);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2SubXSize:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_subxsize);
 	sf->pfminfo.subsuper_set = true;
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2SubYSize:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_subysize);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2SubXOff:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_subxoff);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2SubYOff:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_subyoff);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2SupXSize:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_supxsize);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2SupYSize:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_supysize);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2SupXOff:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_supxoff);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2SupYOff:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_supyoff);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2StrikeYSize:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_strikeysize);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2StrikeYPos:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_strikeypos);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2FamilyClass:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.os2_family_class);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2Vendor:")==0 )
     {
@@ -7620,53 +7677,65 @@ void SFD_GetFontMetaData( FILE *sfd,
 	sf->pfminfo.os2_vendor[2] = nlgetc(sfd);
 	sf->pfminfo.os2_vendor[3] = nlgetc(sfd);
 	(void) nlgetc(sfd);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2CodePages:")==0 )
     {
 	gethexints(sfd,sf->pfminfo.codepages,2);
 	sf->pfminfo.hascodepages = true;
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2UnicodeRanges:")==0 )
     {
 	gethexints(sfd,sf->pfminfo.unicoderanges,4);
 	sf->pfminfo.hasunicoderanges = true;
+	isdone = 1;
     }
     else if ( strmatch(tok,"TopEncoding:")==0 )
     {
 	/* Obsolete */
 	getint(sfd,&sf->top_enc);
+	isdone = 1;
     }
     else if ( strmatch(tok,"Ascent:")==0 )
     {
 	getint(sfd,&sf->ascent);
+	isdone = 1;
     }
     else if ( strmatch(tok,"Descent:")==0 )
     {
 	getint(sfd,&sf->descent);
+	isdone = 1;
     }
     else if ( strmatch(tok,"woffMajor:")==0 )
     {
 	getint(sfd,&sf->woffMajor);
+	isdone = 1;
     }
     else if ( strmatch(tok,"woffMinor:")==0 )
     {
 	getint(sfd,&sf->woffMinor);
+	isdone = 1;
     }
     else if ( strmatch(tok,"woffMetadata:")==0 )
     {
 	sf->woffMetadata = SFDReadUTF7Str(sfd);
+	isdone = 1;
     }
     else if ( strmatch(tok,"UFOAscent:")==0 )
     {
 	    getreal(sfd,&sf->ufo_ascent);
+	    isdone = 1;
     }
     else if ( strmatch(tok,"UFODescent:")==0 )
     {
 	getreal(sfd,&sf->ufo_descent);
+	isdone = 1;
     }
     else if ( strmatch(tok,"sfntRevision:")==0 )
     {
 	    gethex(sfd,&sf->sfntRevision);
+	    isdone = 1;
     }
     else if ( strmatch(tok,"LayerCount:")==0 )
     {
@@ -7676,6 +7745,7 @@ void SFD_GetFontMetaData( FILE *sfd,
 	    sf->layers = grealloc(sf->layers,sf->layer_cnt*sizeof(LayerInfo));
 	    memset(sf->layers+2,0,(sf->layer_cnt-2)*sizeof(LayerInfo));
 	}
+	isdone = 1;
     }
     else if ( strmatch(tok,"Layer:")==0 )
     {
@@ -7704,24 +7774,28 @@ void SFD_GetFontMetaData( FILE *sfd,
 	    getint(sfd,&bk);
 	    sf->layers[layer].background = bk;
 	}
+	isdone = 1;
     }
     else if ( strmatch(tok,"StrokedFont:")==0 )
     {
 	int temp;
 	getint(sfd,&temp);
 	sf->strokedfont = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"MultiLayer:")==0 )
     {
 	int temp;
 	getint(sfd,&temp);
 	sf->multilayer = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"NeedsXUIDChange:")==0 )
     {
 	int temp;
 	getint(sfd,&temp);
 	sf->changed_since_xuidchanged = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"VerticalOrigin:")==0 )
     {
@@ -7729,28 +7803,33 @@ void SFD_GetFontMetaData( FILE *sfd,
 	int temp;
 	getint(sfd,&temp);
 	sf->hasvmetrics = true;
+	isdone = 1;
     }
     else if ( strmatch(tok,"HasVMetrics:")==0 )
     {
 	int temp;
 	getint(sfd,&temp);
 	sf->hasvmetrics = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"Justify:")==0 )
     {
 	SFDParseJustify(sfd,sf,tok);
+	isdone = 1;
     }
     else if ( strmatch(tok,"BaseHoriz:")==0 )
     {
 	sf->horiz_base = SFDParseBase(sfd);
 	d->last_base = sf->horiz_base;
 	d->last_base_script = NULL;
+	isdone = 1;
     }
     else if ( strmatch(tok,"BaseVert:")==0 )
     {
 	sf->vert_base = SFDParseBase(sfd);
 	d->last_base = sf->vert_base;
 	d->last_base_script = NULL;
+	isdone = 1;
     }
     else if ( strmatch(tok,"BaseScript:")==0 )
     {
@@ -7765,47 +7844,56 @@ void SFD_GetFontMetaData( FILE *sfd,
 	else
 	    d->last_base->scripts = bs;
 	d->last_base_script = bs;
+	isdone = 1;
     }
     else if ( strmatch(tok,"FSType:")==0 )
     {
 	getsint(sfd,&sf->pfminfo.fstype);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2Version:")==0 )
     {
 	getsint(sfd,&sf->os2_version);
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2_WeightWidthSlopeOnly:")==0 )
     {
 	int temp;
 	getint(sfd,&temp);
 	sf->weight_width_slope_only = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"OS2_UseTypoMetrics:")==0 )
     {
 	int temp;
 	getint(sfd,&temp);
 	sf->use_typo_metrics = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"UseUniqueID:")==0 )
     {
 	int temp;
 	getint(sfd,&temp);
 	sf->use_uniqueid = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"UseXUID:")==0 )
     {
 	int temp;
 	getint(sfd,&temp);
 	sf->use_xuid = temp;
+	isdone = 1;
     }
     else if ( strmatch(tok,"UniqueID:")==0 )
     {
 	getint(sfd,&sf->uniqueid);
+	isdone = 1;
     }
     else if ( strmatch(tok,"XUID:")==0 )
     {
 	geteol(sfd,tok);
 	sf->xuid = copy(tok);
+	isdone = 1;
     }
     else if ( strmatch(tok,"Lookup:")==0 )
     {
@@ -7834,6 +7922,7 @@ void SFD_GetFontMetaData( FILE *sfd,
 	    d->lastpotl = otl;
 	}
 	SFDParseLookup(sfd,sf,otl);
+	isdone = 1;
     }
     else if ( strmatch(tok,"MarkAttachClasses:")==0 )
     {
@@ -7852,6 +7941,7 @@ void SFD_GetFontMetaData( FILE *sfd,
 	    nlgetc(sfd);	/* skip space */
 	    fread(sf->mark_classes[i],1,temp,sfd);
 	}
+	isdone = 1;
     }
     else if ( strmatch(tok,"MarkAttachSets:")==0 )
     {
@@ -7869,6 +7959,7 @@ void SFD_GetFontMetaData( FILE *sfd,
 	    nlgetc(sfd);	/* skip space */
 	    fread(sf->mark_sets[i],1,temp,sfd);
 	}
+	isdone = 1;
     }
     else if ( strmatch(tok,"KernClass2:")==0 || strmatch(tok,"VKernClass2:")==0 ||
 	      strmatch(tok,"KernClass:")==0 || strmatch(tok,"VKernClass:")==0 )
@@ -7942,6 +8033,7 @@ void SFD_GetFontMetaData( FILE *sfd,
 		d->lastvkc->next = kc;
 	    d->lastvkc = kc;
 	}
+	isdone = 1;
     }
     else if ( strmatch(tok,"ContextPos2:")==0 || strmatch(tok,"ContextSub2:")==0 ||
 	      strmatch(tok,"ChainPos2:")==0 || strmatch(tok,"ChainSub2:")==0 ||
@@ -7969,6 +8061,7 @@ void SFD_GetFontMetaData( FILE *sfd,
 	    d->lastfp->next = fpst;
 	d->lastfp = fpst;
 	SFDParseChainContext(sfd,sf,fpst,tok,old);
+	isdone = 1;
     }
     else if ( strmatch(tok,"MacIndic2:")==0 || strmatch(tok,"MacContext2:")==0 ||
 	      strmatch(tok,"MacLigature2:")==0 || strmatch(tok,"MacSimple2:")==0 ||
@@ -7995,21 +8088,25 @@ void SFD_GetFontMetaData( FILE *sfd,
 	    d->lastsm->next = sm;
 	d->lastsm = sm;
 	SFDParseStateMachine(sfd,sf,sm,tok,old);
+	isdone = 1;
     }
     else if ( strmatch(tok,"MacFeat:")==0 )
     {
 	sf->features = SFDParseMacFeatures(sfd,tok);
+	isdone = 1;
     }
     else if ( strmatch(tok,"TtfTable:")==0 )
     {
 	/* Old, binary format */
 	/* still used for maxp and unknown tables */
 	SFDGetTtfTable(sfd,sf,d->lastttf);
+	isdone = 1;
     }
     else if ( strmatch(tok,"TtTable:")==0 )
     {
 	/* text instruction format */
 	SFDGetTtTable(sfd,sf,d->lastttf);
+	isdone = 1;
     }
 
 
@@ -8020,8 +8117,10 @@ void SFD_GetFontMetaData( FILE *sfd,
 	// only read, not written.
 	/* text number format */
 	SFDGetShortTable(sfd,sf,d->lastttf);
+	isdone = 1;
     }
 
+    return isdone;
 }
 
 
@@ -8039,6 +8138,7 @@ static SplineFont *SFD_GetFont( FILE *sfd,SplineFont *cidmaster,char *tok,
     int hadtimes=false, haddupenc;
     int old_style_order2 = false;
     int had_layer_cnt=false;
+    int isdone = 0;
 
     orig_pos = 0;		/* Only used for compatibility with extremely old sfd files */
 
@@ -8065,8 +8165,9 @@ static SplineFont *SFD_GetFont( FILE *sfd,SplineFont *cidmaster,char *tok,
 	}
 
 
-	SFD_GetFontMetaData( sfd, tok, sf, &d );
+	isdone = SFD_GetFontMetaData( sfd, tok, sf, &d );
 	had_layer_cnt = d.had_layer_cnt;
+	if (!isdone) {
 
 	if ( strmatch(tok,"DisplaySize:")==0 )
 	{
@@ -8484,6 +8585,8 @@ exit( 1 );
 	    geteol(sfd,tok);
 	}
     }
+
+	}
 
     if ( fromdir )
 	sf = SFD_FigureDirType(sf,tok,dirname,enc,remap,had_layer_cnt);
