@@ -71,7 +71,7 @@ void BCTransFunc(BDFChar *bc,enum bvtools type,int xoff,int yoff) {
 	bitmap = NULL;
     } else if ( !bc->byte_data ) {
 	if ( type==bvt_fliph ) {
-	    bitmap = gcalloc((bc->ymax-bc->ymin+1)*bc->bytes_per_line,sizeof(uint8));
+	    bitmap = calloc((bc->ymax-bc->ymin+1)*bc->bytes_per_line,sizeof(uint8));
 	    for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 		pt = bc->bitmap + i*bc->bytes_per_line;
 		pt2 =    bitmap + i*bc->bytes_per_line;
@@ -83,7 +83,7 @@ void BCTransFunc(BDFChar *bc,enum bvtools type,int xoff,int yoff) {
 		}
 	    }
 	} else if ( type==bvt_rotate180 ) {
-	    bitmap = gcalloc((bc->ymax-bc->ymin+1)*bc->bytes_per_line,sizeof(uint8));
+	    bitmap = calloc((bc->ymax-bc->ymin+1)*bc->bytes_per_line,sizeof(uint8));
 	    for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 		pt = bc->bitmap + i*bc->bytes_per_line;
 		pt2 = bitmap + (bc->ymax-bc->ymin-i)*bc->bytes_per_line;
@@ -96,7 +96,7 @@ void BCTransFunc(BDFChar *bc,enum bvtools type,int xoff,int yoff) {
 	    }
 	} else if ( type==bvt_rotate90cw ) {
 	    bpl = ((bc->ymax-bc->ymin)>>3) + 1;
-	    bitmap = gcalloc((bc->xmax-bc->xmin+1)*bpl,sizeof(uint8));
+	    bitmap = calloc((bc->xmax-bc->xmin+1)*bpl,sizeof(uint8));
 	    for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 		pt = bc->bitmap + i*bc->bytes_per_line;
 		for ( j=0; j<=bc->xmax-bc->xmin; ++j ) {
@@ -111,7 +111,7 @@ void BCTransFunc(BDFChar *bc,enum bvtools type,int xoff,int yoff) {
 	    temp = bc->xmin; bc->xmin = bc->ymin; bc->ymin = temp;
 	} else if ( type==bvt_rotate90ccw ) {
 	    bpl = ((bc->ymax-bc->ymin)>>3) + 1;
-	    bitmap = gcalloc((bc->xmax-bc->xmin+1)*bpl,sizeof(uint8));
+	    bitmap = calloc((bc->xmax-bc->xmin+1)*bpl,sizeof(uint8));
 	    for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 		pt = bc->bitmap + i*bc->bytes_per_line;
 		for ( j=0; j<=bc->xmax-bc->xmin; ++j ) {
@@ -133,7 +133,7 @@ void BCTransFunc(BDFChar *bc,enum bvtools type,int xoff,int yoff) {
 		xmax = bc->xmax+(xoff*bc->ymin)/yoff;
 	    }
 	    bpl = ((xmax-xmin)>>3) + 1;
-	    bitmap = gcalloc((bc->ymax-bc->ymin+1)*bpl,sizeof(uint8));
+	    bitmap = calloc((bc->ymax-bc->ymin+1)*bpl,sizeof(uint8));
 	    for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 		pt = bc->bitmap + i*bc->bytes_per_line;
 		pt2 = bitmap + i*bpl;
@@ -159,7 +159,7 @@ void BCTransFunc(BDFChar *bc,enum bvtools type,int xoff,int yoff) {
 	    }
 	    bitmap = NULL;
 	} else if ( type==bvt_rotate180 ) {
-	    bitmap = gcalloc((bc->ymax-bc->ymin+1)*bc->bytes_per_line,sizeof(uint8));
+	    bitmap = calloc((bc->ymax-bc->ymin+1)*bc->bytes_per_line,sizeof(uint8));
 	    for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 		pt = bc->bitmap + i*bc->bytes_per_line;
 		pt2 = bitmap + (bc->ymax-bc->ymin-i)*bc->bytes_per_line;
@@ -170,7 +170,7 @@ void BCTransFunc(BDFChar *bc,enum bvtools type,int xoff,int yoff) {
 	    }
 	} else if ( type==bvt_rotate90cw ) {
 	    bpl = bc->ymax-bc->ymin + 1;
-	    bitmap = gcalloc((bc->xmax-bc->xmin+1)*bpl,sizeof(uint8));
+	    bitmap = calloc((bc->xmax-bc->xmin+1)*bpl,sizeof(uint8));
 	    for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 		pt = bc->bitmap + i*bc->bytes_per_line;
 		for ( j=0; j<=bc->xmax-bc->xmin; ++j ) {
@@ -183,7 +183,7 @@ void BCTransFunc(BDFChar *bc,enum bvtools type,int xoff,int yoff) {
 	    temp = bc->xmin; bc->xmin = bc->ymin; bc->ymin = temp;
 	} else if ( type==bvt_rotate90ccw ) {
 	    bpl = bc->ymax-bc->ymin + 1;
-	    bitmap = gcalloc((bc->xmax-bc->xmin+1)*bpl,sizeof(uint8));
+	    bitmap = calloc((bc->xmax-bc->xmin+1)*bpl,sizeof(uint8));
 	    for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 		pt = bc->bitmap + i*bc->bytes_per_line;
 		for ( j=0; j<=bc->xmax-bc->xmin; ++j ) {
@@ -203,7 +203,7 @@ void BCTransFunc(BDFChar *bc,enum bvtools type,int xoff,int yoff) {
 		xmax = bc->xmax+(xoff*bc->ymin)/yoff;
 	    }
 	    bpl = xmax-xmin + 1;
-	    bitmap = gcalloc((bc->ymax-bc->ymin+1)*bpl,sizeof(uint8));
+	    bitmap = calloc((bc->ymax-bc->ymin+1)*bpl,sizeof(uint8));
 	    for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 		pt = bc->bitmap + i*bc->bytes_per_line;
 		pt2 = bitmap + i*bpl;
@@ -215,10 +215,8 @@ void BCTransFunc(BDFChar *bc,enum bvtools type,int xoff,int yoff) {
 	    bc->xmax = xmax; bc->xmin = xmin; bc->bytes_per_line = bpl;
 	}
     }
-    if ( bitmap!=NULL ) {
-	free(bc->bitmap);
+    if ( bitmap!=NULL )
 	bc->bitmap = bitmap;
-    }
     BCCompressBitmap(bc);
 }
 
@@ -249,10 +247,9 @@ void BCRotateCharForVert(BDFChar *bc,BDFChar *from, BDFFont *frombdf) {
 
     BCPreserveState(bc);
     BCFlattenFloat(from);
-    free(bc->bitmap);
     bc->xmin = from->xmin; bc->xmax = from->xmax; bc->ymin = from->ymin; bc->ymax = from->ymax;
     bc->width = from->width; bc->bytes_per_line = from->bytes_per_line;
-    bc->bitmap = galloc(bc->bytes_per_line*(bc->ymax-bc->ymin+1));
+    bc->bitmap = malloc(bc->bytes_per_line*(bc->ymax-bc->ymin+1));
     memcpy(bc->bitmap,from->bitmap,bc->bytes_per_line*(bc->ymax-bc->ymin+1));
     BCTransFunc(bc,bvt_rotate90cw,0,0);
     xmin = frombdf->descent + from->ymin;
@@ -276,7 +273,7 @@ static void BCExpandBitmap(BDFChar *bc, int x, int y) {
 	ymax = y>bc->ymax?y:bc->ymax;
 	if ( !bc->byte_data ) {
 	    bpl = ((xmax-xmin)>>3) + 1;
-	    bitmap = gcalloc((ymax-ymin+1)*bpl,sizeof(uint8));
+	    bitmap = calloc((ymax-ymin+1)*bpl,sizeof(uint8));
 	    for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 		pt = bc->bitmap + i*bc->bytes_per_line;
 		npt = bitmap + (i+ymax-bc->ymax)*bpl;
@@ -289,14 +286,13 @@ static void BCExpandBitmap(BDFChar *bc, int x, int y) {
 	    }
 	} else {
 	    bpl = xmax-xmin + 1;
-	    bitmap = gcalloc((ymax-ymin+1)*bpl,sizeof(uint8));
+	    bitmap = calloc((ymax-ymin+1)*bpl,sizeof(uint8));
 	    for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 		pt = bc->bitmap + i*bc->bytes_per_line;
 		npt = bitmap + (i+ymax-bc->ymax)*bpl;
 		memcpy(npt+bc->xmin-xmin,pt,bc->bytes_per_line);
 	    }
 	}
-	free(bc->bitmap);
 	bc->bitmap = bitmap;
 	bc->xmin = xmin; bc->xmax = xmax; bc->bytes_per_line = bpl;
 	bc->ymin = ymin; bc->ymax = ymax;
@@ -321,11 +317,10 @@ void BCExpandBitmapToEmBox(BDFChar *bc, int xmin, int ymin, int xmax, int ymax) 
     /* Expand a bitmap so it will always contain 0..width, ascent..descent */
     
     if ( !BCHasOutputtableBitmap( bc )) {
-	free( bc->bitmap );
 	bc->bytes_per_line = xmax - xmin + 1;
 	bc->xmin = xmin; bc->xmax = xmax;
 	bc->ymin = ymin; bc->ymax = ymax;
-	bc->bitmap = gcalloc(( ymax - ymin + 1) * bc->bytes_per_line, sizeof( uint8 ));
+	bc->bitmap = calloc(( ymax - ymin + 1) * bc->bytes_per_line, sizeof( uint8 ));
     } else {
 	BCExpandBitmap(bc,xmin,ymin);
 	BCExpandBitmap(bc,xmax,ymax);
@@ -349,20 +344,13 @@ return;		/* Already clear */
 	bc->bitmap[y*bc->bytes_per_line+(x>>3)] |= (1<<(7-(x&7)));
 }
 
-void BDFFloatFree(BDFFloat *sel) {
-    if ( sel==NULL )
-return;
-    free(sel->bitmap);
-    free(sel);
-}
-
 BDFFloat *BDFFloatCopy(BDFFloat *sel) {
     BDFFloat *new;
     if ( sel==NULL )
 return(NULL);
-    new = galloc(sizeof(BDFFloat));
+    new = malloc(sizeof(BDFFloat));
     *new = *sel;
-    new->bitmap = galloc(sel->bytes_per_line*(sel->ymax-sel->ymin+1));
+    new->bitmap = malloc(sel->bytes_per_line*(sel->ymax-sel->ymin+1));
     memcpy(new->bitmap,sel->bitmap,sel->bytes_per_line*(sel->ymax-sel->ymin+1));
 return( new );
 }
@@ -376,12 +364,12 @@ return(NULL);
     if ( todepth==fromdepth )
 return( BDFFloatCopy(sel));
 
-    new = galloc(sizeof(BDFFloat));
+    new = malloc(sizeof(BDFFloat));
     *new = *sel;
     new->byte_data = todepth!=1;
     new->depth = todepth;
     new->bytes_per_line = new->byte_data ? new->xmax-new->xmin+1 : ((new->xmax-new->xmin)>>3)+1;
-    new->bitmap = gcalloc(new->bytes_per_line*(sel->ymax-sel->ymin+1),1);
+    new->bitmap = calloc(new->bytes_per_line*(sel->ymax-sel->ymin+1),1);
     if ( fromdepth==1 ) {
 	tdiv = ((1<<todepth)-1);
 	for ( i=0; i<=sel->ymax-sel->ymin; ++i ) {
@@ -431,7 +419,7 @@ BDFFloat *BDFFloatCreate(BDFChar *bc,int xmin,int xmax,int ymin,int ymax, int cl
     if ( ymax>bc->ymax ) ymax = bc->ymax;
     if ( xmin>xmax || ymin>ymax )
 return( NULL );
-    new = galloc(sizeof(BDFFloat));
+    new = malloc(sizeof(BDFFloat));
     new->xmin = xmin;
     new->xmax = xmax;
     new->ymin = ymin;
@@ -440,17 +428,18 @@ return( NULL );
     new->depth = bc->depth;
     if ( bc->byte_data ) {
 	new->bytes_per_line = xmax-xmin+1;
-	new->bitmap = gcalloc(new->bytes_per_line*(ymax-ymin+1),sizeof(uint8));
-	for ( y=ymin; y<=ymax; ++y ) {
+	new->bitmap = calloc(new->bytes_per_line*(ymax-ymin+1),sizeof(uint8));
+	for ( y=ymin; /* y<=ymax; this test might overflow, so test == at end of loop */; ++y ) {
 	    bpt = bc->bitmap + (bc->ymax-y)*bc->bytes_per_line;
 	    npt = new->bitmap + (ymax-y)*new->bytes_per_line;
 	    memcpy(npt,bpt+xmin-bc->xmin,xmax-xmin+1);
 	    if ( clear )
 		memset(bpt+xmin-bc->xmin,0,xmax-xmin+1);
+            if (y == ymax) break;
 	}
     } else {
 	new->bytes_per_line = ((xmax-xmin)>>3)+1;
-	new->bitmap = gcalloc(new->bytes_per_line*(ymax-ymin+1),sizeof(uint8));
+	new->bitmap = calloc(new->bytes_per_line*(ymax-ymin+1),sizeof(uint8));
 	for ( y=ymin; y<=ymax; ++y ) {
 	    bpt = bc->bitmap + (bc->ymax-y)*bc->bytes_per_line;
 	    npt = new->bitmap + (ymax-y)*new->bytes_per_line;
@@ -496,7 +485,6 @@ void BCFlattenFloat(BDFChar *bc ) {
 		}
 	    }
 	}
-	BDFFloatFree(sel);
 	bc->selection = NULL;
     }
 }
@@ -548,9 +536,9 @@ BDFChar *BDFGetMergedChar( BDFChar *bc ) {
     
     if ( bc == NULL )
 return( NULL );
-    ret = chunkalloc( sizeof( BDFChar ));
+    ret = xzalloc( sizeof( BDFChar ));
     memcpy( ret,bc,sizeof( BDFChar ));
-    ret->bitmap = gcalloc(ret->bytes_per_line*(ret->ymax-ret->ymin+1),sizeof(uint8));
+    ret->bitmap = calloc(ret->bytes_per_line*(ret->ymax-ret->ymin+1),sizeof(uint8));
     memcpy( ret->bitmap,bc->bitmap,ret->bytes_per_line*(ret->ymax-ret->ymin+1));
     
     BCMergeReferences( ret,bc,0,0 );
@@ -651,11 +639,11 @@ void BCPrepareForOutput( BDFChar *bc,int mergeall ) {
 	/* Preserve the current glyph bitmap with all related values, unless we */
 	/* have already done this when detecting width groups for TTF output    */
 	if ( bc->backup == NULL ) {
-	    bc->backup = galloc( sizeof( BDFFloat ));
+	    bc->backup = malloc( sizeof( BDFFloat ));
 	    bc->backup->bytes_per_line = bc->bytes_per_line;
 	    bc->backup->xmin = bc->xmin; bc->backup->xmax = bc->xmax;
 	    bc->backup->ymin = bc->ymin; bc->backup->ymax = bc->ymax;
-	    bc->backup->bitmap = gcalloc( bc->bytes_per_line * bmp_width,sizeof( uint8 ));
+	    bc->backup->bitmap = calloc( bc->bytes_per_line * bmp_width,sizeof( uint8 ));
 	    memcpy( bc->backup->bitmap,bc->bitmap,bc->bytes_per_line * bmp_width );
 	}
 
@@ -702,9 +690,7 @@ void BCRestoreAfterOutput( BDFChar *bc ) {
 	bc->xmin = bc->backup->xmin; bc->xmax = bc->backup->xmax;
 	bc->ymin = bc->backup->ymin; bc->ymax = bc->backup->ymax;
 
-	free( bc->bitmap );
 	bc->bitmap = bc->backup->bitmap;
-	free( bc->backup );
 	bc->backup = NULL;
     }
 }
@@ -714,7 +700,7 @@ void BCMakeDependent( BDFChar *dependent,BDFChar *base ) {
 
     for ( dlist=base->dependents; dlist!=NULL && dlist->bc!=dependent; dlist = dlist->next );
     if ( dlist==NULL ) {
-	dlist = chunkalloc( sizeof( struct bdfcharlist ));
+	dlist = xzalloc( sizeof( struct bdfcharlist ));
 	dlist->bc = dependent;
 	dlist->next = base->dependents;
 	base->dependents = dlist;
@@ -745,9 +731,7 @@ void BCRemoveDependent( BDFChar *dependent,BDFRefChar *ref ) {
 	    if ( dlist!=NULL )
 		pd->next = dlist->next;
 	}
-	chunkfree( dlist,sizeof( struct bdfcharlist ));
     }
-    free( ref );
 }
 
 void BCUnlinkThisReference( struct fontviewbase *fv,BDFChar *bc ) {
@@ -772,7 +756,6 @@ return;
 			bsc->refs = rnext;
 		    else
 			rprev->next = rnext;
-		    free( ref );
 		    BCCharChangedUpdate( bsc );
 		} else
 		    rprev = ref;
@@ -790,7 +773,7 @@ static BDFChar *BCScale(BDFChar *old,int from, int to) {
 
     if ( old==NULL || old->byte_data )
 return( NULL );
-    new = chunkalloc(sizeof(BDFChar));
+    new = XZALLOC(BDFChar);
     new->sc = old->sc;
     new->xmin = rint(old->xmin*dto/from);
     new->ymin = rint(old->ymin*dto/from);
@@ -805,7 +788,7 @@ return( NULL );
     else
 	new->vwidth = rint(old->vwidth*dto/from+.5);
     new->bytes_per_line = (new->xmax-new->xmin)/8+1;
-    new->bitmap = gcalloc((new->ymax-new->ymin+1)*new->bytes_per_line,sizeof(char));
+    new->bitmap = calloc((new->ymax-new->ymin+1)*new->bytes_per_line,sizeof(char));
     new->orig_pos = old->orig_pos;
     new->refs = old->refs;
     new->dependents = old->dependents;
@@ -857,7 +840,7 @@ static BDFChar *BCScaleGrey(BDFChar *old,int from, int from_depth, int to, int t
 
     if ( old==NULL || !old->byte_data )
 return( NULL );
-    new = chunkalloc(sizeof(BDFChar));
+    new = XZALLOC(BDFChar);
     new->sc = old->sc;
     new->xmin = rint(old->xmin*dto/from);
     new->ymin = rint(old->ymin*dto/from);
@@ -873,10 +856,10 @@ return( NULL );
 	new->vwidth = rint(old->vwidth*dto/from+.5);
     if ( to_depth==1 ) {
 	new->bytes_per_line = (new->xmax-new->xmin)/8+1;
-	new->bitmap = gcalloc((new->ymax-new->ymin+1)*new->bytes_per_line,sizeof(char));
+	new->bitmap = calloc((new->ymax-new->ymin+1)*new->bytes_per_line,sizeof(char));
     } else {
 	new->bytes_per_line = (new->xmax-new->xmin)+1;
-	new->bitmap = gcalloc((new->ymax-new->ymin+1)*new->bytes_per_line,sizeof(char));
+	new->bitmap = calloc((new->ymax-new->ymin+1)*new->bytes_per_line,sizeof(char));
 	new->byte_data = true;
     }
     new->orig_pos = old->orig_pos;
@@ -925,7 +908,7 @@ return( new );
 }
 
 BDFFont *BitmapFontScaleTo(BDFFont *old, int to) {
-    BDFFont *new = chunkalloc(sizeof(BDFFont));
+    BDFFont *new = XZALLOC(BDFFont);
     int i;
     int to_depth = (to>>16), old_depth = 1;
     int linear_scale = 1<<(to_depth/2);
@@ -937,7 +920,7 @@ BDFFont *BitmapFontScaleTo(BDFFont *old, int to) {
 
     new->sf = old->sf;
     new->glyphcnt = new->glyphmax = old->glyphcnt;
-    new->glyphs = galloc(new->glyphcnt*sizeof(BDFChar *));
+    new->glyphs = malloc(new->glyphcnt*sizeof(BDFChar *));
     new->pixelsize = to;
     new->ascent = (old->ascent*to+.5)/old->pixelsize;
     new->descent = to-new->ascent;

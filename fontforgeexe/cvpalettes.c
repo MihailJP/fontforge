@@ -44,6 +44,8 @@ extern int interpCPsOnMotion;
 
 static void CVLCheckLayerCount(CharView *cv, int resize);
 
+extern void CVDebugFree(DebugView *dv);
+
 extern GBox _ggadget_Default_Box;
 #define ACTIVE_BORDER   (_ggadget_Default_Box.active_border)
 #define MAIN_FOREGROUND (_ggadget_Default_Box.main_foreground)
@@ -179,11 +181,6 @@ static void SaveOffsets(GWindow main, GWindow palette, GPoint *off) {
 	off->y = pr.y-mr.y;
 	if ( off->x<0 ) off->x = 0;
 	if ( off->y<0 ) off->y = 0;
-#if 0
- printf( "%s is offset (%d,%d)\n", palette==cvtools?"CVTools":
-     palette==cvlayers?"CVLayers":palette==bvtools?"BVTools":
-     palette==bvlayers?"BVLayers":"BVShades", off->x, off->y );
-#endif
     }
 }
 
@@ -964,7 +961,7 @@ void CVToolsSetCursor(CharView *cv, int state, char *device) {
 	else
 	    shouldshow = cv->s1_tool;
     }
-    if ( shouldshow==cvt_magnify && (state&ksm_alt))
+    if ( shouldshow==cvt_magnify && (state&ksm_meta))
 	shouldshow = cvt_minify;
     if ( shouldshow!=cv->showing_tool ) {
 	CPEndInfo(cv);
@@ -1025,7 +1022,6 @@ static void SCCheckForSSToOptimize(SplineChar *sc, SplineSet *ss,int order2) {
 	    foo = *ss;
 	    ss->first = temp->first; ss->last = temp->last;
 	    temp->first = foo.first; temp->last = foo.last;
-	    SplinePointListFree(temp);
 	}
     }
 }
@@ -1041,11 +1037,7 @@ static void CVChangeSpiroMode(CharView *cv) {
 	GDrawRequestExpose(cvtools,NULL,false);
 	SCUpdateAll(cv->b.sc);
     } else
-#ifdef _NO_LIBSPIRO
-	ff_post_error(_("You may not use spiros"),_("This version of fontforge was not linked with the spiro library, so you may not use them."));
-#else
 	ff_post_error(_("You may not use spiros"),_("FontForge was unable to load libspiro, spiros are not available for use."));
-#endif
 }
 
 static void ToolsMouse(CharView *cv, GEvent *event) {
@@ -1088,10 +1080,6 @@ return;			/* If the wm gave me a window the wrong size */
     /* we have two fewer buttons than commands as two bottons each control two commands */
     if ( pos<0 || pos>=cvt_max )
 	pos = cvt_none;
-#if 0
-    if ( pos==cvt_freehand && cv->b.sc->parent->order2 )
-return;			/* Not available in order2 spline mode */
-#endif
     if ( event->type == et_mousedown ) {
 	if ( isstylus && event->u.mouse.button==2 )
 	    /* Not a real button press, only touch counts. This is a modifier */;
@@ -1314,21 +1302,15 @@ static void CVLayers2Set(CharView *cv) {
 
 	 /* set old to NULL */
     layer2.offtop = 0;
-    for ( i=2; i<layer2.current_layers; ++i ) {
-	BDFCharFree(layer2.layers[i]);
+    for ( i=2; i<layer2.current_layers; ++i )
 	layer2.layers[i]=NULL;
-    }
 
 	 /* reallocate enough space if necessary */
     if ( cv->b.sc->layer_cnt+1>=layer2.max_layers ) {
 	top = cv->b.sc->layer_cnt+10;
-	if ( layer2.layers==NULL )
-	    layer2.layers = gcalloc(top,sizeof(BDFChar *));
-	else {
-	    layer2.layers = grealloc(layer2.layers,top*sizeof(BDFChar *));
-	    for ( i=layer2.current_layers; i<top; ++i )
-		layer2.layers[i] = NULL;
-	}
+        layer2.layers = realloc(layer2.layers,top*sizeof(BDFChar *));
+        for ( i=layer2.current_layers; i<top; ++i )
+            layer2.layers[i] = NULL;
 	layer2.max_layers = top;
     }
     layer2.current_layers = cv->b.sc->layer_cnt+1;
@@ -1434,7 +1416,7 @@ return;
 	LayerDefault(&temp);
 	if ( !LayerDialog(&temp,cv->b.sc->parent))
 return;
-	sc->layers = grealloc(sc->layers,(sc->layer_cnt+1)*sizeof(Layer));
+	sc->layers = realloc(sc->layers,(sc->layer_cnt+1)*sizeof(Layer));
 	sc->layers[sc->layer_cnt] = temp;
 	cv->b.layerheads[dm_fore] = &sc->layers[sc->layer_cnt];
 	cv->b.layerheads[dm_back] = &sc->layers[ly_back];
@@ -1445,9 +1427,6 @@ return;
 return;
 	if ( gwwv_ask(_("Cannot Be Undone"),(const char **) buts,0,1,_("This operation cannot be undone, do it anyway?"))==1 )
 return;
-	SplinePointListsFree(sc->layers[layer].splines);
-	RefCharsFree(sc->layers[layer].refs);
-	ImageListsFree(sc->layers[layer].images);
 	UndoesFree(sc->layers[layer].undoes);
 	UndoesFree(sc->layers[layer].redoes);
 	for ( i=layer+1; i<sc->layer_cnt; ++i )
@@ -1783,7 +1762,6 @@ return;
     if ( cv->b.drawmode==dm_grid || cv->b.drawmode==dm_back )
 return;
     layer = CVLayer(&cv->b);
-    BDFCharFree(layer2.layers[layer+1]);
     layer2.layers[layer+1] = BDFCharFromLayer(cv->b.sc,layer);
     GDrawRequestExpose(cvlayers2,NULL,false);
 }
@@ -1799,21 +1777,15 @@ static void CVLayers1Set(CharView *cv) {
 
      /* clear old layer previews */
     layerinfo.offtop = 0;
-    for ( i=2; i<layerinfo.current_layers; ++i ) {
-	BDFCharFree(layerinfo.layers[i]);
+    for ( i=2; i<layerinfo.current_layers; ++i )
 	layerinfo.layers[i]=NULL;
-    }
 
      /* reallocate enough space if necessary */
     if ( cv->b.sc->layer_cnt+1>=layerinfo.max_layers ) {
 	top = cv->b.sc->layer_cnt+10;
-	if ( layerinfo.layers==NULL )
-	    layerinfo.layers = gcalloc(top,sizeof(BDFChar *));
-	else {
-	    layerinfo.layers = grealloc(layerinfo.layers,top*sizeof(BDFChar *));
-	    for ( i=layerinfo.current_layers; i<top; ++i )
-		layerinfo.layers[i] = NULL;
-	}
+        layerinfo.layers = realloc(layerinfo.layers,top*sizeof(BDFChar *));
+        for ( i=layerinfo.current_layers; i<top; ++i )
+            layerinfo.layers[i] = NULL;
 	layerinfo.max_layers = top;
     }
     layerinfo.current_layers = cv->b.sc->layer_cnt+1;
@@ -2008,7 +1980,6 @@ static void CVLRemoveEdit(CharView *cv, int save) {
 	if ( save
 		&& layerinfo.active>=0 && str!=NULL && str[0]!='\0' 
 		&& uc_strcmp( str,cv->b.sc->parent->layers[l].name) ) {
-	    free( cv->b.sc->parent->layers[l].name );
 	    cv->b.sc->parent->layers[l].name = cu_copy( str );
 
 	    CVLCheckLayerCount(cv,true);
@@ -2518,9 +2489,9 @@ void CVLSelectLayer(CharView *cv, int layer) {
         }
 
         CVDebugFree(cv->dv);
-        SplinePointListsFree(cv->b.gridfit); cv->b.gridfit = NULL;
-        FreeType_FreeRaster(cv->oldraster); cv->oldraster = NULL;
-        FreeType_FreeRaster(cv->raster); cv->raster = NULL;
+        cv->b.gridfit = NULL;
+        cv->oldraster = NULL;
+        cv->raster = NULL;
         cv->show_ft_results = false;
     }
     layerinfo.active = CVLayer(&cv->b); /* the index of the active layer */
@@ -2725,10 +2696,10 @@ return ( true );
 		cv->b.drawmode = dm_fore;
 		cv->lastselpt = NULL;
 
-		CVDebugFree(cv->dv);
-		SplinePointListsFree(cv->b.gridfit); cv->b.gridfit = NULL;
-		FreeType_FreeRaster(cv->oldraster); cv->oldraster = NULL;
-		FreeType_FreeRaster(cv->raster); cv->raster = NULL;
+                CVDebugFree(cv->dv);
+		cv->b.gridfit = NULL;
+		cv->oldraster = NULL;
+		cv->raster = NULL;
 		cv->show_ft_results = false;
 	      break;
 	      case CID_EBack:
@@ -2736,10 +2707,10 @@ return ( true );
 		cv->b.layerheads[dm_back] = &cv->b.sc->layers[ly_back];
 		cv->lastselpt = NULL;
 
-		CVDebugFree(cv->dv);
-		SplinePointListsFree(cv->b.gridfit); cv->b.gridfit = NULL;
-		FreeType_FreeRaster(cv->oldraster); cv->oldraster = NULL;
-		FreeType_FreeRaster(cv->raster); cv->raster = NULL;
+                CVDebugFree(cv->dv);
+		cv->b.gridfit = NULL;
+		cv->oldraster = NULL;
+		cv->raster = NULL;
 		cv->show_ft_results = false;
 	      break;
 	      case CID_EGrid:
@@ -3038,10 +3009,6 @@ static void CVPopupInvoked(GWindow v, GMenuItem *mi, GEvent *e) {
     int pos;
 
     pos = mi->mid;
-#if 0	/* No longer show rect/poly tool */
-    if ( (pos==14 && rectelipse) || (pos==15 && polystar ))
-	pos += 2;
-#endif
     if ( pos==cvt_spiro ) {
 	CVChangeSpiroMode(cv);
     } else if ( cv->had_control ) {
@@ -3085,12 +3052,12 @@ static void CVPopupSelectInvoked(GWindow v, GMenuItem *mi, GEvent *e) {
       break;
     case MID_MakeLine: {
 	CharView *cv = (CharView *) GDrawGetUserData(v);
-	_CVMenuMakeLine((CharViewBase *) cv,mi->mid==MID_MakeArc, e!=NULL && (e->u.mouse.state&ksm_alt));
+	_CVMenuMakeLine((CharViewBase *) cv,mi->mid==MID_MakeArc, e!=NULL && (e->u.mouse.state&ksm_meta));
 	break;
     }
     case MID_MakeArc: {
 	CharView *cv = (CharView *) GDrawGetUserData(v);
-	_CVMenuMakeLine((CharViewBase *) cv,mi->mid==MID_MakeArc, e!=NULL && (e->u.mouse.state&ksm_alt));
+	_CVMenuMakeLine((CharViewBase *) cv,mi->mid==MID_MakeArc, e!=NULL && (e->u.mouse.state&ksm_meta));
 	break;
     }
     case MID_InsertPtOnSplineAt: {
@@ -3870,9 +3837,9 @@ void BVToolsSetCursor(BitmapView *bv, int state,char *device) {
 	    shouldshow = bv->s1_tool;
     }
     
-    if ( shouldshow==bvt_magnify && (state&ksm_alt))
+    if ( shouldshow==bvt_magnify && (state&ksm_meta))
 	shouldshow = bvt_minify;
-    if ( (shouldshow==bvt_pencil || shouldshow==bvt_line) && (state&ksm_alt) && bv->bdf->clut!=NULL )
+    if ( (shouldshow==bvt_pencil || shouldshow==bvt_line) && (state&ksm_meta) && bv->bdf->clut!=NULL )
 	shouldshow = bvt_eyedropper;
     if ( shouldshow!=bv->showing_tool ) {
 	GDrawSetCursor(bv->v,tools[shouldshow]);

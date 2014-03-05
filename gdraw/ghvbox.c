@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 #include "gdraw.h"
 #include "ggadgetP.h"
 #include <string.h>
@@ -87,7 +89,6 @@ static void GHVBox_destroy(GGadget *g) {
 	if ( gb->children[i]!=GG_Glue && gb->children[i]!=GG_ColSpan &&
 		gb->children[i]!=GG_RowSpan && gb->children[i]!=GG_HPad10 )
 	    GGadgetDestroy(gb->children[i]);
-    free(gb->children);
     _ggadget_destroy(g);
 }
 
@@ -128,8 +129,8 @@ static void GHVBoxGatherSizeInfo(GHVBox *gb,struct sizeinfo *si) {
     int ten = GDrawPointsToPixels(gb->g.base,10);
 
     memset(si,0,sizeof(*si));
-    si->cols = gcalloc(gb->cols,sizeof(struct sizedata));
-    si->rows = gcalloc(gb->rows,sizeof(struct sizedata));
+    si->cols = calloc(gb->cols,sizeof(struct sizedata));
+    si->rows = calloc(gb->rows,sizeof(struct sizedata));
     for ( c=0; c<gb->cols; ++c ) si->cols[c].allglue = true;
     for ( r=0; r<gb->rows; ++r ) si->rows[r].allglue = true;
 
@@ -453,8 +454,6 @@ static void GHVBoxResize(GGadget *g, int32 width, int32 height) {
         y += si.rows[r].sized;
     }
 
-    free(si.cols); free(si.rows);
-
     gb->g.inner.width = width; gb->g.inner.height = height;
     gb->g.r.width = width + 2*bp; gb->g.r.height = height + 2*bp;
     GDrawEnableExposeRequests(g->base,old_enabled);
@@ -478,7 +477,6 @@ static void GHVBoxGetDesiredSize(GGadget *g, GRect *outer, GRect *inner) {
 	outer->x = outer->y = 0;
 	outer->width = si.width+2*bp; outer->height = si.height+2*bp;
     }
-    free(si.cols); free(si.rows);
 }
 
 static int GHVBoxFillsWindow(GGadget *g) {
@@ -574,7 +572,7 @@ void GHVBoxSetPadding(GGadget *g,int hpad, int vpad) {
 
 static GHVBox *_GHVBoxCreate(struct gwindow *base, GGadgetData *gd,void *data,
 	int hcnt, int vcnt, GBox *def_box) {
-    GHVBox *gb = gcalloc(1,sizeof(GHVBox));
+    GHVBox *gb = calloc(1,sizeof(GHVBox));
     int i, h, v;
     GGadgetCreateData *label = (GGadgetCreateData *) (gd->label);
 
@@ -596,7 +594,7 @@ static GHVBox *_GHVBoxCreate(struct gwindow *base, GGadgetData *gd,void *data,
 	gb->label->contained = true;
     }
 
-    gb->children = galloc(vcnt*hcnt*sizeof(GGadget *));
+    gb->children = malloc(vcnt*hcnt*sizeof(GGadget *));
     for ( i=v=0; v<vcnt; ++v ) {
 	for ( h=0; h<hcnt && gd->u.boxelements[i]!=NULL; ++h, ++i ) {
 	    GGadgetCreateData *gcd = gd->u.boxelements[i];
@@ -617,12 +615,6 @@ static GHVBox *_GHVBoxCreate(struct gwindow *base, GGadgetData *gd,void *data,
 	if ( gd->u.boxelements[i]==NULL )
 	    ++i;
     }
-#if 0
-    GHVBoxGetDesiredSize(&gb->g,&outer,NULL);
-    if ( gd->pos.width!=0 ) outer.width = gd->pos.width;
-    if ( gd->pos.height!=0 ) outer.height = gd->pos.height;
-    GHVBoxResize(&gb->g,outer.width,outer.height);
-#endif
 return( gb );
 }
 

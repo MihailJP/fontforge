@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 #include <stdlib.h>
 #include "gdraw.h"
 #include "ggadgetP.h"
@@ -551,9 +553,7 @@ return;
 	    GDrawSync(NULL);
 	    GDrawProcessWindowEvents(glb->popup);	/* popup's destroy routine must execute before we die */
 	}
-	GTextInfoArrayFree(glb->ti);
     }
-    free(b->label);
     _ggadget_destroy(g);
 }
 
@@ -579,9 +579,6 @@ static void GButtonSetInner(GButton *b) {
 static void GButtonSetTitle(GGadget *g,const unichar_t *tit) {
     GButton *b = (GButton *) g;
 
-    if ( b->g.free_box )
-	free( b->g.box );
-    free(b->label);
     b->label = u_copy(tit);
     GButtonSetInner(b);
     _ggadget_redraw(g);
@@ -590,9 +587,6 @@ static void GButtonSetTitle(GGadget *g,const unichar_t *tit) {
 static void GButtonSetImageTitle(GGadget *g,GImage *img,const unichar_t *tit, int before) {
     GButton *b = (GButton *) g;
 
-    if ( b->g.free_box )
-	free( b->g.box );
-    free(b->label);
     b->label = u_copy(tit);
     b->image = img;
     b->image_precedes = before;
@@ -678,7 +672,6 @@ static void GListButSet(GGadget *g,GTextInfo **ti,int32 docopy) {
     GListButton *gl = (GListButton *) g;
     int i;
 
-    GTextInfoArrayFree(gl->ti);
     if ( docopy || ti==NULL )
 	ti = GTextInfoArrayCopy(ti);
     gl->ti = ti;
@@ -1051,7 +1044,7 @@ return( gl );
 }
 
 GGadget *GLabelCreate(struct gwindow *base, GGadgetData *gd,void *data) {
-    GLabel *gl = gcalloc(1,sizeof(GListButton));;
+    GLabel *gl = calloc(1,sizeof(GListButton));;
     int i;
 
     if ( gd->u.list!=NULL ) {
@@ -1067,7 +1060,7 @@ return( &gl->g );
 }
 
 GGadget *GButtonCreate(struct gwindow *base, GGadgetData *gd,void *data) {
-    GLabel *gl = _GLabelCreate(gcalloc(1,sizeof(GLabel)),base,gd,data,
+    GLabel *gl = _GLabelCreate(calloc(1,sizeof(GLabel)),base,gd,data,
 	    gd->flags & gg_but_default ? &_GGadget_defaultbutton_box :
 	    gd->flags & gg_but_cancel ? &_GGadget_cancelbutton_box :
 	    &_GGadget_button_box);
@@ -1078,7 +1071,7 @@ return( &gl->g );
 
 GGadget *GImageButtonCreate(struct gwindow *base, GGadgetData *gd,void *data) {
     GImageButton *gl =
-	(GImageButton *) _GLabelCreate(gcalloc(1,sizeof(GImageButton)),base,gd,data,&_GGadget_button_box);
+	(GImageButton *) _GLabelCreate(calloc(1,sizeof(GImageButton)),base,gd,data,&_GGadget_button_box);
 
     gl->g.takes_input = true;
     gl->labeltype = 1;
@@ -1103,7 +1096,7 @@ GGadget *GColorButtonCreate(struct gwindow *base, GGadgetData *gd,void *data) {
 	}
     }
     gd->label = &ti;
-    gl = gcalloc(1,sizeof(GColorButton));
+    gl = calloc(1,sizeof(GColorButton));
     gl->labeltype = 3;
     gl = (GColorButton *) _GLabelCreate((GLabel *) gl,base,gd,data,&_GGadget_colorbutton_box);
     gl->g.takes_input = true;
@@ -1129,7 +1122,7 @@ static void GListButtonSelected(GGadget *g, int i) {
     _GWidget_ClearGrabGadget(&gl->g);
     if ( i<0 || i>=gl->ltot )
 return;
-    free(gl->label); gl->label = u_copy(gl->ti[i]->text);
+    gl->label = u_copy(gl->ti[i]->text);
     gl->image = gl->ti[i]->image;
     gl->image_precedes = gl->ti[i]->image_precedes;
     GButtonSetInner((GButton *) gl);
@@ -1157,7 +1150,7 @@ return( GTextInfoCompare(*pt1,*pt2));
 }
 
 GGadget *GListButtonCreate(struct gwindow *base, GGadgetData *gd,void *data) {
-    GListButton *gl = gcalloc(1,sizeof(GListButton));
+    GListButton *gl = calloc(1,sizeof(GListButton));
     int i;
 
     gl->labeltype = 2;

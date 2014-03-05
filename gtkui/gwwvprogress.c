@@ -74,7 +74,6 @@ static void gwwv_progress__end_indicator(void) {
 
     current=old->prev;
     gtk_widget_destroy(old->progress);
-    free(old);
     if ( current!=NULL ) {
 	current->superceded = false;
 	if ( current->visible )
@@ -237,7 +236,7 @@ void gwwv_progress_start_indicator(int delay, const char *title, const char *lin
     struct timeval tv;
     GtkWidget *line;
 
-    new = gcalloc(1,sizeof(GProgress));
+    new = calloc(1,sizeof(GProgress));
     new->progress = create_Progress();
     gtk_window_set_title(GTK_WINDOW(new->progress),title);
     line = lookup_widget(new->progress,"line1");

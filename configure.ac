@@ -4,6 +4,7 @@
 # Copyright (C) 2000-2012 by George Williams
 # Copyright (C) 2012 by Barry Schwartz
 # Copyright (C) 2013 by Ben Martin
+# Copyright (C) 2014 by Reuben Thomas <rrt@sc3d.org>
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -87,13 +88,13 @@ AC_CONFIG_AUX_DIR([config])
 AC_CONFIG_TESTDIR([tests],[fontforge])
 AC_CANONICAL_BUILD
 AC_CANONICAL_HOST
-AC_CONFIG_HEADER([inc/fontforge-config.h])
+AC_CONFIG_HEADERS([config.h inc/fontforge-config.h:config.h])
 AM_INIT_AUTOMAKE([foreign -Wall subdir-objects tar-pax])
 AM_MAINTAINER_MODE([enable])
 AC_USE_SYSTEM_EXTENSIONS
 
 #--------------------------------------------------------------------------
-# automake 1.12 requires AM_PROG_AR but automake 1.11 doesn't recognize it.
+# automake 1.12 requires AM_PROG_AR but automake < 1.11.2 doesn't recognize it.
 m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
 
 #--------------------------------------------------------------------------
@@ -177,8 +178,8 @@ AC_PROG_AWK
 AC_PROG_CC
 AC_PROG_CC_C99
 AM_PROG_CC_C_O
+gl_EARLY
 AC_PROG_CPP
-AC_PROG_CXX
 AC_PROG_GREP
 AC_PROG_INSTALL
 AC_PROG_LN_S
@@ -194,10 +195,10 @@ AC_PATH_PROG([UNZIP],[unzip],[unzip])
 AC_PATH_PROG([UPDATE_MIME_DATABASE],[update-mime-database],[:])
 AC_PATH_PROG([UPDATE_DESKTOP_DATABASE],[update-desktop-database],[:])
 AC_PATH_PROG([PLUTIL],[plutil],[:])
+AM_PATH_PYTHON([2.3])
+PKG_CHECK_MODULES([PYTHON],[python-"${PYTHON_VERSION}"])
 
 AM_CONDITIONAL([XDG_DESKTOP],[test x"$UPDATE_MIME_DATABASE" != "x:" -a x"$UPDATE_DESKTOP_DATABASE" != "x:"])
-
-FONTFORGE_ARG_ENABLE_REAL
 
 AC_ARG_ENABLE([programs],
         [AS_HELP_STRING([--disable-programs],[do not build "fontforge" and related programs
@@ -215,14 +216,6 @@ if test x$enable_debug = xyes ; then
     CPPFLAGS="$CPPFLAGS -g -O0"
 fi
 
-FONTFORGE_ARG_DISABLE([native-scripting],
-        [AS_HELP_STRING([--disable-native-scripting],[disable the legacy fontforge scripting language])],
-        [_NO_FFSCRIPT])
-AM_CONDITIONAL([NATIVE_SCRIPTING],[test x"${i_do_have_native_scripting}" = xyes])
-
-FONTFORGE_ARG_DISABLE_PYTHON_SCRIPTING
-FONTFORGE_ARG_DISABLE_PYTHON_EXTENSION
-
 AC_ARG_ENABLE([freetype-debugger],
         [AS_HELP_STRING([--enable-freetype-debugger[[=DIR]]],
                 [use freetype's internal debugger within fontforge; requires source code of the
@@ -236,11 +229,6 @@ AC_ARG_ENABLE([freetype-debugger],
                 [i_do_have_freetype_debugger=no])])
 # ' make syntax checkers happy
 
-FONTFORGE_ARG_ENABLE([capslock-for-alt],
-        [AS_HELP_STRING([--enable-capslock-for-alt],
-                [use capslock rather than alt/meta to alter behavior of tools in outline/bitmap windows])],
-        [FONTFORGE_CONFIG_CAPSLOCK_FOR_ALT])
-
 FONTFORGE_ARG_ENABLE([debug-raw-points],
         [AS_HELP_STRING([--enable-debug-raw-points],
                 [add a raw mode to the points window of the debugger])],
@@ -250,11 +238,6 @@ FONTFORGE_ARG_ENABLE([tile-path],
         [AS_HELP_STRING([--enable-tile-path],
                 [enable a 'tile path' command (a variant of 'expand stroke')])],
         [FONTFORGE_CONFIG_TILEPATH])
-
-FONTFORGE_ARG_DISABLE([link-test],
-        [AS_HELP_STRING([--disable-link-test],[disable the link test during build. Handy for cross compiling])],
-        [_NO_FFLINKTEST])
-AM_CONDITIONAL([BUILD_LINK_TEST],[test x"${i_do_have_link_test}" = xyes])
 
 AC_ARG_ENABLE([windows-cross-compile],
         [AS_HELP_STRING([--enable-windows-cross-compile],
@@ -293,25 +276,14 @@ FONTFORGE_ARG_ENABLE([maintainer-tools],
 AM_CONDITIONAL([MAINTAINER_TOOLS],[test x"${i_do_have_maintainer_tools}" = xyes])
 AC_SUBST([MAINTAINER_TOOLS],["${i_do_have_maintainer_tools}"])
 
-# Enable this experimental feature via an obscure cache variable
-# rather than --enable.
-AC_CACHE_CHECK([whether to enable native callbacks (experimental)],
-               [fontforge_cv_native_callbacks],
-               [if test x"${fontforge_cv_native_callbacks}" != yes; then
-                   fontforge_cv_native_callbacks=no
-                fi])
-i_do_have_native_callbacks="${fontforge_cv_native_callbacks}"
-
-
 #--------------------------------------------------------------------------
 #
 # Checks for libraries.
 
 AC_SEARCH_LIBS([cos],[m])
 
-dnl FIXME: Is this needed, given we are using libltdl?
-dnl The dlopen() function is in the C library for *BSD and in libdl on GLIBC-based systems
-dnl AC_SEARCH_LIBS([dlopen], [dl dld])
+# libgc (BDW garbage collector)
+PKG_CHECK_MODULES([LIBGC],[bdw-gc >= 7.2])
 
 FONTFORGE_CONFIG_X_LIBRARIES
 
@@ -324,28 +296,26 @@ if test x"${i_do_have_gui}" = xyes; then
    PKG_CHECK_MODULES([PANGO],[pango >= 1.10 pangoxft])
 fi
 
-PKG_CHECK_MODULES([FREETYPE],[freetype2])
+PKG_CHECK_MODULES([FREETYPE],[freetype2 >= 2.3.7])
+PKG_CHECK_MODULES([LIBXML],[libxml-2.0])
 
 FONTFORGE_ARG_WITH_CAIRO
 AC_ARG_VAR([FREETYPE_SOURCE],
         [directory where freetype source code is located for --enable-freetype-debugger;
          however, if --enable-freetype-debugger=DIR is specified, then DIR overrides
          the setting of FREETYPE_SOURCE])
+
+PKG_CHECK_MODULES([LIBPNG],[libpng])
+
 FONTFORGE_ARG_WITH_GIFLIB
 FONTFORGE_ARG_WITH_LIBJPEG
-FONTFORGE_ARG_WITH_LIBPNG
 FONTFORGE_ARG_WITH_LIBTIFF
-FONTFORGE_ARG_WITH_LIBXML
 FONTFORGE_ARG_WITH_LIBSPIRO
 FONTFORGE_ARG_WITH_LIBUNINAMESLIST
 FONTFORGE_ARG_WITH_LIBUNICODENAMES
-FONTFORGE_ARG_WITH_ICONV
 FONTFORGE_ARG_WITH_ZEROMQ
 FONTFORGE_ARG_WITH_LIBREADLINE
 
-if test x"${i_do_have_x}" = xyes; then
-   AC_DEFINE(HAVE_GUI,[1],[Have GUI])
-fi
 if test x"${i_do_have_x}" = xyes; then
    if test x"${i_do_have_libzmq}" = xyes; then
       AC_DEFINE(BUILD_COLLAB,[1],[Build the Collab Code])
@@ -375,50 +345,89 @@ FONTFORGE_CONFIG_FREETYPE_DEBUGGER
 #
 # Checks for header files.
 
-AC_CHECK_HEADERS([arpa/inet.h fcntl.h ieeefp.h inttypes.h])
-AC_CHECK_HEADERS([langinfo.h libintl.h limits.h locale.h])
-AC_CHECK_HEADERS([memory.h netdb.h netinet/in.h pthread.h stddef.h stdint.h stdlib.h])
-AC_CHECK_HEADERS([string.h strings.h sys/ioctl.h sys/socket.h sys/time.h unistd.h wchar.h])
+AC_CHECK_HEADERS([arpa/inet.h fcntl.h ieeefp.h])
+AC_CHECK_HEADERS([langinfo.h libintl.h])
+AC_CHECK_HEADERS([memory.h netdb.h netinet/in.h pthread.h])
+AC_CHECK_HEADERS([strings.h sys/ioctl.h sys/socket.h sys/time.h unistd.h])
 if test x"${i_do_want_iconv}" = xyes; then
    AC_CHECK_HEADERS([iconv.h])
 fi
+gl_INIT
 
 #--------------------------------------------------------------------------
 #
 # Checks for typedefs, structures, and compiler characteristics.
 
 AC_C_BIGENDIAN
-AC_TYPE_INT16_T
-AC_TYPE_INT32_T
-AC_TYPE_INT8_T
 AC_TYPE_PID_T
-AC_TYPE_SIZE_T
-AC_TYPE_UINT16_T
-AC_TYPE_UINT32_T
-AC_TYPE_UINT8_T
-
-AC_TYPE_LONG_LONG_INT
-if test x"${ac_cv_type_long_long_int}" = xyes; then
-   AC_DEFINE([_HAS_LONGLONG],1,[Define if using 'long long int'.])
-fi
-
 AX_PTHREAD
 
 #--------------------------------------------------------------------------
 # Check to see if "this" compiler can use these flags, errors, or warnings.
 # Enable the flags that can be used and skip flags that are unknown.
+AC_ARG_ENABLE([gcc-warnings],
+  [AS_HELP_STRING([--enable-gcc-warnings],
+                  [turn on lots of GCC warnings (for developers)])],
+  [case $enableval in
+     yes|no) ;;
+     *)      AC_MSG_ERROR([bad value $enableval for gcc-warnings option]) ;;
+   esac
+   gl_gcc_warnings=$enableval],
+  [gl_gcc_warnings=no]
+)
+
+if test "$gl_gcc_warnings" = yes; then
+  gl_WARN_ADD([-Werror], [WERROR_CFLAGS])
+
+  # Set up the list of undesired warnings.
+  nw=
+  nw="$nw -Wundef"            # All compiler preprocessors support #if UNDEF
+  nw="$nw -Wtraditional"      # All compilers nowadays support ANSI C
+  nw="$nw -Wstrict-overflow"  # Use a lower level (see below).
+  nw="$nw -Wconversion"       # These warnings usually don’t point to mistakes.
+  nw="$nw -Wsign-conversion"  # Likewise.
+  nw="$nw -Wtraditional-conversion" # Don't care.
+  nw="$nw -Wpadded"           # Don't care.
+  nw="$nw -Wc++-compat"       # Don't care.
+  nw="$nw -Woverlength-strings" # Don't care.
+  nw="$nw -Wmissing-format-attribute" # Don't care.
+  nw="$nw -Wshadow"           # Don't care.
+  nw="$nw -Wunreachable-code" # Seems buggy.
+  nw="$nw -Wsystem-headers"   # glibc headers fail as of glibc 2.17, gcc 4.8
+  nw="$nw -Wsuggest-attribute=format" # glibc headers fail as of glibc 2.17, gcc 4.8
+  nw="$nw -Wstrict-aliasing"  # -Sep2012, There's a bug in <py3 with Py_True/False that will propagate with GCC's "strict-aliasing" rules.
+  nw="$nw -Wsuggest-attribute=pure" # FIXME: Maybe later?
+  nw="$nw -Wbad-function-cast" # We do this on purpose (e.g. double to int)
+  nw="$nw -Wall"
+  nw="$nw -Wunused-macros"    # those macros might come in handy later
+
+  gl_MANYWARN_ALL_GCC([warnings])
+
+  # Enable all GCC warnings not in this list.
+  gl_MANYWARN_COMPLEMENT([warnings], [$warnings], [$nw])
+  for w in $warnings; do
+    gl_WARN_ADD([$w])
+  done
+
+  # Add an extra warning
+  gl_WARN_ADD([-Wstrict-overflow=1])
+
+  # Add these explicitly: adding -Wfoo to $nw doesn't work in this case
+  gl_WARN_ADD([-Wno-unused-result]) # FIXME: We should in fact use this, but currently it makes too much noise
+  gl_WARN_ADD([-Wno-comment]) # We use /* in comments with good reason
+
+  # Add some more safety measures
+  gl_WARN_ADD([-D_FORTIFY_SOURCE=2])
+
+  # When compiling with GCC, prefer -isystem to -I when including system
+  # include files, to avoid generating useless diagnostics for the files.
+  ISYSTEM='-isystem '
+else
+  ISYSTEM='-I'
+fi
+AC_SUBST([ISYSTEM])
+
 AC_LANG_PUSH([C]) dnl NOTE: configure.ac - try not to push/pop too often
-AC_SUBST([WARNING_CFLAGS],[])
-FFW_FLAGS="-Wunused -Wreturn-type -Wparentheses -Wformat -Wchar-subscripts \
- -Wno-unused-but-set-variable -Wno-unused-result -Wcast-align -Wclobbered  \
- -Werror=missing-prototypes -Werror=pointer-arith -Werror=implicit"
-dnl Sep2012, There's a bug in <py3 with Py_True/False that will propagate
-dnl with GCC's "strict-aliasing" rules. -Wstrict-aliasing
-
-for arg in ${FFW_FLAGS}; do
-   AX_CHECK_COMPILE_FLAG([$arg],[WARNING_CFLAGS+=" $arg"])
-done
-
 # Create LDFLAGS for libraries. Currently used to pass '-no-undefined' to libtool.
 my_lib_ldflags=""
 dnl add --no-undefined if supported. Based on information seen here:
@@ -430,6 +439,8 @@ case $host in
    dnl avoid problems, use -Wl,-z,defs only for those platform not behaving
    dnl this way.
    *-freebsd* | *-openbsd*)
+      ;;
+   *-apple-darwin*)
       ;;
    *) saved_LDFLAGS=$LDFLAGS
       AC_MSG_CHECKING([whether the linker supports --no-undefined])
@@ -459,30 +470,31 @@ m4_define([AN_FUNCTION], [m4_if([$1], [realloc], [],
 #--------------------------------------------------------------------------
 # Checks for library functions.
 
-AC_FUNC_ERROR_AT_LINE
 AC_FUNC_FORK
 AC_FUNC_MKTIME
 AC_FUNC_MMAP
 if test x"${ac_cv_func_mmap_fixed_mapped}" != xyes; then
    AC_DEFINE([_NO_MMAP],1,[Define if not using mmap.])
 fi
-AC_FUNC_STRCOLL
-AC_FUNC_STRTOD
-AC_CHECK_FUNCS([alarm atexit dup2 endpwent floor])
+AC_CHECK_FUNCS([alarm dup2 endpwent])
 AC_CHECK_FUNCS([getcwd gethostbyname gettimeofday])
-AC_CHECK_FUNCS([localeconv memmove memset mkdir munmap])
-AC_CHECK_FUNCS([nl_langinfo pow putenv rint rmdir])
-AC_CHECK_FUNCS([select setenv setlocale snprintf socket sqrt])
-AC_CHECK_FUNCS([strcasecmp strchr strdup strerror])
-AC_CHECK_FUNCS([strncasecmp strpbrk strrchr strstr])
-AC_CHECK_FUNCS([strtol strtoul tzset uname])
-AC_CHECK_FUNC([snprintf],[:],[AC_DEFINE([_NO_SNPRINTF],1,[Define if not using snprintf.])])
-AC_CHECK_FUNC([tzset],[:],[AC_DEFINE([_NO_TZSET],1,[Define if not using tzset.])])
+AC_CHECK_FUNCS([mkdir munmap])
+AC_CHECK_FUNCS([nl_langinfo putenv rmdir])
+AC_CHECK_FUNCS([select setenv socket])
+AC_CHECK_FUNCS([uname])
 
 #--------------------------------------------------------------------------
 # Put ifndef wrapper on fontforge-config.h so we don't call it repeatedly.
 AH_TOP([#ifndef _FF_CONFIG_H
-#define _FF_CONFIG_H 1])
+#define _FF_CONFIG_H 1
+
+# define malloc GC_malloc
+# define realloc GC_realloc
+# define free GC_free
+# define strdup GC_strdup
+# define strndup GC_strndup
+#define calloc fontforge_calloc
+])
 AH_BOTTOM([#endif])
 #--------------------------------------------------------------------------
 
@@ -527,24 +539,23 @@ AC_SUBST([MY_CFLAGS],[${my_cflags}])
 #--------------------------------------------------------------------------
 # Create and Set FontForge Library Flags
 
-test x"${i_do_have_python_scripting}" = xyes && my_libs="${my_libs} ${PYTHON_LIBS}"
-test x"${i_do_have_giflib}" = xyes && my_libs="${my_libs} ${GIFLIB_LIBS}"
-test x"${i_do_have_libjpeg}" = xyes && my_libs="${my_libs} ${LIBJPEG_LIBS}"
-test x"${i_do_have_libpng}" = xyes && my_libs="${my_libs} ${LIBPNG_LIBS}"
-test x"${i_do_have_libtiff}" = xyes && my_libs="${my_libs} ${LIBTIFF_LIBS}"
 test x"${i_do_have_libuninameslist}" = xyes && my_libs="${my_libs} ${LIBUNINAMESLIST_LIBS}"
 test x"${i_do_have_libunicodenames}" = xyes && my_libs="${my_libs} ${LIBUNICODENAMES_LIBS}"
-test x"${i_do_have_libxml}" = xyes && my_libs="${my_libs} ${LIBXML_LIBS}"
-test x"${i_do_have_libspiro}" = xyes && my_libs="${my_libs} ${LIBSPIRO_LIBS}"
-test x"${i_do_have_cairo}" = xyes && my_libs="${my_libs} ${CAIRO_LIBS}"
-test x"${i_do_have_cairo}" = xyes && my_libs="${my_libs} ${PANGOCAIRO_LIBS}"
+test x"${i_do_have_cairo}" = xyes && my_libs="${my_libs} ${CAIRO_LIBS} ${PANGOCAIRO_LIBS}"
 test x"${i_do_have_gui}" = xyes && my_libs="${my_libs} ${PANGO_LIBS}"
 test x"${i_do_have_x}" = xyes && my_libs="${my_libs} ${X_PRE_LIBS} ${X_LIBS} ${X_EXTRA_LIBS}"
 test x"${i_do_have_libreadline}" = xyes && my_libs="${my_libs} ${LIBREADLINE_LIBS}"
+my_libs="${my_libs} ${GIFLIB_LIBS}"
+my_libs="${my_libs} ${LIBJPEG_LIBS}"
+my_libs="${my_libs} ${LIBPNG_LIBS}"
+my_libs="${my_libs} ${LIBTIFF_LIBS}"
+my_libs="${my_libs} ${PYTHON_LIBS}"
+my_libs="${my_libs} ${LIBSPIRO_LIBS}"
 my_libs="${my_libs} ${FREETYPE_LIBS}"
 my_libs="${my_libs} ${PTHREAD_LIBS}"
 my_libs="${my_libs} ${ZLIB_LIBS}"
 my_libs="${my_libs} ${GLIB_LIBS}"
+my_libs="${my_libs} ${LIBXML_LIBS}"
 AC_SUBST([MY_LIBS],[${my_libs}])
 
 #--------------------------------------------------------------------------
@@ -562,13 +573,48 @@ if $( $pythonbinary -c 'import IPython' ); then
 fi
 AM_CONDITIONAL([HAVE_IPYTHON],[test x"${have_ipython}" = xyes])
 
+#--------------------------------------------------------------------------
+#--------------------------------------------------------------------------
+#--------------------------------------------------------------------------
 
+AC_ARG_ENABLE([python-even],
+        [AS_HELP_STRING([--enable-python-even],
+                [enable a menu entry for Even])],
+        [have_python_even=yes])
+AM_CONDITIONAL([HAVE_PYTHON_EVEN],[test x"${have_python_even}" = xyes])
+
+#--------------------------------------------------------------------------
+#--------------------------------------------------------------------------
+#--------------------------------------------------------------------------
+# We do not use GTK2 unless explicitly told it is OK to try to do that
+#
+AC_ARG_ENABLE([gtk2-use],
+        [AS_HELP_STRING([--enable-gtk2-use],
+                [Try to detect and use gtk2])],
+        [have_gtk2_use=yes])
+if test x$have_gtk2_use = xyes ; then
+    PKG_CHECK_MODULES([GTK2],[gtk+-2.0],
+	[
+		fontforge_can_use_gtk=yes
+		AC_DEFINE(FONTFORGE_CAN_USE_GTK,[],[FontForge is able to use some GTK2 functions if it wants])
+		echo "building functionality that relies on gtk2..."
+	],
+	[
+		fontforge_can_use_gtk=no
+		echo "NOT building functionality that relies on gtk2..."
+	])
+fi
+AM_CONDITIONAL([FONTFORGE_CAN_USE_GTK],[test x"${fontforge_can_use_gtk}" = xyes])
+
+#--------------------------------------------------------------------------
+#--------------------------------------------------------------------------
 #--------------------------------------------------------------------------
 # Output commands - Create FontForge Portable Makefiles
 
 AC_CONFIG_FILES([
 Makefile
 inc/Makefile
+lib/Makefile
 libltdl/Makefile
 Unicode/Makefile
 gutils/Makefile
@@ -589,6 +635,7 @@ pycontrib/Makefile
 pycontrib/simple/Makefile
 pycontrib/collab/Makefile
 pycontrib/graphicore/Makefile
+pycontrib/gdraw/Makefile
 nodejs/Makefile
 nodejs/collabwebview/Makefile
 nodejs/collabwebview/css/Makefile
@@ -625,10 +672,6 @@ osx/FontForge.app/Contents/MacOS/CocoaDialog.app/Contents/Resources/Textbox.nib/
 fontforge.pc
 ])
 
-# GNUmakefiles that act as wrappers around portable makefiles and
-# provide additional targets.
-AC_CONFIG_FILES([fontforge/GNUmakefile])
-
 #--------------------------------------------------------------------------
 
 FONTFORGE_CREATE_PKGCONFIG_FILES
@@ -644,26 +687,22 @@ AC_CONFIG_FILES([tests/atlocal])
 
 rm -f tests/*.pe tests/*.py
 
-if test x$i_do_have_native_scripting = xyes; then
-  ff_script_files="helper107 helper118A helper118B svg2ttf test001	\
-	test002 test003 test004 test005 test006 test007 test008 test009	\
-	test010 test101 test102 test103 test104 test105 test106 test107	\
-	test108 test109 test110 test111 test112 test113 test114 test115	\
-	test116 test117 test118 test119 test120 test121 test122 test123	\
-	test124 test125 test126 test127"
-  for arg in ${ff_script_files}; do
-    AC_CONFIG_FILES([tests/$arg.pe])
-  done
-fi
+ff_script_files="helper107 helper118A helper118B svg2ttf test001	\
+      test002 test003 test004 test005 test006 test007 test008 test009	\
+      test010 test101 test102 test103 test104 test105 test106 test107	\
+      test108 test109 test110 test111 test112 test113 test114 test115	\
+      test116 test117 test118 test119 test120 test121 test122 test123	\
+      test124 test125 test126 test127"
+for arg in ${ff_script_files}; do
+  AC_CONFIG_FILES([tests/$arg.pe])
+done
 
-if test x$i_do_have_python_scripting = xyes; then
-  py_script_files="findoverlapbugs test0001 test0101 test1001a test1001b \
+py_script_files="findoverlapbugs test0001 test0101 test1001a test1001b \
 	test1001c test1001 test1002 test1003 test1004 test1005 test1006	\
 	test1007"
-  for arg in ${py_script_files}; do
-    AC_CONFIG_FILES([tests/$arg.py])
-  done
-fi
+for arg in ${py_script_files}; do
+  AC_CONFIG_FILES([tests/$arg.py])
+done
 
 #--------------------------------------------------------------------------
 # Collect "GIT" compile-time information to help when debugging FontForge.
@@ -702,13 +741,8 @@ Configuration:
 
 Summary of optional features:
 
-  real (floating pt)	${my_real_type}
   programs		${i_do_have_programs}
-  native scripting	${i_do_have_native_scripting}
-  python scripting	${i_do_have_python_scripting}
-  python extension	${i_do_have_python_extension}
   freetype debugger	${i_do_have_freetype_debugger}
-  capslock for alt	${i_do_have_capslock_for_alt}
   raw points mode	${i_do_have_debug_raw_points}
   tile path		${i_do_have_tile_path}
   gb12345 encoding	${i_do_have_gb12345}
@@ -716,12 +750,6 @@ Summary of optional features:
 Summary of optional dependencies:
 
   cairo			${i_do_have_cairo}  	${cairo_url}
-  giflib		${i_do_have_giflib}  	${giflib_url}
-  libjpeg		${i_do_have_libjpeg}  	${libjpeg_url}
-  libpng		${i_do_have_libpng}  	${libpng_url}
-  libtiff		${i_do_have_libtiff}  	${libtiff_url}
-  libxml		${i_do_have_libxml}  	${libxml_url}
-  libspiro		${i_do_have_libspiro}  	${libspiro_url}
   libuninameslist	${i_do_have_libuninameslist}  	${libuninameslist_url}
   libunicodenames	${i_do_have_libunicodenames}  	${libunicodenames_url}
   zeromq (libzmq)	${i_do_have_libzmq}  	${libzmq_url}

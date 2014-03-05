@@ -42,7 +42,7 @@ GImage *GImageReadXbm(char * filename) {
     int width, height;
     GImage *gi=NULL;
     struct _GImage *base;
-    int ch,i,j,l;
+    int ch,i,j,l = 0;
     long pixels;
     uint8 *scanline;
 
@@ -124,7 +124,6 @@ GImage *GImageReadXbm(char * filename) {
 errorGImageReadXbm:
     fprintf(stderr,"Bad input file \"%s\"\n",filename );
 errorGImageReadXbmMem:
-    GImageDestroy(gi);
     fclose(file);
     return( NULL );
 }

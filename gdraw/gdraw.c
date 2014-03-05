@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 #include "gdrawP.h"
 #include <gkeysym.h>
 #include <ustring.h>
@@ -41,12 +43,6 @@ GDisplay *screen_display = NULL;
 GDisplay *printer_display = NULL;
 void (*_GDraw_BuildCharHook)(GDisplay *) = NULL;
 void (*_GDraw_InsCharHook)(GDisplay *,unichar_t) = NULL;
-
-#if 0
-void GDrawInit(GDisplay *disp) {
-    (disp->funcs->init)(disp);
-}
-#endif
 
 void GDrawTerm(GDisplay *disp) {
     (disp->funcs->term)(disp);
@@ -359,25 +355,6 @@ void GDrawClipPreserve(GWindow w)
         (w->display->funcs->ClipPreserve)( w );
 }
 
-
-#if 0
-void GDrawClipClip(GWindow w, GRect *rct, GRect *old) {
-    GRect temp = w->ggc->clip;
-    if ( temp.x+temp.width > rct->x+rct->width )
-	temp.width = rct->x+rct->width-w->ggc->clip.x;
-    if ( temp.y+temp.height > rct->y+rct->height )
-	temp.height = rct->y+rct->height-w->ggc->clip.y;
-    if ( temp.x< rct->x ) {
-	w->ggc->clip.width -= rct->x-temp.x;
-	w->ggc->clip.x = rct->x;
-    }
-    if ( w->ggc->clip.y< rct->y ) {
-	w->ggc->clip.height -= rct->y-temp.y;
-	w->ggc->clip.y = rct->y;
-    }
-    GDrawPushClip(w,&temp,old);
-}
-#endif
 
 void GDrawPopClip(GWindow w, GRect *old) {
     (w->display->funcs->popClip)(w,old);
@@ -727,9 +704,8 @@ void GDrawGrabSelection(GWindow w,enum selnames sel) {
 }
 
 void GDrawAddSelectionType(GWindow w,enum selnames sel,char *type,
-	void *data,int32 cnt,int32 unitsize,void *(*gendata)(void *,int32 *len),
-	void (*freedata)(void *)) {
-    (w->display->funcs->addSelectionType)(w,sel,type,data,cnt,unitsize,gendata,freedata);
+	void *data,int32 cnt,int32 unitsize,void *(*gendata)(void *,int32 *len)) {
+    (w->display->funcs->addSelectionType)(w,sel,type,data,cnt,unitsize,gendata,gendata?NULL:free);
 }
 
 void *GDrawRequestSelection(GWindow w,enum selnames sn, char *typename, int32 *len) {
@@ -1155,7 +1131,6 @@ void BackgroundTimer_remove( BackgroundTimer_t* t )
 
     GDrawCancelTimer( t->timer );
     GDrawDestroyWindow( t->w );
-    free(t);
 }
 
 void BackgroundTimer_touch( BackgroundTimer_t* t )

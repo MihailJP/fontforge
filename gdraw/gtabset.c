@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 #include "gdraw.h"
 #include "gresource.h"
 #include "ggadgetP.h"
@@ -404,7 +406,6 @@ static void GTabSet_Remetric(GTabSet *gts) {
     if ( gts->vertical ) {
 	/* Nothing much to do */
     } else if ( gts->scrolled ) {
-	free(gts->rowstarts);
 	gts->rowstarts = malloc(2*sizeof(16));
 	gts->rowstarts[0] = 0; gts->rowstarts[1] = gts->tabcnt;
 	gts->rcnt = 1;
@@ -414,8 +415,7 @@ static void GTabSet_Remetric(GTabSet *gts) {
 	if ( gts->offset_per_row!=0 && r>1 )
 	    while ( (r2 = GTabSetRCnt(gts,width-(r-1)*gts->offset_per_row))!=r )
 		r = r2;
-	free(gts->rowstarts);
-	gts->rowstarts = galloc((r+1)*sizeof(int16));
+	gts->rowstarts = malloc((r+1)*sizeof(int16));
 	gts->rcnt = r;
 	gts->rowstarts[r] = gts->tabcnt;
 	for ( i=r=0; i<gts->tabcnt; ++i ) {
@@ -582,19 +582,8 @@ return( true );
 }
 
 static void gtabset_destroy(GGadget *g) {
-    GTabSet *gts = (GTabSet *) g;
-    int i;
-
-    if ( gts==NULL )
+    if ( g==NULL )
 return;
-    free(gts->rowstarts);
-    for ( i=0; i<gts->tabcnt; ++i ) {
-	free(gts->tabs[i].name);
-/* This has already been done */
-/*	if ( gts->tabs[i].w!=NULL ) */
-/*	    GDrawDestroyWindow(gts->tabs[i].w); */
-    }
-    free(gts->tabs);
     _ggadget_destroy(g);
 }
 
@@ -818,7 +807,7 @@ return( true );
 }
 
 GGadget *GTabSetCreate(struct gwindow *base, GGadgetData *gd,void *data) {
-    GTabSet *gts = gcalloc(1,sizeof(GTabSet));
+    GTabSet *gts = calloc(1,sizeof(GTabSet));
     int i, bp;
     GRect r;
     GWindowAttrs childattrs;
@@ -851,7 +840,7 @@ GGadget *GTabSetCreate(struct gwindow *base, GGadgetData *gd,void *data) {
 
     for ( i=0; gd->u.tabs[i].text!=NULL; ++i );
     gts->tabcnt = i;
-    gts->tabs = galloc(i*sizeof(struct tabs));
+    gts->tabs = malloc(i*sizeof(struct tabs));
     for ( i=0; gd->u.tabs[i].text!=NULL; ++i ) {
 	if ( gd->u.tabs[i].text_in_resource )
 	    gts->tabs[i].name = u_copy(GStringGetResource((intpt) (gd->u.tabs[i].text),NULL));
@@ -971,14 +960,12 @@ void GTabSetChangeTabName(GGadget *g, char *name, int pos) {
     GTabSet *gts = (GTabSet *) g;
 
     if ( pos==gts->tabcnt && gts->nowindow ) {
-	gts->tabs = grealloc(gts->tabs,(pos+1)*sizeof(struct tabs));
+	gts->tabs = realloc(gts->tabs,(pos+1)*sizeof(struct tabs));
 	memset(&gts->tabs[pos],0,sizeof(struct tabs));
 	++gts->tabcnt;
     }
-    if ( pos<gts->tabcnt ) {
-	free(gts->tabs[pos].name);
+    if ( pos<gts->tabcnt )
 	gts->tabs[pos].name = utf82u_copy(name);
-    }
 }
 
 void GTabSetRemetric(GGadget *g) {
@@ -991,7 +978,6 @@ void GTabSetRemoveTabByPos(GGadget *g, int pos) {
     int i;
 
     if ( gts->nowindow && pos>=0 && pos<gts->tabcnt && gts->tabcnt>1 ) {
-	free(gts->tabs[pos].name);
 	for ( i=pos+1; i<gts->tabcnt; ++i )
 	    gts->tabs[i-1] = gts->tabs[i];
 	--gts->tabcnt;
@@ -1014,8 +1000,6 @@ void GTabSetRemoveTabByName(GGadget *g, char *name) {
     break;
 	}
     }
-
-    free(uname);
 }
 
 GResInfo *_GTabSetRIHead(void) {

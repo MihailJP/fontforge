@@ -33,7 +33,7 @@
 #endif
 #include "nonlineartrans.h"
 
-static struct builtins { char *name; enum operator op; } builtins[] = {
+static struct builtins { const char *name; enum operator op; } builtins[] = {
     { "x", op_x },
     { "y", op_y },
     { "log", op_log },
@@ -49,15 +49,6 @@ static struct builtins { char *name; enum operator op; } builtins[] = {
     { "ceil", op_ceil },
     { NULL, 0 }
 };
-
-void nlt_exprfree(struct expr *e) {
-    if ( e==NULL )
-return;
-    nlt_exprfree(e->op1);
-    nlt_exprfree(e->op2);
-    nlt_exprfree(e->op3);
-    chunkfree(e,sizeof(*e));
-}
 
 static int gettoken(struct context *c, real *val) {
     int ch, i;
@@ -185,9 +176,9 @@ static struct expr *gete0(struct context *c) {
     enum operator op = gettoken(c,&val);
     struct expr *ret;
 
-    switch ( op ) {
+    switch ( (int)op ) { /* Cast avoids a warning that '(' in not in enum operator */
       case op_value: case op_x: case op_y:
-	ret = gcalloc(1,sizeof(struct expr));
+	ret = calloc(1,sizeof(struct expr));
 	ret->operator = op;
 	ret->value = val;
 return( ret );
@@ -204,7 +195,7 @@ return(ret );
       case op_atan2:
       case op_abs:
       case op_rint: case op_floor: case op_ceil:
-	ret = gcalloc(1,sizeof(struct expr));
+	ret = calloc(1,sizeof(struct expr));
 	ret->operator = op;
 	op = gettoken(c,&val);
 	if ( op!='(' ) {
@@ -229,14 +220,14 @@ return( ret );
 	/* Just ignore a unary plus */;
 return( gete0(c));
       case op_sub: case op_not:
-	ret = gcalloc(1,sizeof(struct expr));
+	ret = calloc(1,sizeof(struct expr));
 	ret->operator = op;
 	ret->op1 = gete0(c);
 return( ret );
       default:
 	ff_post_error(_("Bad Token"), _("Unexpected token.\nbefore ...%40s") , c->cur );
 	c->had_error = true;
-	ret = gcalloc(1,sizeof(struct expr));
+	ret = calloc(1,sizeof(struct expr));
 	ret->operator = op_value;
 	ret->value = val;
 return( ret );
@@ -251,7 +242,7 @@ static struct expr *gete1(struct context *c) {
     op1 = gete0(c);
     op = gettoken(c,&val);
     while ( op==op_pow ) {
-	ret = gcalloc(1,sizeof(struct expr));
+	ret = calloc(1,sizeof(struct expr));
 	ret->op1 = op1;
 	ret->operator = op;
 	ret->op2 = gete0(c);
@@ -270,7 +261,7 @@ static struct expr *gete2(struct context *c) {
     op1 = gete1(c);
     op = gettoken(c,&val);
     while ( op==op_times || op==op_div || op==op_mod ) {
-	ret = gcalloc(1,sizeof(struct expr));
+	ret = calloc(1,sizeof(struct expr));
 	ret->op1 = op1;
 	ret->operator = op;
 	ret->op2 = gete1(c);
@@ -289,7 +280,7 @@ static struct expr *gete3(struct context *c) {
     op1 = gete2(c);
     op = gettoken(c,&val);
     while ( op==op_add || op==op_sub ) {
-	ret = gcalloc(1,sizeof(struct expr));
+	ret = calloc(1,sizeof(struct expr));
 	ret->op1 = op1;
 	ret->operator = op;
 	ret->op2 = gete2(c);
@@ -308,7 +299,7 @@ static struct expr *gete4(struct context *c) {
     op1 = gete3(c);
     op = gettoken(c,&val);
     while ( op==op_eq || op==op_ne || op==op_lt || op==op_le || op==op_gt || op==op_ge ) {
-	ret = gcalloc(1,sizeof(struct expr));
+	ret = calloc(1,sizeof(struct expr));
 	ret->op1 = op1;
 	ret->operator = op;
 	ret->op2 = gete3(c);
@@ -327,7 +318,7 @@ static struct expr *gete5(struct context *c) {
     op1 = gete4(c);
     op = gettoken(c,&val);
     while ( op==op_and || op==op_or ) {
-	ret = gcalloc(1,sizeof(struct expr));
+	ret = calloc(1,sizeof(struct expr));
 	ret->op1 = op1;
 	ret->operator = op;
 	ret->op2 = gete4(c);
@@ -346,7 +337,7 @@ static struct expr *getexpr(struct context *c) {
     op1 = gete5(c);
     op = gettoken(c,&val);
     if ( op==op_if ) {
-	ret = gcalloc(1,sizeof(struct expr));
+	ret = calloc(1,sizeof(struct expr));
 	ret->op1 = op1;
 	ret->operator = op;
 	ret->op2 = getexpr(c);
@@ -373,11 +364,7 @@ struct expr *nlt_parseexpr(struct context *c,char *str) {
 	c->had_error = true;
 	ff_post_error(_("Bad Token"), _("Unexpected token after expression end.\nbefore ...%40s") , c->cur );
     }
-    if ( c->had_error ) {
-	nlt_exprfree(ret);
-return( NULL );
-    }
-return( ret );
+return ( c->had_error ? NULL : ret );
 }
 
 static real evaluate_expr(struct context *c,struct expr *e) {
@@ -430,6 +417,8 @@ return( rint(val1));
 return( floor(val1));
 	  case op_ceil:
 return( ceil(val1));
+	  default:
+	  break;
 	}
       case op_atan2:
 return( atan2(evaluate_expr(c,e->op1),evaluate_expr(c,e->op2)) );
@@ -564,7 +553,7 @@ static void SplineSetNLTrans(SplineSet *ss,struct context *c,
     /*  curves, curves may become higher order curves (which we still approx */
     /*  imate with cubics) */
 
-    first = last = chunkalloc(sizeof(SplinePoint));
+    first = last = XZALLOC(SplinePoint);
     *first = *ss->first;
     first->hintmask = NULL;
     first->next = first->prev = NULL;
@@ -573,7 +562,7 @@ static void SplineSetNLTrans(SplineSet *ss,struct context *c,
 
     if ( ss->first->next!=NULL ) {
 	for ( sp=ss->first->next->to; sp!=NULL; ) {
-	    next = chunkalloc(sizeof(SplinePoint));
+	    next = XZALLOC(SplinePoint);
 	    *next = *sp;
 	    next->hintmask = NULL;
 	    if ( everything || next->selected )
@@ -618,7 +607,6 @@ static void SplineSetNLTrans(SplineSet *ss,struct context *c,
 	    first->noprevcp = last->noprevcp;
 	    first->prevcpdef = false;
 	    first->prev->to = first;
-	    SplinePointFree(last);
 	    last = first;
 	}
 	for ( next=first ; ; ) {
@@ -697,17 +685,12 @@ int SFNLTrans(FontViewBase *fv,char *x_expr,char *y_expr) {
     struct context c;
 
     memset(&c,0,sizeof(c));
-    if ( (c.x_expr = nlt_parseexpr(&c,x_expr))==NULL )
+    if ( (c.x_expr = nlt_parseexpr(&c,x_expr))==NULL ||
+         (c.y_expr = nlt_parseexpr(&c,y_expr))==NULL )
 return( false );
-    if ( (c.y_expr = nlt_parseexpr(&c,y_expr))==NULL ) {
-	nlt_exprfree(c.x_expr);
-return( false );
-    }
 
     _SFNLTrans(fv,&c);
 
-    nlt_exprfree(c.x_expr);
-    nlt_exprfree(c.y_expr);
 return( true );
 }
 
@@ -715,20 +698,15 @@ int SSNLTrans(SplineSet *ss,char *x_expr,char *y_expr) {
     struct context c;
 
     memset(&c,0,sizeof(c));
-    if ( (c.x_expr = nlt_parseexpr(&c,x_expr))==NULL )
+    if ( (c.x_expr = nlt_parseexpr(&c,x_expr))==NULL ||
+         (c.y_expr = nlt_parseexpr(&c,y_expr))==NULL )
 return( false );
-    if ( (c.y_expr = nlt_parseexpr(&c,y_expr))==NULL ) {
-	nlt_exprfree(c.x_expr);
-return( false );
-    }
 
     while ( ss!=NULL ) {
 	SplineSetNLTrans(ss,&c,false);
 	ss = ss->next;
     }
 
-    nlt_exprfree(c.x_expr);
-    nlt_exprfree(c.y_expr);
 return( true );
 }
 
@@ -736,17 +714,12 @@ int SCNLTrans(SplineChar *sc, int layer,char *x_expr,char *y_expr) {
     struct context c;
 
     memset(&c,0,sizeof(c));
-    if ( (c.x_expr = nlt_parseexpr(&c,x_expr))==NULL )
+    if ( (c.x_expr = nlt_parseexpr(&c,x_expr))==NULL ||
+         (c.y_expr = nlt_parseexpr(&c,y_expr))==NULL )
 return( false );
-    if ( (c.y_expr = nlt_parseexpr(&c,y_expr))==NULL ) {
-	nlt_exprfree(c.x_expr);
-return( false );
-    }
 
     _SCNLTrans(sc,&c,layer);
 
-    nlt_exprfree(c.x_expr);
-    nlt_exprfree(c.y_expr);
 return( true );
 }
 
@@ -859,7 +832,7 @@ void FVPointOfView(FontViewBase *fv,struct pov_data *pov) {
 	    if ( pov->yorigin!=or_value )
 		pov->y = origin.y;
 
-	    MinimumDistancesFree(sc->md); sc->md = NULL;
+	    sc->md = NULL;
 	    if ( sc->parent->multilayer ) {
 		first = ly_fore;
 		last = sc->layer_cnt-1;

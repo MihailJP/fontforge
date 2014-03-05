@@ -1,3 +1,5 @@
+#include <fontforge-config.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -75,11 +77,6 @@ static char *realweights[] = { "Demi", "Bold", "Regular", "Medium", "Book", "Thi
 static char *modifierlist[] = { "Ital", "Obli", "Kursive", "Cursive", "Slanted",
 	"Expa", "Cond", NULL };
 static char **mods[] = { knownweights, modifierlist, NULL };
-#if 0
-static char *modifierlistfull[] = { "Italic", "Oblique", "Kursive", "Cursive",
-    "Expanded", "Condensed", NULL };
-static char **fullmods[] = { realweights, modifierlistfull, NULL };
-#endif
 
 
 static char *GuessFamily(char *fontname) {
@@ -131,13 +128,8 @@ static void readcoords(FILE *file,int is12, int *x, int *y) {
 	ch1 = getc(file);
 	ch2 = getc(file);
 	ch3 = getc(file);
-#if 0
-	ch1 = (ch1<<4)|(ch2>>4);
-	ch2 = ((ch2&0xf)<<8)|ch3;
-#else
 	ch1 = ch1|((ch2&0xf)<<8);
 	ch2 = (ch2>>4)|(ch3<<4);
-#endif
 	*x = (ch1<<(32-12))>>(32-12);		/* Sign extend */
 	*y = (ch2<<(32-12))>>(32-12);		/* Sign extend */
     } else {
@@ -162,7 +154,6 @@ static SplineSet *FinishSet(SplineSet *old,SplineSet *active,int closed) {
 	    active->first->noprevcp = active->last->noprevcp;
 	    active->last->prev->to = active->first;
 	    active->first->prev = active->last->prev;
-	    SplinePointFree(active->last);
 	    active->last = active->first;
 	} else if ( closed ) {
 	    SplineMake3(active->last,active->first);
@@ -184,19 +175,19 @@ static SplineSet *ReadSplineSets(FILE *file,int flags,SplineSet *old,int closed)
 	readcoords(file,flags&1,&x1,&y1);
 	if ( (verb&0x3)==1 ) {		/* Move to */
 	    old = FinishSet(old,active,closed);
-	    active = gcalloc(1,sizeof(SplineSet));
-	    active->first = active->last = gcalloc(1,sizeof(SplinePoint));
+	    active = calloc(1,sizeof(SplineSet));
+	    active->first = active->last = calloc(1,sizeof(SplinePoint));
 	    active->first->me.x = x1; active->first->me.y = y1;
 	    active->first->nextcp = active->first->prevcp = active->first->me;
 	    active->first->nonextcp = active->first->noprevcp = true;
 	} else {
 	    if ( active==NULL ) {
 		fprintf( stderr, "No initial point, assuming 0,0\n" );
-		active = gcalloc(1,sizeof(SplineSet));
-		active->first = active->last = gcalloc(1,sizeof(SplinePoint));
+		active = calloc(1,sizeof(SplineSet));
+		active->first = active->last = calloc(1,sizeof(SplinePoint));
 		active->first->nonextcp = active->first->noprevcp = true;
 	    }
-	    next = gcalloc(1,sizeof(SplinePoint));
+	    next = calloc(1,sizeof(SplinePoint));
 	    if ( (verb&3)==2 ) {		/* Line to */
 		next->me.x = x1; next->me.y = y1;
 		next->nextcp = next->prevcp = next->me;
@@ -250,11 +241,11 @@ return( NULL );
 	sc->vwidth = (outline->yadvance[enc]*(sf->ascent+sf->descent))/1000;
 
     if ( flags&(1<<4) ) {
-	r1 = gcalloc(1,sizeof(RefChar));
+	r1 = calloc(1,sizeof(RefChar));
 	r1->transform[0] = r1->transform[3] = 1;
 	r1->orig_pos = readcharindex(file,flags&(1<<6));
 	if ( flags&(1<<5) ) {
-	    r2 = gcalloc(1,sizeof(RefChar));
+	    r2 = calloc(1,sizeof(RefChar));
 	    r2->transform[0] = r2->transform[3] = 1;
 	    r2->orig_pos = readcharindex(file,flags&(1<<6));
 	    readcoords(file,flags&1,&x,&y);
@@ -284,7 +275,7 @@ return(sc);
     }
     if ( verb!=EOF && verb&(1<<3)) {
 	while ( (ch=readcharindex(file,flags&(1<<6)))!=0 && !feof(file)) {
-	    r1 = gcalloc(1,sizeof(RefChar));
+	    r1 = calloc(1,sizeof(RefChar));
 	    r1->transform[0] = r1->transform[3] = 1;
 	    r1->orig_pos = ch;
 	    readcoords(file,flags&1,&x,&y);
@@ -460,7 +451,6 @@ static int dirfind(char *dir, char *pattern,char *buffer) {
 	    *pt = '\0';
 	    ret = dirmatch(space,pattern,buffer);
 	}
-	free( space );
     }
     if ( ret==-1 )
 	ret = 0;
@@ -488,7 +478,6 @@ static void ReadIntmetrics(char *dir, struct Outlines *outline) {
 	file = fopen(filename,"rb");
     if ( file==NULL ) {
 	fprintf(stderr,"Couldn't open %s (for advance width data)\n  Oh well, advance widths will all be wrong.\n", filename );
-	free(filename);
 return;
     }
     for ( i=0; i<40; ++i ) {
@@ -508,7 +497,7 @@ return;
     else
 	m = 256;
     if ( m!=0 ) {
-	mapping = galloc(m);
+	mapping = malloc(m);
 	for ( i=0; i<m; ++i )
 	    mapping[i] = getc(file);
 	outline->metrics_n = m;
@@ -520,29 +509,27 @@ return;
 	    r_getshort(file);
     }
     if ( !(flags&2) ) {
-	widths = galloc(n*sizeof(int));
+	widths = malloc(n*sizeof(int));
 	for ( i=0; i<n; ++i )
 	    widths[i] = r_getshort(file);
 	if ( mapping==0 )
 	    outline->xadvance = widths;
 	else {
-	    outline->xadvance = gcalloc(outline->metrics_n,sizeof(int));
+	    outline->xadvance = calloc(outline->metrics_n,sizeof(int));
 	    for ( i=0; i<m; ++i )
 		outline->xadvance[i] = widths[mapping[i]];
-	    free(widths);
 	}
     }
     if ( !(flags&4) ) {
-	widths = galloc(n*sizeof(int));
+	widths = malloc(n*sizeof(int));
 	for ( i=0; i<n; ++i )
 	    widths[i] = r_getshort(file);
 	if ( mapping==0 )
 	    outline->yadvance = widths;
 	else {
-	    outline->yadvance = gcalloc(outline->metrics_n,sizeof(int));
+	    outline->yadvance = calloc(outline->metrics_n,sizeof(int));
 	    for ( i=0; i<m; ++i )
 		outline->yadvance[i] = widths[mapping[i]];
-	    free(widths);
 	}
     }
 
@@ -562,13 +549,13 @@ return;
 	}
 	if ( kern_offset!=0 && !feof(file) && outline->metrics_n!=0 ) {
 	    fseek(file,kern_offset+table_base,SEEK_SET);
-	    outline->kerns = gcalloc(outline->metrics_n,sizeof(struct r_kern *));
+	    outline->kerns = calloc(outline->metrics_n,sizeof(struct r_kern *));
 	    if ( flags&(1<<6) ) {
 		/* 16 bit */
 		while ( (left=r_getshort(file))!=0 && !feof(file)) {
 		    while ( (right=r_getshort(file))!=0 ) {
 			if ( !(flags&2) && !feof(file)) {
-			    kern = galloc(sizeof(struct r_kern));
+			    kern = malloc(sizeof(struct r_kern));
 			    kern->amount = r_getshort(file);
 			    kern->right = right;
 			    kern->next = outline->kerns[left];
@@ -582,7 +569,7 @@ return;
 		while ( (left=getc(file))!=0 && !feof(file)) {
 		    while ( (right=getc(file))!=0 && !feof(file)) {
 			if ( !(flags&2) ) {
-			    kern = galloc(sizeof(struct r_kern));
+			    kern = malloc(sizeof(struct r_kern));
 			    kern->amount = r_getshort(file);
 			    kern->right = right;
 			    kern->next = outline->kerns[left];
@@ -615,7 +602,7 @@ return;
     for ( i=0; i<outline->metrics_n; ++i ) {
 	gid1 = sf->map->map[i];
 	for ( kern = outline->kerns[i]; kern!=NULL; kern=kern->next ) {
-	    kp = gcalloc(1,sizeof(KernPair));
+	    kp = calloc(1,sizeof(KernPair));
 	    kp->off = em*kern->amount/1000;
 	    kp->subtable = subtable;
 	    gid2 = sf->map->map[kern->right];
@@ -645,7 +632,6 @@ return;
 		sc->layers[ly_fore].refs = next;
 	    else
 		prev->next = next;
-	    free(rf);
 	} else {
 	    rf->orig_pos = gid;
 	    rf->sc = sf->glyphs[gid];
@@ -669,20 +655,18 @@ static void FindEncoding(SplineFont *sf,char *filename) {
     pt = strrchr(filename,'/');
     if ( pt!=NULL )
 	*pt = '\0';
-    otherdir = galloc(strlen(filename)+strlen("/../Encodings")+5);
+    otherdir = malloc(strlen(filename)+strlen("/../Encodings")+5);
     strcpy(otherdir,filename);
     strcat(otherdir,"/../Encodings");
-    encfilename = galloc(strlen(otherdir)+strlen("base0encoding")+20);
+    encfilename = malloc(strlen(otherdir)+strlen("base0encoding")+20);
 
     if ( dirfind(otherdir, pattern,encfilename) )
 	file = fopen(encfilename,"r");
     else if ( dirfind(filename, pattern,encfilename) )
 	file = fopen(encfilename,"r");
-    free(otherdir);
 
     if ( file==NULL ) {
 	fprintf(stderr,"Couldn't open %s\n", encfilename );
-	free(encfilename);
 return;
     }
 
@@ -695,7 +679,6 @@ return;
 	    if ( *pt=='/' ) {
 		for ( end = ++pt; !isspace(*end) && *end!='\0'; ++end );
 		if ( (gid=sf->map->map[pos])!=-1 && sf->glyphs[gid]!=NULL ) {
-		    free(sf->glyphs[gid]->name);
 		    sf->glyphs[gid]->name = copyn(pt,end-pt);
 		    sf->glyphs[gid]->unicodeenc = UniFromName(sf->glyphs[gid]->name,ui_none,&custom);
 		}
@@ -705,7 +688,6 @@ return;
 	break;
 	}
     }
-    free(encfilename);
     fclose(file);
 }
 
@@ -720,14 +702,12 @@ static SplineFont *ReadOutline(char *dir) {
 	file = fopen(filename,"rb");
     if ( file==NULL ) {
 	fprintf(stderr,"Couldn't open %s\n", filename );
-	free(filename);
 return( NULL );
     }
 
     if ( getc(file)!='F' || getc(file)!='O' || getc(file)!='N' || getc(file)!='T' ||
 	    getc(file)!='\0') {	/* Final null means outline font */
 	fprintf(stderr, "%s is not an acorn risc outline font file\n", filename );
-	free(filename);
 	fclose(file);
 return( NULL );
     }
@@ -789,16 +769,6 @@ return( NULL );
     /* Docs say that the word "Outlines" appears here, followed by a nul */
     /* That appears to be a lie. We seem to get a random comment */
     /* or perhaps a copyright notice */
-#if 0
-    if ( strcmp(buffer,"Outlines")!=0 ) {
-	fprintf( stderr, "Outlines keyword missing after fontname in %s\n", filename );
-	free(filename);
-	free(outline.chunk_offset);
-	free(outline.fontname);
-	fclose(file);
-return( NULL );
-    }
-#endif
     if ( outline.metrics_fontname!=NULL &&
 	    strmatch(outline.fontname,outline.metrics_fontname)!=0 )
 	fprintf( stderr, "Warning: Fontname in metrics (%s) and fontname in outline (%s)\n do not match.\n", outline.metrics_fontname, outline.fontname );
@@ -809,12 +779,12 @@ return( NULL );
     outline.sf = SplineFontEmpty();
     outline.sf->glyphmax = outline.metrics_n;
     outline.sf->glyphcnt = 0;
-    outline.sf->glyphs = gcalloc(outline.sf->glyphmax,sizeof(SplineChar *));
-    outline.sf->map = gcalloc(1,sizeof(EncMap));
+    outline.sf->glyphs = calloc(outline.sf->glyphmax,sizeof(SplineChar *));
+    outline.sf->map = calloc(1,sizeof(EncMap));
     outline.sf->map->enc = &custom;
     outline.sf->map->encmax = outline.sf->map->enccount = outline.sf->map->backmax = outline.sf->glyphmax;
-    outline.sf->map->map = galloc(outline.sf->glyphmax*sizeof(int32));
-    outline.sf->map->backmap = galloc(outline.sf->glyphmax*sizeof(int32));
+    outline.sf->map->map = malloc(outline.sf->glyphmax*sizeof(int32));
+    outline.sf->map->backmap = malloc(outline.sf->glyphmax*sizeof(int32));
     memset(outline.sf->map->map,-1,outline.sf->glyphmax*sizeof(int32));
     memset(outline.sf->map->backmap,-1,outline.sf->glyphmax*sizeof(int32));
     outline.sf->for_new_glyphs = namelist_for_new_fonts;
@@ -850,7 +820,6 @@ return( NULL );
     if ( isdigit(filename[strlen(filename)-1]) )
 	FindEncoding(outline.sf,filename);
 
-    free(filename);
     fclose(file);
 
     if ( !SFDWrite(outline.sf->filename,outline.sf,outline.sf->map,NULL,false) )

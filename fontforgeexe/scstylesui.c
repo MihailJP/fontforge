@@ -45,9 +45,6 @@ static void CVCondenseExtend(CharView *cv,struct counterinfo *ci) {
 return;
 
     SCCondenseExtend(ci, sc, CVLayer((CharViewBase *) cv),true);
-
-    free( ci->zones[0]);
-    free( ci->zones[1]);
 }
 
 typedef struct styledlg {
@@ -512,7 +509,6 @@ return( true );
 	    genchange.glyph_extension = GGadgetGetTitle8(GWidgetGetControl(ew,CID_Extension));
 	    if ( *genchange.glyph_extension=='\0' ) {
 		ff_post_error(_("Missing glyph extension"),_("You must specify a glyph extension"));
-		free(genchange.glyph_extension);
 return( true );
 	    }
 	    genchange.vertical_offset = GetReal8(ew,CID_VerticalOff,_("Vertical Offset"),&err);
@@ -524,8 +520,6 @@ return( true );
 	    genchange.extension_for_letters = GGadgetGetTitle8(GWidgetGetControl(ew,CID_Letter_Ext));
 	    genchange.extension_for_symbols = GGadgetGetTitle8(GWidgetGetControl(ew,CID_Symbol_Ext));
 	    if ( *genchange.extension_for_letters=='\0' || (*genchange.extension_for_symbols=='\0' && genchange.do_smallcap_symbols )) {
-		free( genchange.extension_for_letters );
-		free( genchange.extension_for_symbols );
 		ff_post_error(_("Missing extension"),_("You must provide a glyph extension"));
 return( true );
 	    }
@@ -564,7 +558,7 @@ return( true );
 	    if ( err )
 return( true );
 	    genchange.m.cnt = rows;
-	    genchange.m.maps = galloc(rows*sizeof(struct position_maps));
+	    genchange.m.maps = malloc(rows*sizeof(struct position_maps));
 	    for ( i=0; i<rows; ++i ) {
 		genchange.m.maps[i].current   = mappings[cols*i+0].u.md_real;
 		genchange.m.maps[i].desired   = mappings[cols*i+2].u.md_real;
@@ -591,10 +585,6 @@ return( true );
 	    FVGenericChange( (FontViewBase *) ed->fv, &genchange );
 	else
 	    CVGenericChange( (CharViewBase *) ed->cv, &genchange );
-	free(genchange.glyph_extension);
-	free(genchange.m.maps);
-	free( genchange.extension_for_letters );
-	free( genchange.extension_for_symbols );
 	ed->done = true;
     }
 return( true );
@@ -805,7 +795,7 @@ static void MappingMatrixInit(struct matrixinit *mi,SplineFont *sf,
 
     if ( (b>1 && (b&1)==0) || (o>1 && (o&1)==0)) {
 	b>>=1; o>>=1;
-	md = gcalloc(3*(b+o),sizeof(struct matrix_data));
+	md = calloc(3*(b+o),sizeof(struct matrix_data));
 	mi->initial_row_cnt = b+o;
 	mi->matrix_data = md;
 
@@ -825,7 +815,7 @@ static void MappingMatrixInit(struct matrixinit *mi,SplineFont *sf,
 	    md[3*(i+j)+2].u.md_real = rint(scale*md[3*(i+j)+0].u.md_real);
 	}
     } else if ( xheight==0 && capheight==0 ) {
-	md = gcalloc(3,sizeof(struct matrix_data));
+	md = calloc(3,sizeof(struct matrix_data));
 	mi->initial_row_cnt = 1;
 	mi->matrix_data = md;
     } else {
@@ -834,7 +824,7 @@ static void MappingMatrixInit(struct matrixinit *mi,SplineFont *sf,
 	    ++cnt;
 	if ( capheight!=0 )
 	    ++cnt;
-	md = gcalloc(3*cnt,sizeof(struct matrix_data));
+	md = calloc(3*cnt,sizeof(struct matrix_data));
 	mi->initial_row_cnt = cnt;
 	mi->matrix_data = md;
 	md[3*0+1].u.md_real = -1;
@@ -2297,7 +2287,6 @@ void ObliqueDlg(FontView *fv, CharView *cv) {
 return;
     temp = strtod(ret,&end);
     if ( *end || temp>90 || temp<-90 ) {
-	free(ret);
 	ff_post_error( _("Bad Number"),_("Bad Number") );
 return;
     }

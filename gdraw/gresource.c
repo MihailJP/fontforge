@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -42,9 +44,9 @@ char *GResourceProgramName, *GResourceFullProgram, *GResourceProgramDir;
 char *usercharset_names;
 /* int local_encoding = e_iso8859_1;*/
 
-static int rcur, rmax=0;
+static int rcur=0, rmax=0;
 static int rbase = 0, rsummit=0, rskiplen=0;	/* when restricting a search */
-struct _GResource_Res *_GResource_Res;
+struct _GResource_Res *_GResource_Res = NULL;
 
 static int rcompar(const void *_r1,const void *_r2) {
     const struct _GResource_Res *r1 = _r1, *r2 = _r2;
@@ -58,7 +60,7 @@ int _GResource_FindResName(char *name) {
     if ( rcur==0 )
 return( -1 );
 
-    forever {
+    for (;;) {
 	if ( top==bottom )
 return( -1 );
 	test = (top+bottom)/2;
@@ -89,7 +91,7 @@ return( -1 );
 
     plen = strlen(prefix);
 
-    forever {
+    for (;;) {
 	test = (top+bottom)/2;
 	cmp = strncmp(prefix,_GResource_Res[test].res,plen);
 	if ( cmp==0 )
@@ -106,7 +108,7 @@ return( -1 );
     /* at this point the resource at test begins with the prefix */
     /* we want to find the first and last resources that do */
     oldtop = top; oldtest = top = test;		/* find the first resource */
-    forever {
+    for (;;) {
 	test = (top+bottom)/2;
 	cmp = strncmp(prefix,_GResource_Res[test].res,plen);
 	if ( cmp<0 ) {
@@ -129,7 +131,7 @@ return( -1 );
     top = oldtop; bottom = oldtest+1;		/* find the last resource */
     if ( bottom == top )
 	test = top;
-    else forever {
+    else for (;;) {
 	test = (top+bottom)/2;
 	cmp = strncmp(prefix,_GResource_Res[test].res,plen);
 	if ( cmp>0 ) {
@@ -159,7 +161,6 @@ void GResourceSetProg(char *prog) {
     if ( prog!=NULL ) {
 	if ( GResourceProgramName!=NULL && strcmp(prog,GResourceProgramName)==0 )
 return;
-	gfree(GResourceProgramName);
 	if (( pt=strrchr(prog,'/'))!=NULL )
 	    ++pt;
 	else
@@ -170,13 +171,11 @@ return;
     else
 return;
 
-    gfree(GResourceProgramDir);
     GResourceProgramDir = _GFile_find_program_dir(prog);
     if ( GResourceProgramDir==NULL ) {
 	GFileGetAbsoluteName(".",filename,sizeof(filename));
 	GResourceProgramDir = copy(filename);
     }
-    gfree(GResourceFullProgram);
     GResourceFullProgram = copy(
 	    GFileBuildName(GResourceProgramDir,GResourceProgramName,filename,sizeof(filename)));
 }
@@ -209,10 +208,7 @@ return;
 
     if ( rcur+cnt>=rmax ) {
 	if ( cnt<10 ) cnt = 10;
-	if ( rmax==0 )
-	    _GResource_Res = galloc(cnt*sizeof(struct _GResource_Res));
-	else
-	    _GResource_Res = grealloc(_GResource_Res,(rcur+cnt)*sizeof(struct _GResource_Res));
+	_GResource_Res = realloc(_GResource_Res,(rcur+cnt)*sizeof(struct _GResource_Res));
 	rmax += cnt;
     }
 
@@ -255,13 +251,10 @@ return;
 	for ( k=i+1; k<rcur && strcmp(_GResource_Res[j].res,_GResource_Res[k].res)==0; ++k ) {
 	    if (( !_GResource_Res[k].generic && (_GResource_Res[i].generic || _GResource_Res[i+1].new)) ||
 		    (_GResource_Res[k].generic && _GResource_Res[i].generic && _GResource_Res[i+1].new)) {
-		gfree(_GResource_Res[j].res); gfree(_GResource_Res[j].val);
 		_GResource_Res[i].res=NULL;
 		_GResource_Res[j] = _GResource_Res[k];
-	    } else {
-		gfree(_GResource_Res[k].res); gfree(_GResource_Res[k].val);
+	    } else
 		_GResource_Res[k].res=NULL;
-	    }
 	}
 	i = k; ++j;
     }

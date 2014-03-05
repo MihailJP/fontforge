@@ -342,9 +342,6 @@ typedef int (*GFileChooserInputFilenameFuncType)( GGadget *g,
 #define _NUM_ScaleFactor	1
 #define __NUM_LastStd		1
 
-extern void GTextInfoFree(GTextInfo *ti);
-extern void GTextInfoListFree(GTextInfo *ti);
-extern void GTextInfoArrayFree(GTextInfo **ti);
 extern GTextInfo **GTextInfoFromChars(char **array, int len);
 extern const unichar_t *GStringGetResource(int index,unichar_t *mnemonic);
 extern int GGadgetScale(int xpos);
@@ -534,8 +531,7 @@ GWindow GDrawableGetWindow(GGadget *g);
 
 extern void GGadgetPreparePopupImage(GWindow base,const unichar_t *msg,
 	const void *data,
-	GImage *(*get_image)(const void *data),
-	void (*free_image)(const void *data,GImage *img));
+	GImage *(*get_image)(const void *data));
 extern void GGadgetPreparePopup(GWindow base,const unichar_t *msg);
 extern void GGadgetPreparePopupR(GWindow base,int msg);
 extern void GGadgetPreparePopup8(GWindow base,char *msg);
@@ -604,7 +600,7 @@ GResImage *GGadgetResourceFindImage(char *name, GImage *def);
 void GGadgetSetImageDir(char *dir);
 void GGadgetSetImagePath(char *path);
 GImage *GGadgetImageCache(char *filename);
-int TryGGadgetImageCache(GImage *image, char *name);
+int TryGGadgetImageCache(GImage *image, const char *name);
 
 extern unichar_t *utf82u_mncopy(const char *utf8buf,unichar_t *mn);
 
@@ -622,8 +618,6 @@ extern int GGadgetUndoMacEnglishOptionCombinations(GEvent *event);
 /* Among other things, this routine sets global icon cache up. */
 extern void GGadgetInit(void);
 extern int GGadgetWithin(GGadget *g, int x, int y);
-extern void GMenuItemArrayFree(GMenuItem *mi);
-extern void GMenuItem2ArrayFree(GMenuItem2 *mi);
 extern GMenuItem *GMenuItemArrayCopy(GMenuItem *mi, uint16 *cnt);
 extern GMenuItem *GMenuItem2ArrayCopy(GMenuItem2 *mi, uint16 *cnt);
 

@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 #include "fontP.h"
 #include "utype.h"
 #include "ustring.h"
@@ -131,15 +133,6 @@ return( em_uplane0+u_strtol(pt+1,NULL,10) );
     } else if ( uc_strstrmatch(setname,"unicode")!=NULL )
 return( em_unicode );
 
-#if 0
-    if ( uc_strstrmatch(setname,"ascii")!=NULL ||
-	    ( uc_strstrmatch(setname,"iso")!=NULL && uc_strstrmatch(setname,"646")!=NULL )) {
-	char *lang = getenv( "LANG" );
-	if ( lang==NULL || *lang=='\0' || (*lang=='e' && *lang=='n' ))
-return( em_iso8859_1 );		/* ascii can masquarade as iso8859-1 for english speakers (no accents needed) */
-    }
-#endif
-
     if ( uc_strstrmatch(setname,"iso")!=NULL && uc_strstrmatch(setname,"8859")!=NULL ) {
 	pt = uc_strstrmatch(setname,"8859");
 	pt += 4;
@@ -222,12 +215,10 @@ return( em_win );
 return( em_user );
 
 /* !!! Encodings used for postscript japanese fonts, which I don't understand */
-#if 0
-    if ( uc_strstrmatch(setname,"RJSJ")!=NULL )
-return( em_sjis );
-    if ( uc_strstrmatch(setname,"EUC")!=NULL )
-return( em_euc );
-#endif
+/*     if ( uc_strstrmatch(setname,"RJSJ")!=NULL ) */
+/* return( em_sjis ); */
+/*     if ( uc_strstrmatch(setname,"EUC")!=NULL ) */
+/* return( em_euc ); */
 
 return( em_none );
 }
@@ -312,7 +303,7 @@ struct font_name *_GDraw_HashFontFamily(FState *fonts,unichar_t *name, int prop)
 	fn = fn->next;
     }
     if ( fn==NULL ) {
-	fn = gcalloc(1,sizeof(struct font_name));
+	fn = calloc(1,sizeof(struct font_name));
 	fn->family_name = u_copy(name);
 	fn->ft = _GDraw_ClassifyFontName(fn->family_name,&b,&i);
 	if ( !prop && fn->ft==ft_unknown )
@@ -321,13 +312,5 @@ struct font_name *_GDraw_HashFontFamily(FState *fonts,unichar_t *name, int prop)
 	fonts->font_names[ch] = fn;
     }
 return( fn );
-}
-
-void _GDraw_FreeFD(struct font_data *fd) {
-    gfree(fd->charmap_name);
-    gfree(fd->localname);
-    gfree(fd->fontfile);
-    gfree(fd->metricsfile);
-    gfree(fd);
 }
 

@@ -34,7 +34,6 @@
 
 #if defined(__MINGW32__)
 void* GIO_dispatch(GIOControl* gc) { return 0;}
-void GIO_cancel(GIOControl* gc) {}
 void GIO_init(void* handle, struct stdfuncs* _stdfuncs, int index) {}
 void GIO_term(void) {}
 #else
@@ -211,7 +210,7 @@ static GDirEntry *parsedosdir(char *line, GDirEntry *last, int tzdiff) {
     struct tm when;
     char *pt, *end;
 
-    cur = gcalloc(1,sizeof(GDirEntry));
+    cur = calloc(1,sizeof(GDirEntry));
     cur->hasdir = 1;
     cur->hasexe = 0;
     cur->haslnk = 0;
@@ -275,7 +274,7 @@ drwxr-xr-x   7 1            512 Jul 19 22:12 Apple_Support_Area
     if ( strncmp(line,"total ",6)==0 && strtol(line+6,&end,10)>=0 && *end=='\0' )
 return( last );
 
-    cur = gcalloc(1,sizeof(GDirEntry));
+    cur = calloc(1,sizeof(GDirEntry));
     cur->hasdir = 1;
     cur->hasexe = 1;
     cur->haslnk = 1;
@@ -364,7 +363,7 @@ static GDirEntry *parseunix_Fdir(char *line, GDirEntry *last, int tzdiff) {
     GDirEntry *cur;
     char *pt;
 
-    cur = gcalloc(1,sizeof(GDirEntry));
+    cur = calloc(1,sizeof(GDirEntry));
     cur->hasdir = 1;
     cur->hasexe = 1;
     cur->haslnk = 1;
@@ -456,27 +455,23 @@ static int ftpgetdir(GIOControl *gc,int ctl,char *dirname,int tzdiff) {
     sprintf( buf, "CWD %s\r\n", dirname);
     if ( (ret=ftpsendr(gc,ctl,buf))<= 0 ) {
 	/* if we can't cd to it, we can't look at it */
-	free(buf); free(line);
 	if ( ret==0 ) gc->return_code = 401;		/* Unauthorized */
 return( ret );
     }
-    if ( (ret = ftpsendpassive(gc,ctl,&data_addr))<= 0 ) {
-	free(buf); free(line);
+    if ( (ret = ftpsendpassive(gc,ctl,&data_addr))<= 0 )
 return( ret );
-    }
     if (( data = socket(PF_INET,SOCK_STREAM,IPPROTO_TCP))==-1 ||
 	    setnopipe(data)==-1 ||
 	    connect(data,(struct sockaddr *) &data_addr,sizeof(data_addr))== -1 ) {
 	if ( data!=-1 )
 	    close(data);
-	free(buf); free(line);
 	gc->return_code = 602;
 	uc_strcpy(gc->status,"FTP Data Connect failed" );
 return( 0 );
     }
 
     if ( (ret = ftpsendr(gc,ctl,"LIST\r\n"))<=0 ) {
-	close(data); free(buf); free(line);
+	close(data);
 return( ret );
     }
 
@@ -491,14 +486,14 @@ return( ret );
 	    if (( ret = select(data+1,&rds,NULL,NULL,&tv))<0 ) {
 		if ( errno==EINTR )
   goto restart;
-		close(data); free(buf); free(line);
+		close(data);
 		(stdfuncs->FreeDirEntries)(last);
 		uc_strcpy(gc->status, "Connection closed by foreign host");
 		gc->return_code = 600;
 return( -1 );
 	    } else if ( gc->abort ) {
 		(stdfuncs->FreeDirEntries)(last);
-		close(data); free(buf); free(line);
+		close(data);
 return( -1 );
 	    } else if ( ret>0 )
 	break;
@@ -506,7 +501,7 @@ return( -1 );
 	}
 	if ( ret==0 ) {
 	    (stdfuncs->FreeDirEntries)(last);
-	    close(data); free(buf); free(line);
+	    close(data);
 	    uc_strcpy(gc->status, "Connection timed out");
 	    gc->return_code = 601;
 return( -1 );
@@ -539,14 +534,12 @@ return( -1 );
     close(data);
     if ( len==-1 ) {
 	(stdfuncs->FreeDirEntries)(last);
-	free(buf); free(line);
 return( -1 );
     }
     getresponse(gc,ctl);
     gc->done = true;
     gc->iodata = head;
     gc->direntrydata = true;
-    free(buf); free(line);
 return( 1 );
 }
 
@@ -611,14 +604,14 @@ void *GIO_dispatch(GIOControl *gc) {
 	set_status(gc,"Bad Hostname: ",host);
 	(stdfuncs->PostError)(gc);
     } else {
-	ftp = gcalloc(1,sizeof(struct ftpconnectiondata));
+	ftp = calloc(1,sizeof(struct ftpconnectiondata));
 	gc->connectiondata = (struct gio_connectiondata *) ftp;
 	pthread_mutex_lock(&stdfuncs->hostacccess_mutex);
 	for ( had=(struct ftphostaccessdata *) (addr->had); had!=NULL &&
 		(had->port!=port || had->protocol_index!=ftp_protocol_index);
 		had=had->next );
 	if ( had==NULL ) {
-	    had = gcalloc(1,sizeof(struct ftphostaccessdata));
+	    had = calloc(1,sizeof(struct ftphostaccessdata));
 	    had->port = port;
 	    had->protocol_index = ftp_protocol_index;
 	    had->tzoff = -9999;
@@ -660,11 +653,6 @@ void *GIO_dispatch(GIOControl *gc) {
   goto leave;
 	}
 	temppath = path;
-#if 0
-	temppath = path+1;
-	if ( *temppath=='\0' )
-	    temppath = ".";
-#endif
 	switch ( gc->gf ) {
 	  case gf_dir:
 	    ret = ftpgetdir(gc,ctl,temppath,tzoff);
@@ -672,14 +660,6 @@ void *GIO_dispatch(GIOControl *gc) {
 	  case gf_statfile:
 	    ret = ftpgetdir(gc,ctl,temppath,tzoff);
 	  break;
-#if 0
-	  case gf_getfile:
-	    ret = ftpgetfile(gc,ctl,temppath);
-	  break;
-	  case gf_putfile:
-	    ret = ftpputfile(gc,ctl,temppath);
-	  break;
-#endif
 	  case gf_mkdir:
 	    ret = ftpmkdir(gc,ctl,temppath);
 	  break;
@@ -693,7 +673,6 @@ void *GIO_dispatch(GIOControl *gc) {
 	    char *topath, *tohost, *tousername, *topassword; int toport;
 	    topath = (stdfuncs->decomposeURL)(gc->topath,&tohost,&toport,&tousername,&topassword);
 	    ret = ftprenamefile(gc,ctl,path,topath);
-	    free(topath); free(tohost); free(tousername); free(topassword);
 	  } break;
 	}
     }
@@ -701,20 +680,12 @@ void *GIO_dispatch(GIOControl *gc) {
   goto leave;
     (stdfuncs->PostSuccess)(gc);
     if ( ctl!=-1 ) close(ctl);
-    free(path);
-    free(host); free(username); free(password);
 return( NULL );
   leave:
     gc->done = true;
     (stdfuncs->PostError)(gc);
     if ( ctl!=-1 ) close(ctl);
-    free(path);
-    free(host); free(username); free(password);
 return( NULL );
-}
-
-void GIO_cancel(GIOControl *gc) {
-    free(gc->connectiondata);
 }
 
 void GIO_init(void *handle,struct stdfuncs *_stdfuncs,int index) {

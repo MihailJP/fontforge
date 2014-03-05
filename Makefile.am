@@ -27,6 +27,17 @@
 
 ACLOCAL_AMFLAGS = -I m4
 
+# Ignore files installed by gnulib-tool
+GITIGNOREFILES = \
+	.gitmodules \
+	INSTALL \
+	aclocal.m4 \
+	config/ \
+	gnulib/ \
+	lib/ \
+	libltdl/
+
+
 #--------------------------------------------------------------------------
 
 AM_CPPFLAGS =
@@ -36,6 +47,8 @@ BUILT_SOURCES =
 EXTRA_DIST =
 CLEANFILES =
 MOSTLYCLEANFILES =
+MAINTAINERCLEANFILES=config.h.in
+DISTCLEANFILES=config.h stamp-h1
 
 include_HEADERS =
 noinst_LTLIBRARIES =
@@ -46,7 +59,7 @@ include $(top_srcdir)/mk/layout.am
 
 #--------------------------------------------------------------------------
 
-SUBDIRS = inc libltdl Unicode gutils
+SUBDIRS = inc lib libltdl Unicode gutils
 
 if LIBZMQ
 SUBDIRS += collab
@@ -58,11 +71,7 @@ if GRAPHICAL_USER_INTERFACE
 SUBDIRS += gdraw
 endif GRAPHICAL_USER_INTERFACE
 
-SUBDIRS += fontforgeexe
-
-if PYTHON_EXTENSION
-SUBDIRS += pyhook
-endif PYTHON_EXTENSION
+SUBDIRS += fontforgeexe pyhook
 
 if MACINTOSH
 SUBDIRS += mackeys osx
@@ -88,12 +97,18 @@ SUBDIRS += \
 nodist_pkgconfig_DATA = libfontforge.pc libfontforgeexe.pc
 
 EXTRA_DIST += \
+	m4/gnulib-cache.m4 \
+	bootstrap \
+	bootstrap.conf \
+	COPYING.gplv3 \
 	LICENSE \
 	doc/README-Mac.html \
 	doc/README-MS.html \
 	doc/README-unix	\
 	doc/README-Unix.html \
-	doc/Readme.VMS \
+	Packaging/FontForge-doc.spec \
+	Packaging/FontForge.spec \
+	Packaging/FontForge.static.spec \
 	$(NULL)
 
 #--------------------------------------------------------------------------

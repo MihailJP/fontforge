@@ -68,7 +68,6 @@ return;
 	    putc('0',eps);
 	putc('\n',eps);
     }
-    BDFCharFree(bdfc);
     fprintf(eps,"%%%%EndPreview\n" );
 }
 
@@ -151,7 +150,7 @@ int _ExportPDF(FILE *pdf,SplineChar *sc,int layer) {
     struct tm *tm;
     int ret;
     char oldloc[24];
-    int _objlocs[8], xrefloc, streamstart, streamlength, resid, nextobj;
+    int _objlocs[8], xrefloc, streamstart, streamlength, resid = 0, nextobj;
     int *objlocs = _objlocs;
     const char *author = GetAuthor();
     int i;
@@ -214,9 +213,6 @@ int _ExportPDF(FILE *pdf,SplineChar *sc,int layer) {
     fprintf( pdf, "    /CreationDate (D:%04d%02d%02d%02d%02d%02d",
 	    1900+tm->tm_year, tm->tm_mon+1, tm->tm_mday,
 	    tm->tm_hour, tm->tm_min, tm->tm_sec );
-#ifdef _NO_TZSET
-    fprintf( pdf, "Z)\n" );
-#else
     tzset();
     if ( timezone==0 )
 	fprintf( pdf, "Z)\n" );
@@ -227,7 +223,6 @@ int _ExportPDF(FILE *pdf,SplineChar *sc,int layer) {
 	    fprintf( pdf, "+" );
 	fprintf( pdf, "%02d'%02d')\n", (int)(timezone/3600),(int)(timezone/60-(timezone/3600)*60) );
     }
-#endif
     fprintf( pdf, "    /Title (%s from %s)\n", sc->name, sc->parent->fontname );
     if ( author!=NULL )
 	fprintf( pdf, "    /Author (%s)\n", author );
@@ -240,7 +235,7 @@ int _ExportPDF(FILE *pdf,SplineChar *sc,int layer) {
 	memset(&pi,0,sizeof(pi));
 	pi.out = pdf;
 	pi.max_object = 100;
-	pi.object_offsets = galloc(pi.max_object*sizeof(int));
+	pi.object_offsets = malloc(pi.max_object*sizeof(int));
 	memcpy(pi.object_offsets,objlocs,nextobj*sizeof(int));
 	pi.next_object = nextobj;
 	resobj = PdfDumpGlyphResources(&pi,sc);
@@ -266,9 +261,6 @@ int _ExportPDF(FILE *pdf,SplineChar *sc,int layer) {
     fprintf( pdf, "startxref\n" );
     fprintf( pdf, "%d\n", (int) xrefloc );
     fprintf( pdf, "%%%%EOF\n" );
-
-    if ( objlocs!=_objlocs )
-	free(objlocs);
 
     ret = !ferror(pdf);
     setlocale(LC_NUMERIC,oldloc);
@@ -323,8 +315,6 @@ int _ExportPlate(FILE *plate,SplineChar *sc,int layer) {
 	    }
 	    if ( ss->first->prev!=NULL )
 		fprintf( plate, "  (z)\n" );
-	    if ( spiros!=ss->spiros )
-		free(spiros);
 	}
     }
     fprintf(plate, ")\n");
@@ -536,17 +526,14 @@ int ExportImage(char *filename,SplineChar *sc, int layer, int format, int pixels
 	base.trans = -1;
 	if ( format==0 )
 	    ret = !GImageWriteXbm(&gi,filename);
-#ifndef _NO_LIBPNG
 	else if ( format==2 )
 	    ret = GImageWritePng(&gi,filename,false);
-#endif
 	else if ( format==3 )
 	    ret = !GImageWriteXpm(&gi,filename);
 	else if ( format==4 )
 	    ret = !GImageWriteGImage(&gi,filename);
 	else
 	    ret = GImageWriteBmp(&gi,filename);
-	BDFCharFree(bdfc);
     } else {
 	if ( (freetypecontext = FreeTypeFontContext(sc->parent,sc,NULL,layer))==NULL )
 	    bdfc = SplineCharAntiAlias(sc,pixelsize,layer,(1<<(bitsperpixel/2)));
@@ -574,13 +561,10 @@ int ExportImage(char *filename,SplineChar *sc, int layer, int format, int pixels
 	scale = COLOR_CREATE(scale,scale,scale);
 	for ( i=0; i< 1<<bitsperpixel; ++i )
 	    clut.clut[(1<<bitsperpixel)-1 - i] = i*scale;
-#ifndef _NO_LIBPNG
 	if ( format==2 )
 	    ret = GImageWritePng(&gi,filename,false);
 	else
-#endif
 	    ret = GImageWriteBmp(&gi,filename);
-	BDFCharFree(bdfc);
     }
 return( ret );
 }
@@ -612,10 +596,8 @@ int BCExportXBM(char *filename,BDFChar *bdfc, int format) {
 	base.trans = -1;
 	if ( format==0 )
 	    ret = !GImageWriteXbm(&gi,filename);
-#ifndef _NO_LIBPNG
 	else if ( format==2 )
 	    ret = GImageWritePng(&gi,filename,false);
-#endif
 	else if ( format==3 )
 	    ret = !GImageWriteXpm(&gi,filename);
 	else if ( format==4 )
@@ -639,11 +621,9 @@ int BCExportXBM(char *filename,BDFChar *bdfc, int format) {
 	scale = COLOR_CREATE(scale,scale,scale);
 	for ( i=0; i< 1<<bdfc->depth; ++i )
 	    clut.clut[(1<<bdfc->depth)-1 - i] = i*scale;
-#ifndef _NO_LIBPNG
 	if ( format==2 )
 	    ret = GImageWritePng(&gi,filename,false);
 	else
-#endif
 	    ret = GImageWriteBmp(&gi,filename);
     }
 return( ret );
@@ -673,7 +653,7 @@ static void MakeExportName(char *buffer, int blen,char *format_spec,
 		    *buffer++ = *pt++;
 		}
 #else
-		for ( pt=sc->name; *pt!='\0' && buffer<bend; )
+		for ( pt=copy(sc->name); *pt!='\0' && buffer<bend; )
 		    *buffer++ = *pt++;
 #endif
 	    } else if ( ch=='f' ) {

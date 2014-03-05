@@ -32,6 +32,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <ustring.h>
+#include <ffglib.h>
 #include "utype.h"
 #include <sys/types.h>
 #if !defined(__MINGW32__)
@@ -57,26 +58,21 @@ struct printdefaults pdefs[] = {
 /* ************************************************************************** */
 
 static int pdf_addobject(PI *pi) {
-    if ( pi->next_object==0 ) {
-	pi->max_object = 100;
-	pi->object_offsets = galloc(pi->max_object*sizeof(int));
-	pi->object_offsets[pi->next_object++] = 0;	/* Object 0 is magic */
-    } else if ( pi->next_object>=pi->max_object ) {
+    if ( pi->next_object>=pi->max_object ) {
 	pi->max_object += 100;
-	pi->object_offsets = grealloc(pi->object_offsets,pi->max_object*sizeof(int));
+	pi->object_offsets = realloc(pi->object_offsets,pi->max_object*sizeof(int));
     }
+    if ( pi->next_object==0 )
+	pi->object_offsets[pi->next_object++] = 0;	/* Object 0 is magic */
     pi->object_offsets[pi->next_object] = ftell(pi->out);
     fprintf( pi->out, "%d 0 obj\n", pi->next_object++ );
 return( pi->next_object-1 );
 }
 
 static void pdf_addpage(PI *pi) {
-    if ( pi->next_page==0 ) {
-	pi->max_page = 100;
-	pi->page_objects = galloc(pi->max_page*sizeof(int));
-    } else if ( pi->next_page>=pi->max_page ) {
+    if ( pi->next_page>=pi->max_page ) {
 	pi->max_page += 100;
-	pi->page_objects = grealloc(pi->page_objects,pi->max_page*sizeof(int));
+	pi->page_objects = realloc(pi->page_objects,pi->max_page*sizeof(int));
     }
     pi->page_objects[pi->next_page++] = pi->next_object;
     pdf_addobject(pi);
@@ -111,7 +107,7 @@ static void pdf_finishpage(PI *pi) {
 static int pfb_getsectionlength(FILE *pfb,int sec_type,int skip_sec) {
     int len=0, sublen, ch;
 
-    forever {
+    for (;;) {
 	ch = getc(pfb);
 	if ( ch!=0x80 ) {
 	    ungetc(ch,pfb);
@@ -392,8 +388,8 @@ static void pdf_dump_type1(PI *pi,int sfid) {
 
     fd_obj = figure_fontdesc(pi, sfid, &fd,1,font_stream);
 
-    sfbit->our_font_objs = galloc((sfbit->map->enccount/256+1)*sizeof(int *));
-    sfbit->fonts = galloc((sfbit->map->enccount/256+1)*sizeof(int *));
+    sfbit->our_font_objs = malloc((sfbit->map->enccount/256+1)*sizeof(int *));
+    sfbit->fonts = malloc((sfbit->map->enccount/256+1)*sizeof(int *));
     for ( i=0; i<sfbit->map->enccount; i += 256 ) {
 	sfbit->fonts[i/256] = -1;
 	dump_pfb_encoding(pi,sfid,i,fd_obj);
@@ -466,7 +462,7 @@ static void pdf_BrushCheck(PI *pi,struct glyph_res *gr,struct brush *brush,
 	fprintf( pi->out, ">>\n" );
 	fprintf( pi->out, "stream\n" );
 	if ( grad->stop_cnt==2 ) {
-	    int col = grad->grad_stops[0].col;
+	    unsigned col = grad->grad_stops[0].col;
 	    if ( col==COLOR_INHERITED ) col = 0x000000;
 	    putc((col>>16)&0xff,pi->out);
 	    putc((col>>8 )&0xff,pi->out);
@@ -529,8 +525,8 @@ static void pdf_BrushCheck(PI *pi,struct glyph_res *gr,struct brush *brush,
 	fprintf( pi->out, "endobj\n" );
 
 	if ( gr->pattern_cnt>=gr->pattern_max ) {
-	    gr->pattern_names = grealloc(gr->pattern_names,(gr->pattern_max+=100)*sizeof(char *));
-	    gr->pattern_objs  = grealloc(gr->pattern_objs ,(gr->pattern_max     )*sizeof(int   ));
+	    gr->pattern_names = realloc(gr->pattern_names,(gr->pattern_max+=100)*sizeof(char *));
+	    gr->pattern_objs  = realloc(gr->pattern_objs ,(gr->pattern_max     )*sizeof(int   ));
 	}
 	makePatName(buffer,ref,sc,layer,!isfill,true);
 	gr->pattern_names[gr->pattern_cnt  ] = copy(buffer);
@@ -553,8 +549,8 @@ static void pdf_BrushCheck(PI *pi,struct glyph_res *gr,struct brush *brush,
 	PatternSCBounds(pattern_sc,&b);
 
 	if ( gr->pattern_cnt>=gr->pattern_max ) {
-	    gr->pattern_names = grealloc(gr->pattern_names,(gr->pattern_max+=100)*sizeof(char *));
-	    gr->pattern_objs  = grealloc(gr->pattern_objs ,(gr->pattern_max     )*sizeof(int   ));
+	    gr->pattern_names = realloc(gr->pattern_names,(gr->pattern_max+=100)*sizeof(char *));
+	    gr->pattern_objs  = realloc(gr->pattern_objs ,(gr->pattern_max     )*sizeof(int   ));
 	}
 	makePatName(buffer,ref,sc,layer,!isfill,false);
 	gr->pattern_names[gr->pattern_cnt  ] = copy(buffer);
@@ -601,7 +597,7 @@ static void pdf_BrushCheck(PI *pi,struct glyph_res *gr,struct brush *brush,
 	}
 	if ( i==-1 ) {
 	    if ( gr->opacity_cnt>=gr->opacity_max ) {
-		gr->opac_state = grealloc(gr->opac_state,(gr->opacity_max+=100)*sizeof(struct opac_state));
+		gr->opac_state = realloc(gr->opac_state,(gr->opacity_max+=100)*sizeof(struct opac_state));
 	    }
 	    gr->opac_state[gr->opacity_cnt].opacity = brush->opacity;
 	    gr->opac_state[gr->opacity_cnt].isfill  = isfill;
@@ -633,8 +629,8 @@ static void pdf_ImageCheck(PI *pi,struct glyph_res *gr,ImageList *images,
 	base = img->list_len==0 ? img->u.image : img->u.images[1];
 
 	if ( gr->image_cnt>=gr->image_max ) {
-	    gr->image_names = grealloc(gr->image_names,(gr->image_max+=100)*sizeof(char *));
-	    gr->image_objs  = grealloc(gr->image_objs ,(gr->image_max     )*sizeof(int   ));
+	    gr->image_names = realloc(gr->image_names,(gr->image_max+=100)*sizeof(char *));
+	    gr->image_objs  = realloc(gr->image_objs ,(gr->image_max     )*sizeof(int   ));
 	}
 	sprintf( buffer, "%s_ly%d_%d_image", sc->name, layer, icnt );
 	gr->image_names[gr->image_cnt  ] = copy(buffer);
@@ -714,20 +710,14 @@ int PdfDumpGlyphResources(PI *pi,SplineChar *sc) {
     fprintf(pi->out,"<<\n" );
     if ( gr.pattern_cnt!=0 ) {
 	fprintf( pi->out, "  /Pattern <<\n" );
-	for ( i=0; i<gr.pattern_cnt; ++i ) {
+	for ( i=0; i<gr.pattern_cnt; ++i )
 	    fprintf( pi->out, "    /%s %d 0 R\n", gr.pattern_names[i], gr.pattern_objs[i] );
-	    free(gr.pattern_names[i]);
-	}
-	free(gr.pattern_names); free(gr.pattern_objs);
 	fprintf( pi->out, "  >>\n");
     }
     if ( gr.image_cnt!=0 ) {
 	fprintf( pi->out, "  /XObject <<\n" );
-	for ( i=0; i<gr.image_cnt; ++i ) {
+	for ( i=0; i<gr.image_cnt; ++i )
 	    fprintf( pi->out, "    /%s %d 0 R\n", gr.image_names[i], gr.image_objs[i] );
-	    free(gr.image_names[i]);
-	}
-	free(gr.image_names); free(gr.image_objs);
 	fprintf( pi->out, "  >>\n");
     }
     if ( gr.opacity_cnt!=0 ) {
@@ -737,7 +727,6 @@ int PdfDumpGlyphResources(PI *pi,SplineChar *sc) {
 		    gr.opac_state[i].isfill ? "fill" : "stroke",
 		    gr.opac_state[i].opacity, gr.opac_state[i].obj );
 	}
-	free(gr.opac_state);
 	fprintf( pi->out, "  >>\n");
     }
     fprintf( pi->out, ">>\n" );
@@ -775,20 +764,14 @@ static int PdfDumpSFResources(PI *pi,SplineFont *sf) {
     fprintf(pi->out,"<<\n" );
     if ( gr.pattern_cnt!=0 ) {
 	fprintf( pi->out, "  /Pattern <<\n" );
-	for ( i=0; i<gr.pattern_cnt; ++i ) {
+	for ( i=0; i<gr.pattern_cnt; ++i )
 	    fprintf( pi->out, "    /%s %d 0 R\n", gr.pattern_names[i], gr.pattern_objs[i] );
-	    free(gr.pattern_names[i]);
-	}
-	free(gr.pattern_names); free(gr.pattern_objs);
 	fprintf( pi->out, "  >>\n");
     }
     if ( gr.image_cnt!=0 ) {
 	fprintf( pi->out, "  /XObject <<\n" );
-	for ( i=0; i<gr.image_cnt; ++i ) {
+	for ( i=0; i<gr.image_cnt; ++i )
 	    fprintf( pi->out, "    /%s %d 0 R\n", gr.image_names[i], gr.image_objs[i] );
-	    free(gr.image_names[i]);
-	}
-	free(gr.image_names); free(gr.image_objs);
 	fprintf( pi->out, "  >>\n");
     }
     if ( gr.opacity_cnt!=0 ) {
@@ -798,7 +781,6 @@ static int PdfDumpSFResources(PI *pi,SplineFont *sf) {
 		    gr.opac_state[i].isfill ? "fill" : "stroke",
 		    gr.opac_state[i].opacity, gr.opac_state[i].obj );
 	}
-	free(gr.opac_state);
 	fprintf( pi->out, "  >>\n");
     }
     fprintf( pi->out, ">>\n" );
@@ -989,8 +971,8 @@ static void pdf_gen_type3(PI *pi,int sfid) {
     }
 
     SplineFontFindBounds(sf,&bb);
-    sfbit->our_font_objs = galloc((map->enccount/256+1)*sizeof(int *));
-    sfbit->fonts = galloc((map->enccount/256+1)*sizeof(int *));
+    sfbit->our_font_objs = malloc((map->enccount/256+1)*sizeof(int *));
+    sfbit->fonts = malloc((map->enccount/256+1)*sizeof(int *));
     for ( i=0; i<map->enccount; i += 256 ) {
 	sfbit->fonts[i/256] = -1;
 	dump_pdf3_encoding(pi,sfid,i,&bb,notdefproc);
@@ -1054,7 +1036,7 @@ static void pdf_build_type0(PI *pi, int sfid) {
     } else
 	cidmax = cidmaster->glyphcnt + 2;	/* two extra useless glyphs in ttf */
 
-    widths = galloc(cidmax*sizeof(uint16));
+    widths = malloc(cidmax*sizeof(uint16));
 
     for ( i=0; i<cidmax; ++i ) {
 	SplineChar *sc = NULL;
@@ -1099,12 +1081,11 @@ static void pdf_build_type0(PI *pi, int sfid) {
     }
     fprintf( pi->out, "  ]\n" );
     fprintf( pi->out, "endobj\n" );
-    free(widths);
 
     fprintf( pi->out, "\n" );
 
     /* OK, now we've dumped up the CID part, we need to create a Type0 Font */
-    sfbit->our_font_objs = galloc(sizeof(int));
+    sfbit->our_font_objs = malloc(sizeof(int));
     sfbit->our_font_objs[0] = pi->next_object;
     sfbit->next_font = 1;
     pdf_addobject(pi);
@@ -1147,9 +1128,6 @@ static void dump_pdfprologue(PI *pi) {
     tm = localtime(&now);
     fprintf( pi->out, "    /CreationDate (D:%04d%02d%02d%02d%02d%02d",
 	    tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec );
-#ifdef _NO_TZSET
-    fprintf( pi->out, "Z)\n" );
-#else
     if ( timezone==0 )
 	fprintf( pi->out, "Z)\n" );
     else {
@@ -1159,7 +1137,6 @@ static void dump_pdfprologue(PI *pi) {
 	    fprintf( pi->out, "+" );
 	fprintf( pi->out, "%02d'%02d')\n", (int)(timezone/3600),(int)(timezone/60-(timezone/3600)*60) );
     }
-#endif
     if ( author!=NULL )
 	fprintf( pi->out, "  /Author (%s)\n", author );
     fprintf( pi->out, ">>\n" );
@@ -1261,13 +1238,6 @@ static void dump_pdftrailer(PI *pi) {
     fprintf( pi->out, "startxref\n" );
     fprintf( pi->out, "%d\n",xrefloc );
     fprintf( pi->out, "%%%%EOF\n" );
-
-    for ( i=0; i<pi->sfcnt; ++i ) {
-	free(pi->sfbits[i].our_font_objs);
-	free(pi->sfbits[i].fonts);
-    }
-    free(pi->object_offsets);
-    free(pi->page_objects);
 }
 
 static void DumpIdentCMap(PI *pi, int sfid) {
@@ -2428,10 +2398,6 @@ static char *_IAmACat[] = {
 /* Belorussian */
 static char *_belorussianjohn[] = {
     "У пачатку было Слова, і Слова было ў Бога, і Богам было Слова. Яно было ў пачатку ў Бога",
-#if 0		/* told this is actually russian */
-    "Вначале было Слово, и Слово было у Бога, и Слово было Бог.",
-    "Оно было в начале у Бога.",
-#endif
     NULL
 };
 /* basque */
@@ -2739,7 +2705,7 @@ unichar_t *PrtBuildDef( SplineFont *sf, void *tf,
 		for ( j=0; cur[j]!=NULL; ++j ) {
 		    if ( ret )
 			utf82u_strcpy(ret+len,cur[j]);
-		    len += utf8_strlen(cur[j]);
+		    len += g_utf8_strlen( cur[j], -1 );
 		    if ( ret )
 			ret[len] = '\n';
 		    ++len;
@@ -2752,42 +2718,6 @@ unichar_t *PrtBuildDef( SplineFont *sf, void *tf,
 	    }
 	}
 
-#if 0
-	/* If no matches then put in "the quick brown...", in russian too if the encoding suggests it... */
-	if ( !ScriptInList(CHR('l','a','t','n'),scriptsdone,scnt) &&
-		ScriptInList(CHR('l','a','t','n'),scriptsthere,therecnt)) {
-	    for ( j=0; _simple[j]!=NULL; ++j ) {
-		if ( ret )
-		    utf82u_strcpy(ret+len,_simple[j]);
-		len += utf8_strlen(_simple[j]);
-		if ( ret )
-		    ret[len] = '\n';
-		++len;
-		if ( ret )
-		    ret[len] = '\n';
-		++len;
-		if ( ret && langsyscallback!=NULL )
-		    (langsyscallback)(tf,len,CHR('l','a','t','n'),CHR('E','N','G',' '));
-	    }
-	}
-	if ( !ScriptInList(CHR('c','y','r','l'),scriptsdone,scnt) &&
-		ScriptInList(CHR('c','y','r','l'),scriptsthere,therecnt)) {
-	    for ( j=0; _simplecyrill[j]!=NULL; ++j ) {
-		if ( ret )
-		    utf82u_strcpy(ret+len,_simplecyrill[j]);
-		len += utf8_strlen(_simplecyrill[j]);
-		if ( ret )
-		    ret[len] = '\n';
-		++len;
-		if ( ret )
-		    ret[len] = '\n';
-		++len;
-		if ( ret && langsyscallback!=NULL )
-		    (langsyscallback)(tf,len,CHR('c','y','r','l'),CHR('R','U','S',' '));
-	    }
-	}
-#endif
-
 	rcnt = 0;
 	for ( s=0; s<therecnt; ++s ) if ( !ScriptInList(scriptsthere[s],scriptsdone,scnt)) {
 	    if ( ret ) {
@@ -2799,14 +2729,13 @@ unichar_t *PrtBuildDef( SplineFont *sf, void *tf,
 		    if ( langsyscallback!=NULL )
 			(langsyscallback)(tf,len,scriptsthere[s],langs[rcnt]);
 		}
-		free(randoms[rcnt]);
 	    } else {
 		randoms[rcnt] = RandomParaFromScript(scriptsthere[s],&langs[rcnt],sf);
 		for ( pt=randoms[rcnt]; *pt==' '; ++pt );
 		if ( *pt=='\0' )
 		    *randoms[rcnt] = '\0';
 		else {
-		    len += utf8_strlen( randoms[rcnt])+2;
+		    len += g_utf8_strlen( randoms[rcnt], -1 )+2;
 		    foundsomething = true;
 		}
 	    }
@@ -2836,7 +2765,7 @@ unichar_t *PrtBuildDef( SplineFont *sf, void *tf,
 		    if ( langsyscallback!=NULL )
 			(langsyscallback)(tf,len,DEFAULT_SCRIPT,DEFAULT_LANG);
 		} else
-		    len += utf8_strlen( buffer )+1;
+		    len += g_utf8_strlen( buffer, -1 )+1;
 	    }
 	}
 
@@ -2846,9 +2775,9 @@ return( ret );
 	}
 	if ( len == 0 ) {
 	    /* Er... We didn't find anything?! */
-return( gcalloc(1,sizeof(unichar_t)));
+return( calloc(1,sizeof(unichar_t)));
 	}
-	ret = galloc((len+1)*sizeof(unichar_t));
+	ret = malloc((len+1)*sizeof(unichar_t));
     }
 }
 
@@ -2959,7 +2888,7 @@ void DoPrinting(PI *pi,char *filename) {
 	if ( sfmax==0 ) sfmax=1;
     }
     pi->sfmax = sfmax;
-    pi->sfbits = gcalloc(sfmax,sizeof(struct sfbits));
+    pi->sfbits = calloc(sfmax,sizeof(struct sfbits));
     pi->sfcnt = 0;
 
     if ( pi->pt==pt_fontdisplay )
@@ -2979,7 +2908,6 @@ void DoPrinting(PI *pi,char *filename) {
     if ( fclose(pi->out)!=0 )
 	ff_post_error(_("Print Failed"),_("Failed to generate postscript in file %s"),
 		filename==NULL?"temporary":filename );
-    free(pi->sfbits);
 }
 
 /* ************************************************************************** */
@@ -3044,7 +2972,7 @@ return( NULL );
 	format = 2;		/* byte-swapped ucs2 */
     else
 	rewind(file);
-    space = upt = galloc((max+1)*sizeof(unichar_t));
+    space = upt = malloc((max+1)*sizeof(unichar_t));
     end = space+max;
     if ( format!=0 ) {
 	while ( upt<end ) {
@@ -3083,7 +3011,7 @@ void ScriptPrint(FontViewBase *fv,int type,int32 *pointsizes,char *samplefile,
     pi.pt = type;
     if ( type==pt_fontsample ) {
 	int width = (pi.pagewidth-1*72)*printdpi/72;
-	li = gcalloc(1,sizeof(LayoutInfo));
+	li = calloc(1,sizeof(LayoutInfo));
 	temp[0] = 0;
 	li->wrap = true;
 	li->dpi = printdpi;
@@ -3100,7 +3028,6 @@ void ScriptPrint(FontViewBase *fv,int type,int32 *pointsizes,char *samplefile,
 	    LayoutInfoInitLangSys(li,u_strlen(sample),DEFAULT_SCRIPT,DEFAULT_LANG);
 	LayoutInfoSetTitle(li, sample, width);
 	pi.sample = li;
-	free(sample);
     }
     if ( pi.printtype==pt_file || pi.printtype==pt_pdf ) {
 	if ( outputfile==NULL ) {
@@ -3124,8 +3051,6 @@ return;
 
     DoPrinting(&pi,outputfile);
 
-    if ( pi.pt==pt_fontsample ) {
+    if ( pi.pt==pt_fontsample )
 	LayoutInfo_Destroy(pi.sample);
-	free(pi.sample);
-    }
 }

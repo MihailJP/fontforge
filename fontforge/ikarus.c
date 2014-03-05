@@ -382,7 +382,7 @@ static void IkarusNameFromURWNumber(SplineChar *sc,int number) {
     if ( !urw_inited )
 	InitURWTable();
 
-    free(sc->name); sc->name = NULL;
+    sc->name = NULL;
     if ( number<sizeof(urwtable)/sizeof(urwtable[0]) ) {
 	sc->unicodeenc = urwtable[number];
 	if ( sc->unicodeenc!=-1 ) {
@@ -408,7 +408,7 @@ static void IkarusAddContour(SplineChar *sc,int npts,BasePoint *bps,
     SplinePoint *last, *next;
     int i, cw;
 
-    spl = chunkalloc(sizeof(SplinePointList));
+    spl = XZALLOC(SplinePointList);
     spl->next = sc->layers[ly_fore].splines;
     sc->layers[ly_fore].splines = spl;
     spl->first = spl->last = last = SplinePointCreate(bps[0].x,bps[0].y);
@@ -451,10 +451,6 @@ static void IkarusReadChar(SplineChar *sc,FILE *file) {
 
     n = getushort(file);
     number = getushort(file);
-#if 0
-    if ( enc!=sc->enc )
-	fprintf( stderr, "The font header said this should be character %d, the character header says it is %d\n", sc->enc, enc );
-#endif
     IkarusNameFromURWNumber(sc,number);
     following = getushort(file);
     if ( following!=0 )
@@ -484,7 +480,7 @@ static void IkarusReadChar(SplineChar *sc,FILE *file) {
     n = getushort(file)*2048;
     n += getushort(file);		/* Length of contour section in words */
     ncontours = (n-2)/6;
-    contours = galloc(ncontours*sizeof(struct contour));
+    contours = malloc(ncontours*sizeof(struct contour));
     ptmax = 0;
     for ( i=0; i<ncontours; ++i ) {
 	contours[i].offset = getushort(file)*4096;
@@ -496,8 +492,8 @@ static void IkarusReadChar(SplineChar *sc,FILE *file) {
 	if ( contours[i].npts > ptmax )
 	    ptmax = contours[i].npts;
     }
-    bps = galloc(ptmax*sizeof(BasePoint));
-    ptype = galloc(ptmax*sizeof(uint8));
+    bps = malloc(ptmax*sizeof(BasePoint));
+    ptype = malloc(ptmax*sizeof(uint8));
 
     base = ftell(file);
     /* 2 words here giving length (in records/words) of image data */
@@ -523,10 +519,6 @@ static void IkarusReadChar(SplineChar *sc,FILE *file) {
 	}
 	IkarusAddContour(sc,contours[i].npts,bps,ptype,contours[i].nest);
     }
-
-    free(contours);
-    free(bps);
-    free(ptype);
 }
 
 static void IkarusFontname(SplineFont *sf,char *fullname,char *fnam) {
@@ -550,10 +542,8 @@ static void IkarusFontname(SplineFont *sf,char *fullname,char *fnam) {
 	}
     }
 
-    free(sf->fullname);
     sf->fullname=copy(fullname);
 
-    free(sf->fontname);
     sf->fontname=copy(fullname);
     for ( pt=tpt=sf->fontname; *pt; ++pt ) {
 	if ( isalnum(*pt) || *pt=='-' || *pt=='_' || *pt=='$' )
@@ -573,7 +563,6 @@ static void IkarusFontname(SplineFont *sf,char *fullname,char *fnam) {
 	    (pt=strstr(fullname,"Blac"))!=NULL ||
 	    (pt=strstr(fullname,"Ligh"))!=NULL ||
 	    (pt=strstr(fullname,"Thin"))!=NULL ) {
-	free(sf->weight);
 	sf->weight = copyn(pt,4);
 	*pt='\0';
     }
@@ -585,7 +574,6 @@ static void IkarusFontname(SplineFont *sf,char *fullname,char *fnam) {
 	    (pt=strstr(fullname,"Expa"))!=NULL ) {
 	*pt='\0';
     }
-    free(sf->familyname);
     sf->familyname = copy(fullname);
 }
 
@@ -672,8 +660,8 @@ return( NULL );
     /* last record */ getushort(file);
     /* last word of last record */ getushort(file);
 
-    offsets = galloc(numchars*sizeof(int32));
-    numbers = galloc(numchars*sizeof(int32));
+    offsets = malloc(numchars*sizeof(int32));
+    numbers = malloc(numchars*sizeof(int32));
     maxnum = 0;
     for ( i=0; i<numchars; ++i ) {
 	numbers[i] = getushort(file);
@@ -698,7 +686,6 @@ return( NULL );
     if ( loaded_fonts_same_as_new && new_fonts_are_order2 )
 	SFConvertToOrder2(sf);
 
-    free(numbers); free(offsets);
     fclose(file);
 return( sf );
 }

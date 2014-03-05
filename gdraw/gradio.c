@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 #include "gdraw.h"
 #include "gresource.h"
 #include "ggadgetP.h"
@@ -482,13 +484,11 @@ return;
 	for ( prev=gr->post; prev->post!=gr; prev = prev->post );
 	prev->post = gr->post;
     }
-    free(gr->label);
     _ggadget_destroy(g);
 }
 
 static void GRadioSetTitle(GGadget *g,const unichar_t *tit) {
     GRadio *b = (GRadio *) g;
-    free(b->label);
     b->label = u_copy(tit);
 }
 
@@ -499,9 +499,6 @@ return( b->label );
 
 static void GRadioSetImageTitle(GGadget *g,GImage *img,const unichar_t *tit, int before) {
     GRadio *b = (GRadio *) g;
-    if ( b->g.free_box )
-	free( b->g.box );
-    free(b->label);
     b->label = u_copy(tit);
     b->image = img;
     b->image_precedes = before;
@@ -789,13 +786,13 @@ return( gl );
 }
 
 GGadget *GCheckBoxCreate(struct gwindow *base, GGadgetData *gd,void *data) {
-    GCheckBox *gl = _GCheckBoxCreate(gcalloc(1,sizeof(GCheckBox)),base,gd,data,&checkbox_box);
+    GCheckBox *gl = _GCheckBoxCreate(calloc(1,sizeof(GCheckBox)),base,gd,data,&checkbox_box);
 
 return( &gl->g );
 }
 
 GGadget *GVisibilityBoxCreate(struct gwindow *base, GGadgetData *gd,void *data) {
-    GCheckBox *gl = _GCheckBoxCreate(gcalloc(1,sizeof(GCheckBox)),base,gd,data,&checkbox_box);
+    GCheckBox *gl = _GCheckBoxCreate(calloc(1,sizeof(GCheckBox)),base,gd,data,&checkbox_box);
     gl->onbox = &visibility_on_box;
     gl->offbox = &visibility_off_box;
     gl->on = visibilityon;
@@ -807,7 +804,7 @@ return( &gl->g );
 }
 
 GGadget *GRadioCreate(struct gwindow *base, GGadgetData *gd,void *data) {
-    GRadio *gl = (GRadio *) gcalloc(1,sizeof(GRadio));
+    GRadio *gl = (GRadio *) calloc(1,sizeof(GRadio));
     GGadget *gr;
 
     gl->isradio = true;

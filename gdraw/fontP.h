@@ -27,9 +27,6 @@
 #ifndef _FONTP_H
 #define _FONTP_H
 
-#ifdef __VMS
-#include <vms_x_fix.h>
-#endif
 #ifndef X_DISPLAY_MISSING
 # include <X11/Xlib.h>		/* For XFontStruct */
 #else
@@ -197,5 +194,4 @@ extern int _GDraw_ClassifyFontName(unichar_t *fontname, int *italic, int *bold);
 extern enum charset _GDraw_ParseMapping(unichar_t *setname);
 extern int _GDraw_FontFigureWeights(unichar_t *weight_str);
 extern struct font_name *_GDraw_HashFontFamily(FState *fonts,unichar_t *name, int prop);
-extern void _GDraw_FreeFD(struct font_data *fd);
 #endif

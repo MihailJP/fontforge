@@ -352,9 +352,6 @@ static int NOUI_GetPrefs(char *name,Val *val) {
 
 		char *tmpstr = pf->val ? *((char **) (pf->val)) : (char *) (pf->get)();
 		val->u.sval = copy( tmpstr ? tmpstr : "" );
-
-		if( ! pf->val )
-		    free( tmpstr );
 	    } else if ( pf->type == pr_encoding ) {
 		val->type = v_str;
 		if ( *((NameList **) (pf->val))==NULL )
@@ -396,12 +393,10 @@ return( -1 );
 	    } else if ( pf->type == pr_string || pf->type == pr_file ) {
 		if ( val1->type!=v_str || val2!=NULL )
 return( -1 );
-		if ( pf->set ) {
+		if ( pf->set )
 		    pf->set( val1->u.sval );
-		} else {
-		    free( *((char **) (pf->val)));
+		else
 		    *((char **) (pf->val)) = copy( val1->u.sval );
-		}
 	    } else if ( pf->type == pr_encoding ) {
 		if ( val2!=NULL )
 return( -1 );
@@ -579,21 +574,18 @@ static int encmatch(const char *enc,int subok) {
 	{ "UCS-2-INTERNAL", e_unicode },
 	{ "ISO-10646", e_unicode },
 	{ "ISO_10646", e_unicode },
-#if 0
-	{ "eucJP", e_euc },
-	{ "EUC-JP", e_euc },
-	{ "ujis", ??? },
-	{ "EUC-KR", e_euckorean },
-#endif
+	/* { "eucJP", e_euc }, */
+	/* { "EUC-JP", e_euc }, */
+	/* { "ujis", ??? }, */
+	/* { "EUC-KR", e_euckorean }, */
 	{ NULL, 0 }
     };
     int i;
     char buffer[80];
-#if HAVE_ICONV_H
+#if HAVE_ICONV
     static char *last_complaint;
 
     iconv_t test;
-    free(iconv_local_encoding_name);
     iconv_local_encoding_name= NULL;
 #endif
 
@@ -612,20 +604,18 @@ return( encs[i].enc );
 	    if ( strstrmatch(enc,encs[i].name)!=NULL )
 return( encs[i].enc );
 
-#if HAVE_ICONV_H
+#if HAVE_ICONV
 	/* I only try to use iconv if the encoding doesn't match one I support*/
 	/*  loading iconv unicode data takes a while */
 	test = iconv_open(enc,FindUnicharName());
 	if ( test==(iconv_t) (-1) || test==NULL ) {
 	    if ( last_complaint==NULL || strcmp(last_complaint,enc)!=0 ) {
 		fprintf( stderr, "Neither FontForge nor iconv() supports your encoding (%s) we will pretend\n you asked for latin1 instead.\n", enc );
-		free( last_complaint );
 		last_complaint = copy(enc);
 	    }
 	} else {
 	    if ( last_complaint==NULL || strcmp(last_complaint,enc)!=0 ) {
 		fprintf( stderr, "FontForge does not support your encoding (%s), it will try to use iconv()\n or it will pretend the local encoding is latin1\n", enc );
-		free( last_complaint );
 		last_complaint = copy(enc);
 	    }
 	    iconv_local_encoding_name= copy(enc);
@@ -689,7 +679,6 @@ static void DefaultXUID(void) {
     g_random_set_seed(tv.tv_usec+1);
     r2 = g_random_int();
     sprintf( buffer, "1021 %d %d", r1, r2 );
-    free(xuid);
     xuid = copy(buffer);
 }
 
@@ -718,8 +707,6 @@ static void ParseNewMacFeature(FILE *p,char *line) {
     line[strlen("MacFeat:")] ='\0';
     default_mac_feature_map = SFDParseMacFeatures(p,line);
     fseek(p,-strlen(line),SEEK_CUR);
-    if ( user_mac_feature_map!=NULL )
-	MacFeatListFree(user_mac_feature_map);
     user_mac_feature_map = default_mac_feature_map;
 }
 
@@ -732,9 +719,7 @@ static void NOUI_LoadPrefs(void) {
     char *pt;
     struct prefs_list *pl;
 
-#if !defined(NOPLUGIN)
     LoadPluginDir(NULL);
-#endif
     LoadPfaEditEncodings();
     LoadGroupList();
 
@@ -767,22 +752,10 @@ static void NOUI_LoadPrefs(void) {
 		    script_filenames[ms++] = copy(pt);
 		else if ( strncmp(line,"MenuName:",strlen("MenuName:"))==0 && mn<SCRIPT_MENU_MAX )
 		    script_menu_names[mn++] = utf82u_copy(pt);
-#if 0
-		else if ( strncmp(line,"FontFilterName:",strlen("FontFilterName:"))==0 ) {
-		    if ( fn>=filt_max )
-			user_font_filters = grealloc(user_font_filters,((filt_max+=10)+1)*sizeof( struct openfilefilters));
-		    user_font_filters[fn].filter = NULL;
-		    user_font_filters[fn++].name = copy(pt);
-		    user_font_filters[fn].name = NULL;
-		} else if ( strncmp(line,"FontFilter:",strlen("FontFilter:"))==0 ) {
-		    if ( ff<filt_max )
-			user_font_filters[ff++].filter = copy(pt);
-		}
-#endif
 		else if ( strncmp(line,"MacMapCnt:",strlen("MacSetCnt:"))==0 ) {
 		    sscanf( pt, "%d", &msc );
 		    msp = 0;
-		    user_macfeat_otftag = gcalloc(msc+1,sizeof(struct macsettingname));
+		    user_macfeat_otftag = calloc(msc+1,sizeof(struct macsettingname));
 		} else if ( strncmp(line,"MacMapping:",strlen("MacMapping:"))==0 && msp<msc ) {
 		    ParseMacMapping(pt,&user_macfeat_otftag[msp++]);
 		} else if ( strncmp(line,"MacFeat:",strlen("MacFeat:"))==0 ) {
@@ -887,8 +860,6 @@ return;
 		temp = (char *) (pl->get());
 	    if ( temp!=NULL )
 		fprintf( p, "%s:\t%s\n", pl->name, temp );
-	    if ( (pl->val)==NULL )
-		free(temp);
 	  break;
 	}
     }
@@ -898,16 +869,7 @@ return;
     for ( i=0; i<SCRIPT_MENU_MAX && script_filenames[i]!=NULL; ++i ) {
 	fprintf( p, "MenuScript:\t%s\n", script_filenames[i]);
 	fprintf( p, "MenuName:\t%s\n", temp = u2utf8_copy(script_menu_names[i]));
-	free(temp);
     }
-#if 0
-    if ( user_font_filters!=NULL ) {
-	for ( i=0; user_font_filters[i].name!=NULL; ++i ) {
-	    fprintf( p, "FontFilterName:\t%s\n", user_font_filters[i].name);
-	    fprintf( p, "FontFilter:\t%s\n", user_font_filters[i].filter);
-	}
-    }
-#endif
     if ( user_macfeat_otftag!=NULL && UserSettingsDiffer()) {
 	for ( i=0; user_macfeat_otftag[i].otf_tag!=0; ++i );
 	fprintf( p, "MacMapCnt: %d\n", i );

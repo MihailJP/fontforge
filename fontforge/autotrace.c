@@ -77,7 +77,7 @@ static SplinePointList *localSplinesFromEntities(Entity *ent, Color bgcol, int i
     /* potrace does not have this problem */
     /* But potrace does not close its paths (well, it closes the last one) */
     /*  and as with standard postscript fonts I need to reverse the splines */
-    int bgr = COLOR_RED(bgcol), bgg = COLOR_GREEN(bgcol), bgb = COLOR_BLUE(bgcol);
+    unsigned bgr = COLOR_RED(bgcol), bgg = COLOR_GREEN(bgcol), bgb = COLOR_BLUE(bgcol);
 
     memset(&sc,'\0',sizeof(sc));
     memset(layers,0,sizeof(layers));
@@ -99,7 +99,6 @@ static SplinePointList *localSplinesFromEntities(Entity *ent, Color bgcol, int i
 			nlast->next = temp;
 		    for ( nlast=temp; nlast->next!=NULL; nlast=nlast->next );
 		}
-		SplinePointListsFree(ent->u.splines.splines);
 		ent->u.splines.fill.col = ent->u.splines.stroke.col;
 	    } else {
 		new = ent->u.splines.splines;
@@ -118,7 +117,6 @@ static SplinePointList *localSplinesFromEntities(Entity *ent, Color bgcol, int i
 			test->first->prevcpdef = test->last->prevcpdef;
 			test->first->prev = test->last->prev;
 			test->last->prev->to = test->first;
-			SplinePointFree(test->last);
 			test->last=test->first;
 		    }
 		    SplineSetReverse(test);
@@ -143,8 +141,6 @@ static SplinePointList *localSplinesFromEntities(Entity *ent, Color bgcol, int i
 		}
 	    }
 	}
-	SplinePointListsFree(ent->clippath);
-	free(ent);
     }
 
     /* Then remove all counter-clockwise (background) contours which are at */
@@ -169,7 +165,6 @@ static SplinePointList *localSplinesFromEntities(Entity *ent, Color bgcol, int i
 		    else
 			prev->next = next;
 		    last->next = NULL;
-		    SplinePointListFree(last);
 		    removed = true;
 		} else
 		    prev = last;
@@ -196,13 +191,6 @@ static int mytempnam(char *buffer) {
 	strcpy(buffer,P_tmpdir);
     strcat(buffer,"/PfaEdXXXXXX");
     fd = g_mkstemp(buffer);
-#if 0
-    old = copy(buffer);
-    strcat(buffer,".bmp");
-    if ( rename(old,buffer)==-1 )
-	strcpy(buffer,old);
-    free(old);
-#endif
 return( fd );
 }
 
@@ -279,7 +267,7 @@ void _SCAutoTrace(SplineChar *sc, int layer, char **args) {
 	else
 	    bgcol = 0xffffff;
 
-	command = galloc(32768);
+	command = malloc(32768);
 	cmd = add_arg(command, prog);
 	cmd = add_arg(cmd, " ");
 	if(args){
@@ -299,7 +287,6 @@ void _SCAutoTrace(SplineChar *sc, int layer, char **args) {
 	cmd = add_arg(cmd, "\"");
 	/*fprintf(stdout, "---EXEC---\n%s\n----------\n", command);fflush(stdout);*/
 	system(command);
-	gfree(command);
 
 	ps = fopen(tempname_out, "r");
 	if(ps){
@@ -309,11 +296,8 @@ void _SCAutoTrace(SplineChar *sc, int layer, char **args) {
 	    transform[4] = images->xoff;
 	    transform[5] = images->yoff - images->yscale*ib->height;
 	    new = SplinePointListTransform(new,transform,tpt_AllPoints);
-	    if ( sc->layers[layer].order2 ) {
-		SplineSet *o2 = SplineSetsTTFApprox(new);
-		SplinePointListsFree(new);
-		new = o2;
-	    }
+	    if ( sc->layers[layer].order2 )
+		new = SplineSetsTTFApprox(new);
 	    if ( new!=NULL ) {
 		sc->parent->onlybitmaps = false;
 		if ( !changed )
@@ -336,15 +320,16 @@ void _SCAutoTrace(SplineChar *sc, int layer, char **args) {
 #else
 void _SCAutoTrace(SplineChar *sc, int layer, char **args) {
     ImageList *images;
-    char *prog, *pt;
+    const char *prog;
+    char *pt;
     SplineSet *new, *last;
     struct _GImage *ib;
     Color bgcol;
     real transform[6];
     int changed = false;
     char tempname[1025];
-    char *arglist[30];
-    int ac,i;
+    const char (* arglist[30]);
+    size_t ac,i;
     FILE *ps;
     int pid, status, fd;
     int ispotrace;
@@ -369,7 +354,7 @@ return;
 	}
 	fd = mytempnam(tempname);
 	GImageWriteBmp(images->image,tempname);
-	if ( ib->trans==-1 )
+	if ( ib->trans==(Color)-1 )
 	    bgcol = 0xffffff;		/* reasonable guess */
 	else if ( ib->image_type==it_true )
 	    bgcol = ib->trans;
@@ -414,7 +399,7 @@ return;
 		*strrchr(tempname,'/') = '\0';
 		chdir(tempname);
 	    }
-	    exit(execvp(prog,arglist)==-1);	/* If exec fails, then die */
+	    exit(execvp(prog,(char * const *)arglist)==-1);	/* If exec fails, then die */
 	} else if ( pid!=-1 ) {
 	    waitpid(pid,&status,0);
 	    if ( WIFEXITED(status)) {
@@ -427,7 +412,6 @@ return;
 		new = SplinePointListTransform(new,transform,tpt_AllPoints);
 		if ( sc->layers[layer].order2 ) {
 		    SplineSet *o2 = SplineSetsTTFApprox(new);
-		    SplinePointListsFree(new);
 		    new = o2;
 		}
 		if ( new!=NULL ) {
@@ -475,7 +459,7 @@ return( NULL );
 	    vector[cnt] = NULL;
 return( vector );
 	}
-	vector = galloc((cnt+1)*sizeof(char *));
+	vector = malloc((cnt+1)*sizeof(char *));
     }
 return( NULL );
 }
@@ -502,7 +486,7 @@ return( NULL );
 return( ret );
 	} else if ( len<=1 )
 return( NULL );
-	ret = rpt = galloc(len);
+	ret = rpt = malloc(len);
     }
 return( NULL );
 }
@@ -516,13 +500,6 @@ return( flatten(args));
 }
 
 void SetAutoTraceArgs(void *a) {
-    int i;
-
-    if ( args!=NULL ) {
-	for ( i=0; args[i]!=NULL; ++i )
-	    free(args[i]);
-	free(args);
-    }
     args = makevector((char *) a);
 }
 
@@ -534,11 +511,9 @@ char **AutoTraceArgs(int ask) {
 
 	cret = ff_ask_string(_("Additional arguments for autotrace program:"),
 		cdef,_("Additional arguments for autotrace program:"));
-	free(cdef);
 	if ( cret==NULL )
 return( (char **) -1 );
 	args = makevector(cret);
-	free(cret);
 	SavePrefs(true);
     }
 return( args );
@@ -595,7 +570,7 @@ return;
     _SCAutoTrace(sc, layer, args);
 }
 
-char *ProgramExists(char *prog,char *buffer) {
+char *ProgramExists(const char *prog,char *buffer) {
     char *path, *pt;
 
     if (( path = getenv("PATH"))==NULL )
@@ -623,10 +598,10 @@ return( buffer );
 return( NULL );
 }
 
-char *FindAutoTraceName(void) {
+const char *FindAutoTraceName(void) {
     static int searched=0;
     static int waspotraceprefered;
-    static char *name = NULL;
+    static const char *name = NULL;
     char buffer[1025];
 
     if ( searched && waspotraceprefered==preferpotrace )
@@ -654,9 +629,9 @@ return( name );
 return( name );
 }
 
-char *FindMFName(void) {
+const char *FindMFName(void) {
     static int searched=0;
-    static char *name = NULL;
+    static const char *name = NULL;
     char buffer[1025];
 
     if ( searched )
@@ -717,10 +692,8 @@ static void cleantempdir(char *tempdir) {
 	}
 	closedir(temp);
 	todelete[cnt] = NULL;
-	for ( cnt=0; todelete[cnt]!=NULL; ++cnt ) {
+	for ( cnt=0; todelete[cnt]!=NULL; ++cnt )
 	    unlink(todelete[cnt]);
-	    free(todelete[cnt]);
-	}
     }
     rmdir(tempdir);
 }
@@ -776,8 +749,8 @@ return( NULL );
     }
 
     ac = 0;
-    arglist[ac++] = FindMFName();
-    arglist[ac++] = galloc(strlen(mf_args)+strlen(filename)+20);
+    arglist[ac++] = (char *)FindMFName();
+    arglist[ac++] = malloc(strlen(mf_args)+strlen(filename)+20);
     arglist[ac] = NULL;
     strcpy(arglist[1],mf_args);
     strcat(arglist[1]," ");
@@ -806,18 +779,14 @@ return( NULL );
 		ff_post_error(_("Can't run mf"),_("Could not read (or perhaps find) mf output file"));
 	    else {
 		sf = SFFromBDF(gffile,3,true);
-		free(gffile);
 		if ( sf!=NULL ) {
 		    ff_progress_change_line1(_("Autotracing..."));
 		    ff_progress_change_total(sf->glyphcnt);
 		    for ( i=0; i<sf->glyphcnt; ++i ) {
 			if ( (sc = sf->glyphs[i])!=NULL && sc->layers[ly_back].images ) {
 			    _SCAutoTrace(sc, ly_fore, args);
-			    if ( mf_clearbackgrounds ) {
-				GImageDestroy(sc->layers[ly_back].images->image);
-			        free(sc->layers[ly_back].images);
+			    if ( mf_clearbackgrounds )
 			        sc->layers[ly_back].images = NULL;
-			    }
 			}
 			if ( !ff_progress_next())
 		    break;
@@ -829,7 +798,6 @@ return( NULL );
 	    ff_post_error(_("Can't run mf"),_("MetaFont exited with an error"));
     } else
 	ff_post_error(_("Can't run mf"),_("Can't run mf"));
-    free(arglist[1]);
     cleantempdir(tempdir);
 return( sf );
 #endif

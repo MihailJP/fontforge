@@ -118,19 +118,6 @@ struct fntheader {
     uint16	cspace;
     uint32	coloroffset;		/* Offset to color table */
     uint8	mbz2[16];		/* Freetype says 4. Online docs say 16 & earlier versions were wrong... */
-#if 0		/* Font data */
-    union {
-	/* Width below is width of bitmap, and advance width */
-	/* so no chars can extend before 0 or after advance */
-	struct v2chars { uint16 width; uint16 offset; } v2;
-	struct v3chars { uint16 width; uint32 offset; } v3;
-    } chartable[/*lastchar-firstchar+2*/258];
-    /* facename */
-    /* devicename */
-    /* bitmaps */
-	/* Each character is stored in column-major order with one byte for each row */
-	/*  then the second byte for each row, ... */
-#endif
 };
 
 
@@ -243,16 +230,6 @@ return( false );
 	fntheader.coloroffset = lgetlong(fnt);
 	for ( i=0; i<16; ++i )		/* Freetype thinks this is 4 */
 	    (void) getc(fnt);
-#if 0
-/* A font dir entry looks like this. It does not read bitspointer, bitsoffset */
-    } else {
-	fntheader.deviceoffset = lgetlong(fnt);
-	fntheader.faceoffset = lgetlong(fnt);
-	(void) lgetlong(fnt);
-	while ( (ch=getc(fnt))!=EOF && ch!='\0' );
-	fntheader.faceoffset = ftell(fnt)-base;
-	while ( (ch=getc(fnt))!=EOF && ch!='\0' );
-#endif
     }
 
     memset(charinfo,0,sizeof(charinfo));
@@ -266,11 +243,8 @@ return( false );
 
     /* Set the font names and the pfminfo structure */
     sf->pfminfo.pfmset = true;
-    if ( fntheader.copyright[0]!='\0' ) {
-	free(sf->copyright);
+    if ( fntheader.copyright[0]!='\0' )
 	sf->copyright = copy(fntheader.copyright);
-    }
-    free(sf->weight);
     sf->weight = copy( fntheader.weight<=100 ? "Thin" :
 			fntheader.weight<=200 ? "Extralight" :
 			fntheader.weight<=300 ? "Light" :
@@ -284,13 +258,12 @@ return( false );
     sf->pfminfo.panose[2] = fntheader.weight/100 + 1;
     fseek(fnt,base+fntheader.faceoffset,SEEK_SET);
     for ( i=0; (ch=getc(fnt))!=EOF && ch!=0; ++i );
-    free(sf->familyname);
-    sf->familyname = galloc(i+2);
+    sf->familyname = malloc(i+2);
     fseek(fnt,base+fntheader.faceoffset,SEEK_SET);
     for ( i=0; (ch=getc(fnt))!=EOF && ch!=0; ++i )
 	sf->familyname[i] = ch;
     sf->familyname[i] = '\0';
-    temp = galloc(i+50);
+    temp = malloc(i+50);
     strcpy(temp,sf->familyname);
     if ( fntheader.weight<=300 && fntheader.weight>500 ) {
 	strcat(temp," ");
@@ -298,9 +271,7 @@ return( false );
     }
     if ( fntheader.italic )
 	strcat(temp," Italic");
-    free(sf->fullname);
     sf->fullname = temp;
-    free(sf->fontname);
     sf->fontname = copy(sf->fullname);
     for ( pt=spt=sf->fontname; *spt; ++spt )
 	if ( *spt!=' ' )
@@ -318,13 +289,13 @@ return( false );
     if ( fntheader.italic )
 	sf->italicangle = 11.25;
 
-    bdf = gcalloc(1,sizeof(BDFFont));
+    bdf = calloc(1,sizeof(BDFFont));
     bdf->sf = sf;
     bdf->glyphcnt = sf->glyphcnt;
     bdf->glyphmax = sf->glyphmax;
     bdf->res = fntheader.vertres;
     bdf->pixelsize = rint(fntheader.pointsize*fntheader.vertres/72.27);
-    bdf->glyphs = gcalloc(sf->glyphmax,sizeof(BDFChar *));
+    bdf->glyphs = calloc(sf->glyphmax,sizeof(BDFChar *));
     bdf->ascent = rint(.8*bdf->pixelsize);		/* shouldn't use typographical ascent */
     bdf->descent = bdf->pixelsize-bdf->ascent;
     for ( i=fntheader.firstchar; i<=fntheader.lastchar; ++i ) if ( charinfo[i].width!=0 ) {
@@ -332,12 +303,12 @@ return( false );
 
 	if ( gid>=bdf->glyphcnt ) {
 	    if ( gid>=bdf->glyphmax )
-		bdf->glyphs = grealloc(bdf->glyphs,(bdf->glyphmax=sf->glyphmax)*sizeof(BDFChar *));
+		bdf->glyphs = realloc(bdf->glyphs,(bdf->glyphmax=sf->glyphmax)*sizeof(BDFChar *));
 	    memset(bdf->glyphs+bdf->glyphcnt,0,(sf->glyphcnt-bdf->glyphcnt)*sizeof(BDFChar *));
 	    bdf->glyphcnt = sf->glyphcnt;
 	}
 
-	bdf->glyphs[gid] = bdfc = chunkalloc(sizeof(BDFChar));
+	bdf->glyphs[gid] = bdfc = XZALLOC(BDFChar);
 	memset( bdfc,'\0',sizeof( BDFChar ));
 	bdfc->xmin = 0;
 	bdfc->xmax = charinfo[i].width-1;
@@ -346,7 +317,7 @@ return( false );
 	bdfc->width = charinfo[i].width;
 	bdfc->vwidth = bdf->pixelsize;
 	bdfc->bytes_per_line = (bdfc->xmax>>3)+1;
-	bdfc->bitmap = gcalloc(bdfc->bytes_per_line*fntheader.height,sizeof(uint8));
+	bdfc->bitmap = calloc(bdfc->bytes_per_line*fntheader.height,sizeof(uint8));
 	bdfc->orig_pos = gid;
 	bdfc->sc = sf->glyphs[gid];
 	bdfc->sc->widthset = true;
@@ -358,10 +329,8 @@ return( false );
 	}
 	BCCompressBitmap(bdfc);
 
-	if ( feof(fnt) ) {
-	    BDFFontFree(bdf);
+	if ( feof(fnt) )
 return( false );
-	}
     }
 
     bdf->next = sf->bitmaps;
@@ -399,7 +368,6 @@ return( NULL );
 	neoffset = lgetlong(fon);
 	fseek(fon,neoffset,SEEK_SET);
 	if ( lgetushort(fon)!=FON_NE_MAGIC ) {
-	    EncMapFree(sf->map);
 	    SplineFontFree(sf);
 	    fclose(fon);
 return( NULL );
@@ -436,19 +404,13 @@ return( NULL );
     }
     fclose(fon);
     if ( sf->bitmaps==NULL ) {
-	EncMapFree(sf->map);
 	SplineFontFree(sf);
 return( NULL );
     }
 
     SFOrderBitmapList(sf);
-    if ( sf->bitmaps->next!=NULL && toback ) {
-	for ( bdf = sf->bitmaps; bdf->next!=NULL; bdf = next ) {
-	    next = bdf->next;
-	    BDFFontFree(bdf);
-	}
+    if ( sf->bitmaps->next!=NULL && toback )
 	sf->bitmaps = bdf;
-    }
     /* Find the biggest font, and adjust the metrics to match */
     for ( bdf = sf->bitmaps; bdf->next!=NULL; bdf = bdf->next );
     for ( i=0; i<sf->glyphcnt ; ++i ) if ( sf->glyphs[i]!=NULL && bdf->glyphs[i]!=NULL ) {
@@ -677,15 +639,9 @@ typedef signed short	INT16;
 typedef int		INT;
 typedef uint32		DWORD;		/* originally unsigned long */
 typedef int32		LONG;
-#if 0
-#define CALLBACK	__stdcall
-typedef INT		(CALLBACK *FARPROC)();
-typedef LRESULT		(CALLBACK *FARPROC16)();
-#else
 #define CALLBACK
 typedef int32		FARPROC;	/* Pointers screw up the alignment on 64 bit machines */
 typedef int32		FARPROC16;	/* ditto */
-#endif
 typedef unsigned short	HANDLE16;
 typedef int32		LONG_PTR;	/* originally "long", but that won't work on 64 bit machines */
 typedef LONG_PTR        LRESULT;
@@ -847,8 +803,8 @@ int FONFontDump(char *filename,SplineFont *sf, int32 *sizes,int resol,
     ff_progress_change_line1(_("Saving Bitmap Font(s)"));
     ff_progress_change_stages(i);
     num_files = i;
-    fntarray = (FILE **)galloc(num_files*sizeof(FILE *));
-    file_lens = (int *)galloc(num_files*sizeof(int));
+    fntarray = (FILE **)malloc(num_files*sizeof(FILE *));
+    file_lens = (int *)malloc(num_files*sizeof(int));
 
     for ( i=0; sizes[i]!=0; ++i ) {
 	for ( bdf=sf->bitmaps; bdf!=NULL &&
@@ -859,14 +815,12 @@ int FONFontDump(char *filename,SplineFont *sf, int32 *sizes,int resol,
 		    sizes[i]&0xffff, sizes[i]>>16);
 	    for ( j=0; j<i; ++j )
 		fclose(fntarray[j]);
-	    free(fntarray);
 return( false );
 	}
 	fntarray[i] = tmpfile();
 	if ( !_FntFontDump(fntarray[i],bdf,map,resol) ) {
 	    for ( j=0; j<=i; ++j )
 		fclose(fntarray[j]);
-	    free(fntarray);
 return( false );
 	}
 	ff_progress_next_stage();
@@ -939,7 +893,6 @@ return( false );
 		filename );
 	for ( j=0; j<num_files; ++j )
 	    fclose(fntarray[j]);
-	free(fntarray);
 return( false );
     }
 
@@ -1100,8 +1053,6 @@ return( false );
             fputc(0x00, fon);
     }
     fclose(fon);
-    free(fntarray);
-    free(file_lens);
 
 return true;
 }

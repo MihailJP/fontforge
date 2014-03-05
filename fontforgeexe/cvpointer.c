@@ -571,7 +571,7 @@ static int ImgRefEdgeSelected(CharView *cv, FindSel *fs,GEvent *event) {
     /* Check the bounding box of references if meta is up, or if they didn't */
     /*  click on a reference edge. Point being to allow people to select */
     /*  macron or other reference which fills the bounding box */
-    if ( !(event->u.mouse.state&ksm_alt) ||
+    if ( !(event->u.mouse.state&ksm_meta) ||
 	    (fs->p->ref!=NULL && !fs->p->ref->selected)) {
 	for ( ref=cv->b.layerheads[cv->b.drawmode]->refs; ref!=NULL; ref=ref->next ) if ( ref->selected ) {
 	    if (( cv->expandedge = OnBB(cv,&ref->bb,fs->fudge))!=ee_none ) {
@@ -1136,7 +1136,6 @@ return;
     }
 
     old->from->nextcpdef = old->to->prevcpdef = false;
-    SplineFree(old);
     CVSetCharChanged(cv,true);
 }
 
@@ -1215,41 +1214,6 @@ static int CVCheckMerges(CharView *cv ) {
 return( cnt>0 && stop_at_join );
 }
 
-static void FE_interpCPsOnMotionBCPKeepDistance( void* key,
-						 void* value,
-						 SplinePoint* sp,
-						 BasePoint *which,
-						 bool isnext,
-						 void* udata )
-{
-    printf("FE_interpCPsOnMotionBCPKeepDistance() which:%p sp:%p\n", which, sp );
-    if( sp->selected )
-    {
-	printf("    sp loc %f %f\n", sp->me.x, sp->me.y );
-	printf("  next loc %f %f\n", sp->nextcp.x, sp->nextcp.y );
-	printf("  prev loc %f %f\n", sp->prevcp.x, sp->prevcp.y );
-
-	real cutoff = 30;
-	bigreal d = DistanceBetweenPoints(&sp->me,&sp->prevcp);
-	printf("  distance.next %lf\n", d );
-	if( d < cutoff )
-	{
-	    printf("  TOO CLOSE!\n");
-	    if( d )
-	    {
-		sp->prevcp.x *= (cutoff / d );
-		sp->prevcp.y *= (cutoff / d );
-	    }
-	}
-	
-
-	// if distance is too close, then move the nextcp/prevcp away a little bit
-	
-    }
-    
-//    SPTouchControl( sp, which, (int)udata );
-}
-
 static void adjustLBearing( CharView *cv, SplineChar *sc, real val )
 {
     DBounds bb;
@@ -1325,10 +1289,6 @@ return(false);
 	    CVVisitAllControlPoints( cv, preserveState,
 	    			     FE_touchControlPoint,
 	    			     (void*)cv->b.layerheads[cv->b.drawmode]->order2 );
-
-	    /* CVVisitAllControlPoints( cv, preserveState, */
-	    /* 			     FE_interpCPsOnMotionBCPKeepDistance, 0 ); */
-	    
 	}
     }
     
@@ -1414,7 +1374,7 @@ return(false);
 	CVSetCharChanged(cv,true);
     else if ( changed )
 	CVSetCharChanged(cv,2);
-    if ( input_state&ksm_alt )
+    if ( input_state&ksm_meta )
 return( false );			/* Don't merge if the meta key is down */
 
 return( CVCheckMerges( cv ));

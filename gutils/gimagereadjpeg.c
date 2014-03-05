@@ -27,12 +27,6 @@
 
 #include <fontforge-config.h>
 
-#ifdef _NO_LIBJPEG
-
-static int a_file_must_define_something=0;	/* ANSI says so */
-
-#else /* We can build with jpeglib - therefore import jpg files */
-
 #include <basics.h>
 #include <sys/types.h>
 #include <stdio.h>
@@ -119,7 +113,7 @@ return( NULL );
     base = ret->u.image;
 
     (void) jpeg_start_decompress(&cinfo);
-    rows[0] = (JSAMPLE *) galloc(3*cinfo.image_width);
+    rows[0] = (JSAMPLE *) malloc(3*cinfo.image_width);
     js.cinfo = &cinfo; js.base = base; js.buffer = rows[0];
     while (cinfo.output_scanline < cinfo.output_height) {
 	ypos = cinfo.output_scanline;
@@ -129,7 +123,6 @@ return( NULL );
 
   (void) jpeg_finish_decompress(&cinfo);
   jpeg_destroy_decompress(&cinfo);
-  gfree(rows[0]);
 
 return( ret );
 }
@@ -148,4 +141,3 @@ GImage *GImageReadJpeg(char *filename) {
     fclose(infile);
     return( ret );
 }
-#endif

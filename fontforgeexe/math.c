@@ -51,7 +51,6 @@ static char *MKChange_Dlg(GGadget *g, int r, int c);
 static void extpart_finishedit(GGadget *g, int r, int c, int wasnew);
 static void italic_finishedit(GGadget *g, int r, int c, int wasnew);
 static void topaccent_finishedit(GGadget *g, int r, int c, int wasnew);
-static void mathkern_finishedit(GGadget *g, int r, int c, int wasnew);
 static void mathkern_initrow(GGadget *g, int r);
 
 static GTextInfo truefalse[] = {
@@ -105,7 +104,7 @@ struct matrixinit mis[] = {
     { sizeof(exten_shape_ci)/sizeof(struct col_init)-1, exten_shape_ci, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL },
     { sizeof(italic_cor_ci)/sizeof(struct col_init)-1, italic_cor_ci, 0, NULL, NULL, NULL, italic_finishedit, NULL, NULL, NULL },
     { sizeof(top_accent_ci)/sizeof(struct col_init)-1, top_accent_ci, 0, NULL, NULL, NULL, topaccent_finishedit, NULL, NULL, NULL },
-    { sizeof(math_kern_ci)/sizeof(struct col_init)-1, math_kern_ci, 0, NULL, mathkern_initrow, NULL, mathkern_finishedit, NULL, NULL, NULL },
+    { sizeof(math_kern_ci)/sizeof(struct col_init)-1, math_kern_ci, 0, NULL, mathkern_initrow, NULL, NULL, NULL, NULL, NULL },
     { sizeof(glyph_variants_ci)/sizeof(struct col_init)-1, glyph_variants_ci, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL },
     { sizeof(glyph_construction_ci)/sizeof(struct col_init)-1, glyph_construction_ci, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL },
     { sizeof(glyph_variants_ci)/sizeof(struct col_init)-1, glyph_variants_ci, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL },
@@ -239,9 +238,9 @@ static struct glyphvariants *GV_FromString(struct glyphvariants *gv,char *str) {
     if ( pcnt<=0 )
 return( gv );
     if ( gv==NULL )
-	gv = chunkalloc(sizeof(struct glyphvariants));
+	gv = XZALLOC(struct glyphvariants);
     gv->part_cnt = pcnt;
-    gv->parts = gcalloc(pcnt,sizeof(struct gv_part));
+    gv->parts = calloc(pcnt,sizeof(struct gv_part));
     pcnt = 0;
     for ( start = str ; ; ) {
 	while ( *start==' ' ) ++start;
@@ -276,7 +275,7 @@ return( NULL );
 		gv->parts[i].fullAdvance);
 	len += strlen( buffer );
     }
-    str = galloc(len+1);
+    str = malloc(len+1);
     for ( i=len=0; i<gv->part_cnt; ++i ) {
 	strcpy(str+len,gv->parts[i].component);
 	len += strlen(gv->parts[i].component);
@@ -372,7 +371,6 @@ static void MATH_Init(MathDlg *math) {
 	    DevTabToString(&str,*devtab);
 	    if ( str!=NULL )
 		GGadgetSetTitle8(tf2,str);
-	    free(str);
 	}
     }
 
@@ -380,7 +378,7 @@ static void MATH_Init(MathDlg *math) {
     for ( i=cnt=0; i<sf->glyphcnt; ++i ) if ( (sc=sf->glyphs[i])!=NULL )
 	if ( sc->is_extended_shape )
 	    ++cnt;
-    mds = gcalloc(cnt*2,sizeof(struct matrix_data));
+    mds = calloc(cnt*2,sizeof(struct matrix_data));
     for ( i=cnt=0; i<sf->glyphcnt; ++i ) if ( (sc=sf->glyphs[i])!=NULL )
 	if ( sc->is_extended_shape ) {
 	    mds[2*cnt+0].u.md_str = copy(sc->name);
@@ -398,7 +396,7 @@ static void MATH_Init(MathDlg *math) {
 		    (ta==1 && sc->top_accent_horiz!=TEX_UNDEF))
 		++cnt;
 	}
-	mds = gcalloc(cnt*cols,sizeof(struct matrix_data));
+	mds = calloc(cnt*cols,sizeof(struct matrix_data));
 	for ( i=cnt=0; i<sf->glyphcnt; ++i ) if ( (sc=sf->glyphs[i])!=NULL ) {
 	    if ( ta==0 && sc->italic_correction!=TEX_UNDEF ) {
 		mds[cols*cnt+0].u.md_str = copy(sc->name);
@@ -421,7 +419,7 @@ static void MATH_Init(MathDlg *math) {
     for ( i=cnt=0; i<sf->glyphcnt; ++i ) if ( (sc=sf->glyphs[i])!=NULL )
 	if ( sc->mathkern!=NULL )
 	    ++cnt;
-    mds = gcalloc(cnt*cols,sizeof(struct matrix_data));
+    mds = calloc(cnt*cols,sizeof(struct matrix_data));
     for ( i=cnt=0; i<sf->glyphcnt; ++i ) if ( (sc=sf->glyphs[i])!=NULL )
 	if ( sc->mathkern!=NULL ) {
 	    mds[cols*cnt+0].u.md_str = copy(sc->name);
@@ -441,7 +439,7 @@ static void MATH_Init(MathDlg *math) {
 	    if ( gv!=NULL && gv->part_cnt!=0 )
 		++ccnt;
 	}
-	mds = gcalloc(cnt*cols,sizeof(struct matrix_data));
+	mds = calloc(cnt*cols,sizeof(struct matrix_data));
 	for ( i=cnt=0; i<sf->glyphcnt; ++i ) if ( (sc=sf->glyphs[i])!=NULL ) {
 	    struct glyphvariants *gv = h ? sc->horiz_variants : sc->vert_variants;
 	    if ( gv!=NULL && gv->variants!=NULL ) {
@@ -455,7 +453,7 @@ static void MATH_Init(MathDlg *math) {
 	/* Glyph Construction */
 	g = GWidgetGetControl(math->gw,CID_VGlyphConst+2*h);
 	cols = GMatrixEditGetColCnt(g);
-	mds = gcalloc(ccnt*cols,sizeof(struct matrix_data));
+	mds = calloc(ccnt*cols,sizeof(struct matrix_data));
 	for ( i=cnt=0; i<sf->glyphcnt; ++i ) if ( (sc=sf->glyphs[i])!=NULL ) {
 	    struct glyphvariants *gv = h ? sc->horiz_variants : sc->vert_variants;
 	    if ( gv!=NULL && gv->part_cnt!=0 ) {
@@ -468,10 +466,6 @@ static void MATH_Init(MathDlg *math) {
 	}
 	GMatrixEditSet(g, mds,cnt,false);
     }
-}
-
-static void MATH_FreeImage(const void *_math, GImage *img) {
-    GImageDestroy(img);
 }
 
 static GImage *_MATHVar_GetImage(const void *_math) {
@@ -498,7 +492,7 @@ static void MATHVar_PopupPrepare(GGadget *g, int r, int c) {
 return;
     math->popup_r = r;
     math->popup_g = g;
-    GGadgetPreparePopupImage(GGadgetGetWindow(g),NULL,math,_MATHVar_GetImage,MATH_FreeImage);
+    GGadgetPreparePopupImage(GGadgetGetWindow(g),NULL,math,_MATHVar_GetImage);
 }
 
 static GImage *_MATHConst_GetImage(const void *_math) {
@@ -511,7 +505,6 @@ static GImage *_MATHConst_GetImage(const void *_math) {
     GImage *ret;
 
     ret = GV_GetConstructedImage(sc,math->def_layer,gv,GGadgetGetCid(varlist)==CID_HGlyphConst);
-    GlyphVariantsFree(gv);
 return( ret );
 }
 
@@ -525,7 +518,7 @@ static void MATHConst_PopupPrepare(GGadget *g, int r, int c) {
 return;
     math->popup_r = r;
     math->popup_g = g;
-    GGadgetPreparePopupImage(GGadgetGetWindow(g),NULL,math,_MATHConst_GetImage,MATH_FreeImage);
+    GGadgetPreparePopupImage(GGadgetGetWindow(g),NULL,math,_MATHConst_GetImage);
 }
 
 static GImage *_MATHLine_GetImage(const void *_math) {
@@ -548,7 +541,7 @@ static void MATHLine_PopupPrepare(GGadget *g, int r, int c) {
 return;
     math->popup_r = r;
     math->popup_g = g;
-    GGadgetPreparePopupImage(GGadgetGetWindow(g),NULL,math,_MATHLine_GetImage,MATH_FreeImage);
+    GGadgetPreparePopupImage(GGadgetGetWindow(g),NULL,math,_MATHLine_GetImage);
 }
 
 static GImage *_GVC_GetImage(const void *_math) {
@@ -561,7 +554,6 @@ static GImage *_GVC_GetImage(const void *_math) {
 
     gv = GV_ParseConstruction(NULL,old,rows,cols);
     ret = GV_GetConstructedImage(math->sc,math->def_layer,gv,math->is_horiz);
-    GlyphVariantsFree(gv);
 return( ret );
 }
 
@@ -637,30 +629,6 @@ static void mathkern_initrow(GGadget *g, int r) {
     stuff[r*cols+1].u.md_str = copy(_("Change"));
 };
 
-static void mathkern_finishedit(GGadget *g, int r, int c, int wasnew) {
-#if 0
-    int rows;
-    struct matrix_data *stuff;
-    MathDlg *math;
-    int cols;
-    SplineChar *sc;
-
-    if ( c!=0 || !wasnew )
-return;
-
-    /* Popup up a dlg if they added a glyph */
-    /* But a common thing is for us to get here because the user clicked on */
-    /*  the button to pop up the dlg. */
-    math = GDrawGetUserData(GGadgetGetWindow(g));
-    if ( stuff[r*cols+0].u.md_str==NULL )
-return;
-    sc = SFGetChar(math->sf,-1,stuff[r*cols+0].u.md_str);
-    if ( sc==NULL )
-return;
-    MathKernDialog(sc,math->def_layer);
-#endif
-}
-
 static void extpart_finishedit(GGadget *g, int r, int c, int wasnew) {
     int rows;
     struct matrix_data *stuff;
@@ -700,7 +668,7 @@ static void GVC_PopupPrepare(GGadget *g, int r, int c) {
     math->popup_g = g;
     if ( math->sc==NULL )
 return;
-    GGadgetPreparePopupImage(GGadgetGetWindow(g),NULL,math,_GVC_GetImage,MATH_FreeImage);
+    GGadgetPreparePopupImage(GGadgetGetWindow(g),NULL,math,_GVC_GetImage);
 }
 
 static int GVC_OK(GGadget *g, GEvent *e) {
@@ -821,7 +789,6 @@ static char *GlyphConstruction_Dlg(GGadget *g, int r, int c) {
     /* If it's unparseable, this will give 'em nothing */
     gv = GV_FromString(NULL,old[r*cols+cols-1].u.md_str);
     GV_ToMD(mgcd[0].ret,gv);
-    GlyphVariantsFree(gv);
 
     GHVBoxFitWindow(mboxes[0].ret);
 
@@ -835,7 +802,6 @@ static char *GlyphConstruction_Dlg(GGadget *g, int r, int c) {
 	struct matrix_data *stuff = GMatrixEditGet(mgcd[0].ret,&rs);
 	gv = GV_ParseConstruction(NULL,stuff,rs,cs);
 	ret = GV_ToString(gv);
-	GlyphVariantsFree(gv);
     } else
 	ret = copy( old[r*cols+cols-1].u.md_str );
     GDrawDestroyWindow(md.gw);
@@ -878,10 +844,8 @@ return( true );
 		if ( !DeviceTableOK(str,&low,&high)) {
 		    ff_post_error(_("Bad device table"), _("Bad device table for %s"),
 			    math_constants_descriptor[i].ui_name);
-		    free(str);
 return( true );
 		}
-		free(str);
 	    }
 	}
 	/* Now check that the various glyph lists are parseable */
@@ -933,12 +897,11 @@ return( true );
 		DeviceTable **devtab = (DeviceTable **) (((char *) (math->math)) + math_constants_descriptor[i].devtab_offset );
 
 		*devtab = DeviceTableParse(*devtab,str);
-		free(str);
 	    }
 	}
 	sf->MATH = math->math;
 
-	/* As for the per-glyph stuff... Well the only way I can insure that */
+	/* As for the per-glyph stuff... Well the only way I can ensure that */
 	/* things which have been removed in the dlg are removed in the font */
 	/* is to clear everything now, and start from a blank slate when I   */
 	/* parse stuff. (Except for math kerning which I don't support here) */
@@ -946,13 +909,8 @@ return( true );
 	    sc->is_extended_shape = false;
 	    sc->italic_correction = TEX_UNDEF;
 	    sc->top_accent_horiz  = TEX_UNDEF;
-	    DeviceTableFree(sc->italic_adjusts);
-	    DeviceTableFree(sc->top_accent_adjusts);
 	    sc->italic_adjusts = sc->top_accent_adjusts = NULL;
-	    GlyphVariantsFree(sc->vert_variants);
-	    GlyphVariantsFree(sc->horiz_variants);
 	    sc->vert_variants = sc->horiz_variants = NULL;
-	    /* MathKernFree(sc->mathkern); sc->mathkern = NULL; */
 	}
 	/* Then process each table to set whatever it sets */
 	for ( cid=CID_Exten; cid<=CID_HGlyphConst; ++cid ) {
@@ -975,7 +933,7 @@ return( true );
 		    char *str = old[i*cols+1].u.md_str;
 		    if ( str!=NULL ) while ( *str==' ' ) ++str;
 		    if ( str!=NULL && *str!='\0' ) {
-			*gvp = chunkalloc(sizeof(struct glyphvariants));
+			*gvp = XZALLOC(struct glyphvariants);
 			(*gvp)->variants = GlyphNameListDeUnicode( str );
 		    }
 		} else if ( cid==CID_VGlyphConst || cid==CID_HGlyphConst ) {
@@ -1204,8 +1162,6 @@ return;
 
     while ( !md.done )
 	GDrawProcessOneEvent(NULL);
-    if ( sf->MATH==NULL && !md.ok )
-	MATHFree(md.math);
 
     GDrawDestroyWindow(md.gw);
 }
@@ -1234,7 +1190,7 @@ static void MKD_SetGlyphList(MathKernDlg *mkd, SplineChar *sc) {
 	for ( gid=0; gid<sf->glyphcnt; ++gid ) if ( (test=sf->glyphs[gid])!=NULL ) {
 	    if ( test==sc || test->mathkern!=NULL ) {
 		if ( k ) {
-		    tis[cnt] = gcalloc(1,sizeof(GTextInfo));
+		    tis[cnt] = calloc(1,sizeof(GTextInfo));
 		    tis[cnt]->text = utf82u_copy(test->name);
 		    tis[cnt]->userdata = test;
 		    tis[cnt]->selected = test==sc;
@@ -1244,9 +1200,9 @@ static void MKD_SetGlyphList(MathKernDlg *mkd, SplineChar *sc) {
 	    }
 	}
 	if ( !k )
-	    tis = galloc((cnt+1)*sizeof(GTextInfo *));
+	    tis = malloc((cnt+1)*sizeof(GTextInfo *));
 	else
-	    tis[cnt] = gcalloc(1,sizeof(GTextInfo));
+	    tis[cnt] = calloc(1,sizeof(GTextInfo));
     }
     GGadgetSetList(GWidgetGetControl(mkd->gw,CID_Glyph),tis,false);
 }
@@ -1352,15 +1308,6 @@ static void MKDChar(MathKernDlg *mkd, GEvent *event) {
 
 void MKD_DoClose(struct cvcontainer *cvc) {
     MathKernDlg *mkd = (MathKernDlg *) cvc;
-    int i;
-
-    for ( i=0; i<4; ++i ) {
-	SplineChar *msc = &(&mkd->sc_topright)[i];
-	SplinePointListsFree(msc->layers[0].splines);
-	SplinePointListsFree(msc->layers[1].splines);
-	free( msc->layers );
-    }
-
     mkd->done = true;
 }
 
@@ -1430,8 +1377,6 @@ static void MKDFillup(MathKernDlg *mkd, SplineChar *sc) {
 	    msc->italic_correction = sc->italic_correction;
 	    msc->top_accent_horiz = sc->top_accent_horiz;
 	    last = NULL;
-	    SplinePointListsFree(msc->layers[0].splines);
-	    SplinePointListsFree(msc->layers[1].splines);
 	    msc->layers[0].splines = msc->layers[1].splines = NULL;
 
 	    /* copy the character itself into the background */
@@ -1452,7 +1397,7 @@ static void MKDFillup(MathKernDlg *mkd, SplineChar *sc) {
 	    last = NULL;
 	    if ( mkv!=NULL ) {
 		for ( j=0; j<mkv->cnt; ++j ) {
-		    cur = chunkalloc(sizeof(SplineSet));
+		    cur = XZALLOC(SplineSet);
 		    cur->first = cur->last = SplinePointCreate(mkv->mkd[j].kern +
 			    ((i&1)?0:sc->width) +
 			    ((i&2)?0:sc->italic_correction==TEX_UNDEF?0:sc->italic_correction),
@@ -1474,7 +1419,7 @@ static void MKDFillup(MathKernDlg *mkd, SplineChar *sc) {
 	    struct matrix_data *md;
 
 	    if ( mkv!=NULL ) {
-		md = gcalloc(mkv->cnt*cols,sizeof(struct matrix_data));
+		md = calloc(mkv->cnt*cols,sizeof(struct matrix_data));
 		for ( j=0; j<mkv->cnt; ++j ) {
 		    md[j*cols+0].u.md_ival = mkv->mkd[j].height;
 		    md[j*cols+1].u.md_ival = mkv->mkd[j].kern;
@@ -1539,7 +1484,7 @@ static int MKD_Parse(MathKernDlg *mkd) {
     int allzeroes = true;
 
     if ( mkd->cursc->mathkern==NULL )
-	mkd->cursc->mathkern = chunkalloc(sizeof(struct mathkern));
+	mkd->cursc->mathkern = XZALLOC(struct mathkern);
 
     if ( mkd->last_aspect==0 ) {		/* Graphical view is current */
 	for ( i=0; i<4; ++i ) {
@@ -1561,11 +1506,11 @@ static int MKD_Parse(MathKernDlg *mkd) {
 		    }
 		}
 		if ( !k )
-		    bases = galloc(cnt*sizeof(BasePoint *));
+		    bases = malloc(cnt*sizeof(BasePoint *));
 	    }
 	    qsort(bases,cnt,sizeof(BasePoint *),bp_order_height);
 	    if ( cnt>mkv->cnt ) {
-		mkv->mkd = grealloc(mkv->mkd,cnt*sizeof(struct mathkernvertex));
+		mkv->mkd = realloc(mkv->mkd,cnt*sizeof(struct mathkernvertex));
 		memset(mkv->mkd+mkv->cnt,0,(cnt-mkv->cnt)*sizeof(struct mathkernvertex));
 	    }
 	    for ( j=0; j<cnt; ++j ) {
@@ -1578,32 +1523,23 @@ static int MKD_Parse(MathKernDlg *mkd) {
 		for ( k=j; k<mkv->cnt; ++k )
 		    if ( bases[j]->y == mkv->mkd[k].height )
 		break;
-		if ( k!=j ) {
-		    DeviceTableFree(mkv->mkd[j].height_adjusts);
-		    DeviceTableFree(mkv->mkd[j].kern_adjusts);
+		if ( k!=j )
 		    mkv->mkd[j].height_adjusts = mkv->mkd[j].kern_adjusts = NULL;
-		}
 		if ( k<mkv->cnt ) {
 		    mkv->mkd[j].height_adjusts = mkv->mkd[k].height_adjusts;
 		    if ( bases[j]->x == mkv->mkd[k].kern )
 			mkv->mkd[j].kern_adjusts = mkv->mkd[k].kern_adjusts;
-		    else {
-			DeviceTableFree(mkv->mkd[k].kern_adjusts);
+		    else
 			mkv->mkd[k].kern_adjusts = NULL;
-		    }
 		    if ( j!=k )
 			mkv->mkd[k].height_adjusts = mkv->mkd[k].kern_adjusts = NULL;
 		}
 		mkv->mkd[j].height = bases[j]->y;
 		mkv->mkd[j].kern   = bases[j]->x;
 	    }
-	    for ( ; j<mkv->cnt; ++j ) {
-		DeviceTableFree(mkv->mkd[j].height_adjusts);
-		DeviceTableFree(mkv->mkd[j].kern_adjusts);
+	    for ( ; j<mkv->cnt; ++j )
 		mkv->mkd[j].height_adjusts = mkv->mkd[j].kern_adjusts = NULL;
-	    }
 	    mkv->cnt = cnt;
-	    free(bases);
 	    if ( cnt!=0 )
 		allzeroes = false;
 	}
@@ -1630,13 +1566,10 @@ return( false );
 	    int rows, cols = GMatrixEditGetColCnt(list);
 	    struct matrix_data *old = GMatrixEditGet(list,&rows);
 
-	    for ( j=0; j<mkv->cnt; ++j ) {
-		DeviceTableFree(mkv->mkd[j].height_adjusts);
-		DeviceTableFree(mkv->mkd[j].kern_adjusts);
+	    for ( j=0; j<mkv->cnt; ++j )
 		mkv->mkd[j].height_adjusts = mkv->mkd[j].kern_adjusts = NULL;
-	    }
 	    if ( rows>mkv->cnt ) {
-		mkv->mkd = grealloc(mkv->mkd,rows*sizeof(struct mathkerndata));
+		mkv->mkd = realloc(mkv->mkd,rows*sizeof(struct mathkerndata));
 		memset(mkv->mkd+mkv->cnt,0,(rows-mkv->cnt)*sizeof(struct mathkerndata));
 	    }
 	    for ( j=0; j<rows; ++j ) {
@@ -1651,10 +1584,8 @@ return( false );
 		allzeroes=false;
 	}
     }
-    if ( allzeroes ) {
-	MathKernFree(mkd->cursc->mathkern);
+    if ( allzeroes )
 	mkd->cursc->mathkern = NULL;
-    }
     /* The only potential error is two entries with the same height, and I don't */
     /*  check for that */
 return( true );
@@ -1704,7 +1635,6 @@ static int MathKernD_Cancel(GGadget *g, GEvent *e) {
     if ( e->type==et_controlevent && e->u.control.subtype == et_buttonactivate ) {
 	MathKernDlg *mkd = (MathKernDlg *) (((CharViewBase *) GDrawGetUserData(GGadgetGetWindow(g)))->container);
 	if ( mkd->saved_mathkern ) {
-	    MathKernFree(mkd->cursc->mathkern);
 	    mkd->cursc->mathkern = mkd->orig_mathkern;
 	}
 	MKD_DoClose(((CharViewBase *) GDrawGetUserData(GGadgetGetWindow(g)))->container);
@@ -1716,7 +1646,6 @@ static int MathKernD_OK(GGadget *g, GEvent *e) {
     if ( e->type==et_controlevent && e->u.control.subtype == et_buttonactivate ) {
 	MathKernDlg *mkd = (MathKernDlg *) (((CharViewBase *) GDrawGetUserData(GGadgetGetWindow(g)))->container);
 	if ( MKD_Parse(mkd) ) {
-	    MathKernFree(mkd->orig_mathkern);
 	    mkd->orig_mathkern = NULL;
 	    mkd->saved_mathkern = false;
 	    MKD_DoClose( (struct cvcontainer *) mkd );
@@ -1743,7 +1672,6 @@ static void MKD_Do_Navigate(struct cvcontainer *cvc, enum nav_type type) {
 
     if ( !MKD_Parse(mkd))
 return;
-    MathKernFree(mkd->orig_mathkern);
     mkd->orig_mathkern = NULL;
     mkd->saved_mathkern = false;
 
@@ -1808,7 +1736,7 @@ static void MKDInit(MathKernDlg *mkd,SplineChar *sc) {
 			    _("BottomLeft");
 	msc->parent = &mkd->dummy_sf;
 	msc->layer_cnt = 2;
-	msc->layers = gcalloc(2,sizeof(Layer));
+	msc->layers = calloc(2,sizeof(Layer));
 	LayerDefault(&msc->layers[0]);
 	LayerDefault(&msc->layers[1]);
 	mkd->chars[i] = msc;

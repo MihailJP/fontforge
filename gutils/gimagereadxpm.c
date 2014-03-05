@@ -82,23 +82,6 @@ good they are.
 ............................+...................................
 */
 
-static long LookupXColorName(char *name) {
-#if 0 && !defined( X_DISPLAY_MISSING )
-    XColor ret;
-    Display *display;
-
-    if ( screen_display==NULL )
-return( COLOR_UNKNOWN );
-
-    display = ((GXDisplay *) screen_display)->display;
-    if ( XParseColor(display,DefaultColormap(display,DefaultScreen(display)),
-	    name,&ret))
-return( ((ret.red>>8)<<16) | (ret.green&0xff00) | (ret.blue>>8) );
-#endif	/* NO X */
-
-return( COLOR_UNKNOWN );
-}
-
 static int getstring(unsigned char *buf,int sz,FILE *fp) {
 /* get a string of text within "" marks and skip */
 /* backslash sequences, or concatenated strings. */
@@ -150,17 +133,6 @@ union hash {
     union hash *table;
 };
 
-static void freetab(union hash *tab, int nchars) {
-    int i;
-
-    if ( tab && nchars>1 ) {
-	for ( i=0; i<256; ++i )
-	    if ( tab[i].table!=NULL )
-		freetab(tab[i].table,nchars-1);
-    }
-    free(tab);
-}
-
 static int fillupclut(Color *clut, union hash *tab,int index,int nchars) {
     int i;
 
@@ -209,7 +181,6 @@ static long parsecol(char *start, char *end) {
 	    /* How do I translate from HSB to RGB???? */
 	    ;
 	}
-    } else if ( (ret=LookupXColorName(start))!=-1 ) {
     } else if ( strcmp(start,"white")==0 ) {
 	ret = COLOR_CREATE(255,255,255);
     } else {
@@ -241,7 +212,7 @@ static char *findnextkey(char *str) {
 
 static long findcol(char *str) {
     char *pt, *end;
-    char *try_order = "cgm"; /* Try in this order to find something */
+    const char *try_order = "cgm"; /* Try in this order to find something */
 
     while ( *try_order ) {
 	pt = findnextkey(str);
@@ -270,16 +241,13 @@ static union hash *parse_colors(FILE *fp,unsigned char *line, int lsiz, int ncol
     if ( nchars==1 )
 	memset(tab,-1,256*sizeof(union hash));
     for ( i=0; i<ncols; ++i ) {
-	if ( !getdata(line,lsiz,fp) ) {
-	    freetab(tab,nchars);
+	if ( !getdata(line,lsiz,fp) )
 	    return( NULL );
-	}
 	sub = tab;
 	for ( j=0; j<nchars-1; ++j ) {
 	    if ( sub[line[j]].table==NULL ) {
 		if ( (sub[line[j]].table=(union hash *)malloc(256*sizeof(union hash)))==NULL ) {
 		    NoMoreMemMessage();
-		    freetab(tab,nchars);
 		    return( NULL );
 		}
 		if ( j==nchars-2 )
@@ -314,7 +282,7 @@ GImage *GImageReadXpm(char * filename) {
     line=NULL; tab=NULL; nchar=0;
     /* If file begins with XPM then read lines using getstring;() */
     /* otherwise for XPM2 read lines using function gww_getline() */
-    if ( (fgets((char *)buf,sizeof(buf),fp))<0 )
+    if ( (fgets((char *)buf,sizeof(buf),fp))==NULL )
 	goto errorGImageReadXpm;
     if ( strstr((char *) buf,"XPM2")!=NULL )
 	getdata = gww_getline;
@@ -375,16 +343,12 @@ GImage *GImageReadXpm(char * filename) {
 	    ++pt; ++ipt; ++lpt;
 	}
     }
-    free(line);
-    freetab(tab,nchar);
     fclose(fp);
     return( ret );
 
 errorGImageReadXpm:
     fprintf(stderr,"Bad input file \"%s\"\n",filename );
 errorGImageReadXpmMem:
-    GImageDestroy(ret);
-    free(line); freetab(tab,nchar);
     fclose(fp);
     return( NULL );
 }

@@ -153,6 +153,14 @@ cd $bundle_bin
 install_name_tool -change /opt/local/Library/Frameworks/Python.framework/Versions/2.7/Python @executable_path/Python fontforge 
 cd $bundle_bin
 
+#
+# use links in filesystem instead of explicit code to handle the name change.
+#
+cd $bundle_lib
+ln -s libgdraw.5.dylib libgdraw.so.5
+cd $bundle_bin
+
+
 ####
 #
 # pygtk
@@ -209,10 +217,78 @@ do
 done
 
 
+####
+#
+# python - even - http://xxyxyz.org/even/
+#
+echo "###################"
+echo "Bundling up Even..."
+echo "###################"
+cp -av /usr/local/src/even/build-even-Desktop-Debug/Even.app $scriptdir/
+rm -rf $scriptdir/Even.app/Contents/Resources/pypy
+ln -s  $scriptdir/Even.app/Contents/MacOS/Even $bundle_share/fontforge/python/Even
+cd $scriptdir/Even.app/Contents/MacOS/
+mkdir -p ./lib 
+for if in $(ldd Even |grep Qt5|sed -E 's/	//g' | sed 's/ (.*//g' )
+do
+  echo "grabbing: $if"
+  cp "$if" ./lib
+done
+for if in $(ldd Even |grep Qt5|sed -E 's/	//g' | sed 's/ (.*//g' )
+do
+  echo "fixing Even link to: $if"
+  fn=$(basename "$if");
+  install_name_tool -change "$if" "/Applications/FontForge.app/Contents/MacOS/Even.app/Contents/MacOS/lib/$fn" Even
+done
+
+
+mkdir -p ./platforms
+cd ./platforms
+for if in $(find /opt/local/home/ben/Qt5* -name "libqcocoa.dylib" | grep -v Creator)
+do
+  echo "grabbing: $if"
+  cp "$if" .
+done
+
+for if in $(ldd libqcocoa.dylib | grep QtPrintSup |sed -E 's/	//g' | sed 's/ (.*//g' )
+do
+    cp "$if" ../lib/
+done
+for if in $(ldd libqcocoa.dylib | grep Qt5|sed -E 's/	//g' | sed 's/ (.*//g' )
+do
+  echo "fixing libqcocoa.dylib"
+  fn=$(basename "$if");
+  install_name_tool -change "$if" "/Applications/FontForge.app/Contents/MacOS/Even.app/Contents/MacOS/lib/$fn" libqcocoa.dylib
+done
+cd ../lib/
+for if in Qt*
+do
+    echo "fixing $if"
+    for dylibif in $(ldd $if | grep Qt|sed -E 's/	//g' | sed 's/ (.*//g' )
+    do
+       fn=$(basename "$dylibif");
+       install_name_tool -change "$dylibif" "/Applications/FontForge.app/Contents/MacOS/Even.app/Contents/MacOS/lib/$fn" $if
+    done
+done
+
+cd $bundle_bin
+
+#
+# Fix the dangling absolute link
+#
+cd "$bundle_share/fontforge/python"
+rm -f Even
+ln -s /Applications/FontForge.app/Contents/MacOS/Even.app/Contents/MacOS/Even .
+cd $bundle_bin
+
+
 ########################
 #
 # we want nodejs in the bundle for collab
 #
+echo "###################"
+echo "bundling up nodejs "
+echo "###################"
 mkdir -p $bundle_lib  $bundle_bin
 cd $bundle_bin
 cp -av /opt/local/bin/node .
@@ -255,7 +331,7 @@ NEWPREFIX=/Applications/FontForge.app/Contents/Resources/opt/local
 
 mkdir -p $bundle_etc
 #cp -av /opt/local/etc/fonts   $bundle_etc
-cp -av /opt/local/etc/fonts/conf.d   $bundle_etc/fonts/
+cp -avL /opt/local/etc/fonts/conf.d   $bundle_etc/fonts/
 cp -av /opt/local/etc/pango   $bundle_etc
 cd $bundle_etc/pango
 sed -i -e "s|$OLDPREFIX|$NEWPREFIX|g" pangorc
@@ -296,7 +372,7 @@ cp -av /opt/local/share/X11/locale $bundle_share/X11
 cd $TEMPDIR
 find FontForge.app -exec touch {} \;
 rm -f  ~/FontForge.app.zip
-zip -9 -r ~/FontForge.app.zip FontForge.app
+zip -9 --symlinks -r ~/FontForge.app.zip FontForge.app
 cp -f  ~/FontForge.app.zip /tmp/
 chmod o+r /tmp/FontForge.app.zip
 

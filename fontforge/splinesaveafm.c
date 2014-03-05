@@ -24,7 +24,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "fontforgevw.h"		/* For Error */
+#include "fontforgevw.h"
 #include "ttf.h"		/* For AnchorClassDecompose */
 #include <stdio.h>
 #include "splinefont.h"
@@ -78,7 +78,7 @@ static void KPInsert( SplineChar *sc1, SplineChar *sc2, int off, int isv ) {
 	if ( kp!=NULL )
 	    kp->off = off;
 	else if ( off!=0 ) {
-	    kp = chunkalloc(sizeof(KernPair));
+	    kp = XZALLOC(KernPair);
 	    kp->sc = sc2;
 	    kp->off = off;
 	    script = SCScriptFromUnicode(sc1);
@@ -98,7 +98,7 @@ static void KPInsert( SplineChar *sc1, SplineChar *sc2, int off, int isv ) {
     }
 }
 
-int LoadKerningDataFromAfm(SplineFont *sf, char *filename,EncMap *map) {
+int LoadKerningDataFromAfm(SplineFont *sf, char *filename) {
     FILE *file = fopen(filename,"r");
     char buffer[200], *pt, *ept, ch;
     SplineChar *sc1, *sc2;
@@ -141,7 +141,7 @@ return( 0 );
 			break;
 			}
 			if ( liga==NULL ) {
-			    liga = chunkalloc(sizeof(PST));
+			    liga = XZALLOC(PST);
 			    liga->subtable = SFSubTableFindOrMake(sf,
 				    CHR('l','i','g','a'),SCScriptFromUnicode(sc2),
 				    gsub_ligature);
@@ -161,15 +161,14 @@ return( 0 );
 return( 1 );
 }
 
-static void CheckMMAfmFile(SplineFont *sf,char *amfm_filename,char *fontname,EncMap *map) {
+static void CheckMMAfmFile(SplineFont *sf,char *amfm_filename,char *fontname) {
     /* the afm file should be in the same directory as the amfm file */
     /*  with the fontname as the filename */
     char *temp, *pt;
 
-    free(sf->fontname);
     sf->fontname = copy(fontname);
 
-    temp = galloc(strlen(amfm_filename)+strlen(fontname)+strlen(".afm")+1);
+    temp = malloc(strlen(amfm_filename)+strlen(fontname)+strlen(".afm")+1);
     strcpy(temp, amfm_filename);
     pt = strrchr(temp,'/');
     if ( pt==NULL ) pt = temp;
@@ -177,14 +176,13 @@ static void CheckMMAfmFile(SplineFont *sf,char *amfm_filename,char *fontname,Enc
     strcpy(pt,fontname);
     pt += strlen(pt);
     strcpy(pt,".afm");
-    if ( !LoadKerningDataFromAfm(sf,temp,map) ) {
+    if ( !LoadKerningDataFromAfm(sf,temp) ) {
 	strcpy(pt,".AFM");
-	LoadKerningDataFromAfm(sf,temp,map);
+	LoadKerningDataFromAfm(sf,temp);
     }
-    free(temp);
 }
 
-int LoadKerningDataFromAmfm(SplineFont *sf, char *filename,EncMap *map) {
+int LoadKerningDataFromAmfm(SplineFont *sf, char *filename) {
     FILE *file=NULL;
     char buffer[280], *pt, lastname[257];
     int index, i;
@@ -196,8 +194,7 @@ int LoadKerningDataFromAmfm(SplineFont *sf, char *filename,EncMap *map) {
     if ( pt!=NULL ) {
 	char *afmname = copy(filename);
 	strcpy(afmname+(pt-filename),isupper(pt[1])?".AFM":".afm");
-	LoadKerningDataFromAfm(mm->normal,afmname,map);
-	free(afmname);
+	LoadKerningDataFromAfm(mm->normal,afmname);
     }
     if ( file==NULL )
 return( 0 );
@@ -211,7 +208,7 @@ return( 0 );
     while ( fgets(buffer,sizeof(buffer),file)!=NULL ) {
 	if ( strstrmatch(buffer,"EndMaster")!=NULL ) {
 	    if ( lastname[0]!='\0' && index!=-1 && index<mm->instance_count )
-		CheckMMAfmFile(mm->instances[index],filename,lastname,map);
+		CheckMMAfmFile(mm->instances[index],filename,lastname);
 	    index = -1; lastname[0] = '\0';
 	} else if ( sscanf(buffer,"FontName %256s", lastname )== 1 ) {
 	    /* Do Nothing, all done */
@@ -234,12 +231,12 @@ return( 0 );
 return( true );
 }
 
-int CheckAfmOfPostScript(SplineFont *sf,char *psname, EncMap *map) {
+int CheckAfmOfPostScript(SplineFont *sf,char *psname) {
     char *new, *pt;
     int ret;
     int wasuc=false;
 
-    new = galloc(strlen(psname)+6);
+    new = malloc(strlen(psname)+6);
     strcpy(new,psname);
     pt = strrchr(new,'.');
     if ( pt==NULL ) pt = new+strlen(new);
@@ -247,21 +244,20 @@ int CheckAfmOfPostScript(SplineFont *sf,char *psname, EncMap *map) {
 
     if ( sf->mm!=NULL ) {
 	strcpy(pt,wasuc?".AMFM":".amfm");
-	if ( !LoadKerningDataFromAmfm(sf,new,map)) {
+	if ( !LoadKerningDataFromAmfm(sf,new)) {
 	    strcpy(pt,wasuc?".amfm":".AMFM");
-	    ret = LoadKerningDataFromAmfm(sf,new,map);
+	    ret = LoadKerningDataFromAmfm(sf,new);
 	} else
 	    ret = true;
 	/* The above routine reads from the afm file if one exist */
     } else {
 	strcpy(pt,wasuc?".AFM":".afm");
-	if ( !LoadKerningDataFromAfm(sf,new,map)) {
+	if ( !LoadKerningDataFromAfm(sf,new)) {
 	    strcpy(pt,wasuc?".afm":".AFM");
-	    ret = LoadKerningDataFromAfm(sf,new,map);
+	    ret = LoadKerningDataFromAfm(sf,new);
 	} else
 	    ret = true;
     }
-    free(new);
 return( ret );
 }
 
@@ -269,7 +265,7 @@ void SubsNew(SplineChar *to,enum possub_type type,int tag,char *components,
 	    SplineChar *default_script) {
     PST *pst;
 
-    pst = chunkalloc(sizeof(PST));
+    pst = XZALLOC(PST);
     pst->type = type;
     pst->subtable = SFSubTableFindOrMake(to->parent,tag,SCScriptFromUnicode(default_script),
 	    type==pst_substitution ? gsub_single :
@@ -287,7 +283,7 @@ void SubsNew(SplineChar *to,enum possub_type type,int tag,char *components,
 void PosNew(SplineChar *to,int tag,int dx, int dy, int dh, int dv) {
     PST *pst;
 
-    pst = chunkalloc(sizeof(PST));
+    pst = XZALLOC(PST);
     pst->type = pst_position;
     pst->subtable = SFSubTableFindOrMake(to->parent,tag,SCScriptFromUnicode(to),
 	    gpos_single );
@@ -300,7 +296,7 @@ void PosNew(SplineChar *to,int tag,int dx, int dy, int dh, int dv) {
 }
 
 static void LigatureNew(SplineChar *sc3,SplineChar *sc1,SplineChar *sc2) {
-    char *components = galloc(strlen(sc1->name)+strlen(sc2->name)+2);
+    char *components = malloc(strlen(sc1->name)+strlen(sc2->name)+2);
     strcpy(components,sc1->name);
     strcat(components," ");
     strcat(components,sc2->name);
@@ -382,7 +378,7 @@ return;
     }
 }
 
-int doesGlyphExpandHorizontally(SplineChar *sc) {
+int doesGlyphExpandHorizontally(SplineChar *UNUSED(sc)) {
 return( false );
 }
 
@@ -414,7 +410,7 @@ return;
     sc = sf->glyphs[used[0]];
     if ( sc==NULL )
 return;
-    components = galloc(len+1); components[0] = '\0';
+    components = malloc(len+1); components[0] = '\0';
     for ( i=1; i<ucnt; ++i ) {
 	strcat(components,sf->glyphs[used[i]]->name);
 	if ( i!=ucnt-1 )
@@ -422,7 +418,7 @@ return;
     }
     gvbase = doesGlyphExpandHorizontally(sc)?&sc->horiz_variants: &sc->vert_variants;
     if ( *gvbase==NULL )
-	*gvbase = chunkalloc(sizeof(struct glyphvariants));
+	*gvbase = XZALLOC(struct glyphvariants);
     (*gvbase)->variants = components;
 }
 
@@ -447,7 +443,7 @@ return;
     is_horiz = doesGlyphExpandHorizontally(sc);
     gvbase = is_horiz?&sc->horiz_variants: &sc->vert_variants;
     if ( *gvbase==NULL )
-	*gvbase = chunkalloc(sizeof(struct glyphvariants));
+	*gvbase = XZALLOC(struct glyphvariants);
 
     memset(bits,0,sizeof(bits));
     for ( j=0; j<4; ++j ) {
@@ -472,7 +468,7 @@ return;
 	bats[cnt++] = bits[2];
 
     (*gvbase)->part_cnt = cnt;
-    (*gvbase)->parts = gcalloc(cnt,sizeof(struct gv_part));
+    (*gvbase)->parts = calloc(cnt,sizeof(struct gv_part));
     for ( j=0; j<cnt; ++j ) {
 	DBounds b;
 	bigreal len;
@@ -496,8 +492,7 @@ int LoadKerningDataFromTfm(SplineFont *sf, char *filename,EncMap *map) {
     int i, tag, left, ictag;
     struct tfmdata tfmd;
     int charlist[256];
-    int is_math;
-    int width, height, depth;
+    int height, depth;
     real scale = (sf->ascent+sf->descent)/(bigreal) (1<<20);
 
     if ( file==NULL )
@@ -518,13 +513,13 @@ return( 0 );
 	fclose(file);
 return( 0 );
     }
-    tfmd.kerntab = gcalloc(tfmd.kern_size,sizeof(int32));
-    tfmd.ligkerntab = gcalloc(tfmd.ligkern_size,sizeof(int32));
-    tfmd.ext = gcalloc(tfmd.esize,sizeof(int32));
-    tfmd.ictab = gcalloc(tfmd.italic_size,sizeof(int32));
-    tfmd.dptab = gcalloc(tfmd.depth_size,sizeof(int32));
-    tfmd.httab = gcalloc(tfmd.height_size,sizeof(int32));
-    tfmd.widtab = gcalloc(tfmd.width_size,sizeof(int32));
+    tfmd.kerntab = calloc(tfmd.kern_size,sizeof(int32));
+    tfmd.ligkerntab = calloc(tfmd.ligkern_size,sizeof(int32));
+    tfmd.ext = calloc(tfmd.esize,sizeof(int32));
+    tfmd.ictab = calloc(tfmd.italic_size,sizeof(int32));
+    tfmd.dptab = calloc(tfmd.depth_size,sizeof(int32));
+    tfmd.httab = calloc(tfmd.height_size,sizeof(int32));
+    tfmd.widtab = calloc(tfmd.width_size,sizeof(int32));
     tfmd.charlist = charlist;
 
     fseek( file,(6+1)*sizeof(int32),SEEK_SET);
@@ -545,14 +540,11 @@ return( 0 );
     else if ( tfmd.param_size==13 ) sf->texdata.type = tex_mathext;
     else if ( tfmd.param_size>=7 ) sf->texdata.type = tex_text;
 
-    /* Fields in tfm files have different meanings for math fonts */
-    is_math = sf->texdata.type == tex_mathext || sf->texdata.type == tex_math;
-
     memset(charlist,-1,sizeof(charlist));
 
     fseek( file, (6+tfmd.head_len)*sizeof(int32), SEEK_SET);
     for ( i=tfmd.first; i<=tfmd.last; ++i ) {
-	width = getc(file);
+	/* width = */ getc(file);
 	height = getc(file);
 	depth = height&0xf; height >>= 4;
 	ictag = getc(file);
@@ -584,8 +576,6 @@ return( 0 );
 	    tfmDoCharList(sf,i,&tfmd,map);
     }
 
-    free( tfmd.ligkerntab); free(tfmd.kerntab); free(tfmd.ext); free(tfmd.ictab);
-    free( tfmd.dptab ); free( tfmd.httab ); free( tfmd.widtab );
     fclose(file);
 return( 1 );
 }
@@ -670,7 +660,7 @@ return;
     is_horiz = doesGlyphExpandHorizontally(sc);
     gvbase = is_horiz?&sc->horiz_variants: &sc->vert_variants;
     if ( *gvbase==NULL )
-	*gvbase = chunkalloc(sizeof(struct glyphvariants));
+	*gvbase = XZALLOC(struct glyphvariants);
 
     memset(bits,0,sizeof(bits));
     for ( j=0; j<4; ++j ) {
@@ -695,7 +685,7 @@ return;
 	bats[cnt++] = bits[1];
 
     (*gvbase)->part_cnt = cnt;
-    (*gvbase)->parts = gcalloc(cnt,sizeof(struct gv_part));
+    (*gvbase)->parts = calloc(cnt,sizeof(struct gv_part));
     for ( j=0; j<cnt; ++j ) {
 	DBounds b;
 	bigreal len;
@@ -715,9 +705,8 @@ return;
 int LoadKerningDataFromOfm(SplineFont *sf, char *filename,EncMap *map) {
     FILE *file = fopen(filename,"rb");
     int i, tag, left, ictag;
-    int level, font_dir;
-    int is_math;
-    int width, height, depth;
+    int level;
+    int height, depth;
     real scale = (sf->ascent+sf->descent)/(bigreal) (1<<20);
     struct tfmdata tfmd;
 
@@ -739,18 +728,18 @@ return( 0 );
     tfmd.kern_size = getlong(file);
     tfmd.esize = getlong(file);
     tfmd.param_size = getlong(file);
-    font_dir = getlong(file);
+    /* font_dir = */ getlong(file);
     if ( tfmd.first-1>tfmd.last || tfmd.last>=65536 ) {
 	fclose(file);
 return( 0 );
     }
     if ( tfmd.file_len!=14+tfmd.head_len+2*(tfmd.last-tfmd.first+1)+tfmd.width_size+tfmd.height_size+tfmd.depth_size+
 	    tfmd.italic_size+2*tfmd.ligkern_size+tfmd.kern_size+2*tfmd.esize+tfmd.param_size || level!=0 ) {
-	int nco, ncw, npc, nki, nwi, nkf, nwf, nkm,nwm, nkr, nwr, nkg, nwg, nkp, nwp;
+	int ncw, nki, nwi, nkf, nwf, nkm,nwm, nkr, nwr, nkg, nwg, nkp, nwp;
 	int level1=0;
-	nco = getlong(file);
+	/* nco = */ getlong(file);
 	ncw = getlong(file);
-	npc = getlong(file);
+	/* npc = */ getlong(file);
 	nki = getlong(file);
 	nwi = getlong(file);
 	nkf = getlong(file);
@@ -775,13 +764,13 @@ return( 0 );
 return( 0 );
     }
 
-    tfmd.kerntab = gcalloc(tfmd.kern_size,sizeof(int32));
-    tfmd.ligkerntab = gcalloc(tfmd.ligkern_size,2*sizeof(int32));
-    tfmd.ext = gcalloc(tfmd.esize,2*sizeof(int32));
-    tfmd.ictab = gcalloc(tfmd.italic_size,sizeof(int32));
-    tfmd.dptab = gcalloc(tfmd.depth_size,sizeof(int32));
-    tfmd.httab = gcalloc(tfmd.height_size,sizeof(int32));
-    tfmd.widtab = gcalloc(tfmd.width_size,sizeof(int32));
+    tfmd.kerntab = calloc(tfmd.kern_size,sizeof(int32));
+    tfmd.ligkerntab = calloc(tfmd.ligkern_size,2*sizeof(int32));
+    tfmd.ext = calloc(tfmd.esize,2*sizeof(int32));
+    tfmd.ictab = calloc(tfmd.italic_size,sizeof(int32));
+    tfmd.dptab = calloc(tfmd.depth_size,sizeof(int32));
+    tfmd.httab = calloc(tfmd.height_size,sizeof(int32));
+    tfmd.widtab = calloc(tfmd.width_size,sizeof(int32));
     fseek( file,(14+1)*sizeof(int32),SEEK_SET);
     sf->design_size = (5*getlong(file)+(1<<18))>>19;	/* TeX stores as <<20, adobe in decipoints */
     fseek( file,
@@ -800,15 +789,12 @@ return( 0 );
     else if ( tfmd.param_size==13 ) sf->texdata.type = tex_mathext;
     else if ( tfmd.param_size>=7 ) sf->texdata.type = tex_text;
 
-    /* Fields in tfm files have different meanings for math fonts */
-    is_math = sf->texdata.type == tex_mathext || sf->texdata.type == tex_math;
-
-    tfmd.charlist = galloc(65536*sizeof(int32));
+    tfmd.charlist = malloc(65536*sizeof(int32));
     memset(tfmd.charlist,-1,65536*sizeof(int32));
 
     fseek( file, (14+tfmd.head_len)*sizeof(int32), SEEK_SET);
     for ( i=tfmd.first; i<=tfmd.last; ++i ) {
-	width = getushort(file);
+	/* width = */ getushort(file);
 	height = getc(file);
 	depth = getc(file);
 	ictag = getc(file);
@@ -839,16 +825,13 @@ return( 0 );
 	    tfmDoCharList(sf,i,&tfmd,map);
     }
 
-    free( tfmd.ligkerntab); free(tfmd.kerntab); free(tfmd.ext); free(tfmd.ictab);
-    free( tfmd.dptab ); free( tfmd.httab ); free( tfmd.widtab );
-    free( tfmd.charlist );
     fclose(file);
 return( 1 );
 }
 /* ************************************************************************** */
 
-char *EncodingName(Encoding *map) {
-    char *name = map->iconv_name != NULL ? map->iconv_name : map->enc_name;
+const char *EncodingName(Encoding *map) {
+    const char *name = map->iconv_name != NULL ? map->iconv_name : map->enc_name;
     int len = strlen(name);
     char *pt;
 
@@ -1132,7 +1115,7 @@ static void AfmSplineFontHeader(FILE *afm, SplineFont *sf, int formattype,
     fprintf( afm, ismm ? "StartMasterFontMetrics 4.0\n" :
 		  iscid ? "StartFontMetrics 4.1\n" :
 			  "StartFontMetrics 2.0\n" );
-    fprintf( afm, "Comment Generated by FontForge %d\n", library_version_configuration.library_source_versiondate );
+    fprintf( afm, "Comment Generated by FontForge %d\n", FONTFORGE_VERSIONDATE_RAW );
     time(&now);
     fprintf(afm,"Comment Creation Date: %s", ctime(&now));
     fprintf( afm, "FontName %s\n", sf->fontname );
@@ -1163,7 +1146,7 @@ static void AfmSplineFontHeader(FILE *afm, SplineFont *sf, int formattype,
     }
     if ( iscid ) {
 	fprintf( afm, "Characters %d\n", cnt );
-	fprintf( afm, "Version %g\n", sf->cidversion );
+	fprintf( afm, "Version %g\n", (double)sf->cidversion );
 	fprintf( afm, "CharacterSet %s-%s-%d\n", sf->cidregistry, sf->ordering, sf->supplement );
 	fprintf( afm, "IsBaseFont true\n" );
 	fprintf( afm, "IsCIDFont true\n" );
@@ -1215,10 +1198,10 @@ struct cc_container {
 
 #define AC_MAX	5	/* At most 5 Anchor classes may be used/glyph */
 
-static int FigureName(int *unicode,char *name,int u) {
+static int FigureName(int *unicode,const char *name,int u) {
     char *upt, *start, *end, ch;
 
-    start = name;
+    start = copy(name);
     if ( strchr(start,'_')!=NULL ) {
 	while ( (upt=strchr(start,'_'))!=NULL ) {
 	    *upt='\0';
@@ -1275,7 +1258,7 @@ static int FindDecomposition(int *unicode, int u) {
     for ( uni=0; uni<65536; ++uni ) {
 	if ( unicode_alternates[uni>>8]!=NULL &&
 		(upt = unicode_alternates[uni>>8][uni&0xff])!=NULL ) {
-	    for ( i=0; *upt!='\0' && i<u && *upt==unicode[i]; ++i, ++upt );
+	    for ( i=0; *upt!='\0' && i<u && *upt==(unichar_t)unicode[i]; ++i, ++upt );
 	    if ( *upt=='\0' && i==u )
 return( uni );
 	}
@@ -1310,7 +1293,7 @@ return( copy( StdGlyphName(buffer,uni,ui_none,NULL)) );
     if ( u!=-1 && (unicode[0]<0x370 || unicode[0]>0x3ff) ) {
 	/* Don't use the unicode decomposition to get a name for greek */
 	/*  glyphs. We'd get acute for tonos, etc. */
-	ret = galloc(4+4*u);
+	ret = malloc(4+4*u);
 	strcpy(ret,"uni");
 	pt = ret+3;
 	for ( i=0; i<u; ++i ) {
@@ -1322,7 +1305,7 @@ return( ret );
     len = strlen( this->base->name ) +1;
     for ( cca = this->accents; cca!=NULL; cca = cca->next )
 	len += strlen( cca->accent->name ) +1;
-    ret = galloc(len);
+    ret = malloc(len);
     strcpy(ret,this->base->name);
     pt = ret + strlen(ret);
     for ( cca = this->accents; cca!=NULL; cca = cca->next ) {
@@ -1353,10 +1336,8 @@ static int AfmBuildCCName(struct cc_data *this,struct cc_container *cc) {
 	if ( SFGetChar(cc->sf,uni,NULL)!=NULL )
 return( false );		/* Character already exists in font */
     this->name = NameFrom(this,unicode,u,uni);
-    if ( SFGetChar(cc->sf,-1,this->name)!=NULL ) {
-	free(this->name);
+    if ( SFGetChar(cc->sf,-1,this->name)!=NULL )
 return( false );		/* Character already exists in font */
-    }
 return( true );
 }
 
@@ -1370,7 +1351,7 @@ static void AfmBuildMarkCombos(SplineChar *sc,AnchorPoint *ap, struct cc_contain
 	this->base = sc;
 	this->accents = NULL;
 	for ( ap=sc->anchor; ap!=NULL; ap=ap->next ) if ( ap->ticked ) {
-	    struct cc_accents *cca = chunkalloc(sizeof(struct cc_accents));
+	    struct cc_accents *cca = XZALLOC(struct cc_accents);
 	    cca->accent = cc->marks[ap->anchor->ac_num][cc->mpos[ap->anchor->ac_num]];
 	    for ( map = cca->accent->anchor; map->anchor!=ap->anchor || map->type!=at_mark;
 		    map = map->next );
@@ -1385,10 +1366,6 @@ static void AfmBuildMarkCombos(SplineChar *sc,AnchorPoint *ap, struct cc_contain
 	if ( !AfmBuildCCName(this,cc)) {
 	    struct cc_accents *cca, *next;
 	    --cc->cnt;
-	    for ( cca = this->accents; cca!=NULL; cca = next ) {
-		next = cca->next;
-		chunkfree(cca,sizeof(struct cc_accents));
-	    }
 	} else
 	    this->acnt = acnt;
     } else if ( ap->ticked ) {
@@ -1424,7 +1401,7 @@ return;
 	if ( ticks>AC_MAX || cnt>200 ) /* Too many selected. I fear combinatorial explosion */
 return;
 	if ( cc->cnt+cnt >= cc->max )
-	    cc->ccs = grealloc(cc->ccs,(cc->max += cnt+200)*sizeof(struct cc_data));
+	    cc->ccs = realloc(cc->ccs,(cc->max += cnt+200)*sizeof(struct cc_data));
 	AfmBuildMarkCombos(sc,sc->anchor,cc);
     }
 }
@@ -1441,16 +1418,16 @@ static struct cc_data *AfmFigureCCdata(SplineFont *sf,int *total) {
     cc.sf = sf;
     for ( ac=sf->anchor, ac_cnt=0; ac!=NULL; ac=ac->next, ++ac_cnt)
 	ac->ac_num = ac_cnt;
-    cc.mcnt = gcalloc(ac_cnt,sizeof(int));
-    cc.mpos = gcalloc(ac_cnt,sizeof(int));
-    mmax = gcalloc(ac_cnt,sizeof(int));
-    cc.marks = gcalloc(ac_cnt,sizeof(SplineChar **));
+    cc.mcnt = calloc(ac_cnt,sizeof(int));
+    cc.mpos = calloc(ac_cnt,sizeof(int));
+    mmax = calloc(ac_cnt,sizeof(int));
+    cc.marks = calloc(ac_cnt,sizeof(SplineChar **));
     for ( i=0; i<sf->glyphcnt; ++i ) if ( (sc = sf->glyphs[i])!=NULL ) {
 	for ( ap = sc->anchor; ap!=NULL; ap=ap->next ) if ( ap->type==at_mark )
 	    ++mmax[ap->anchor->ac_num];
     }
     for ( i=0; i<ac_cnt; ++i )
-	cc.marks[i] = gcalloc(mmax[i],sizeof(SplineChar *));
+	cc.marks[i] = calloc(mmax[i],sizeof(SplineChar *));
     for ( i=0; i<sf->glyphcnt; ++i ) if ( (sc = sf->glyphs[i])!=NULL ) {
 	for ( ap = sc->anchor; ap!=NULL; ap=ap->next ) if ( ap->type==at_mark )
 	    cc.marks[ap->anchor->ac_num][cc.mcnt[ap->anchor->ac_num]++] = sc;
@@ -1462,32 +1439,10 @@ static struct cc_data *AfmFigureCCdata(SplineFont *sf,int *total) {
 	    AfmBuildCombos(sc,sc->anchor,&cc);
 	}
     if ( cc.cnt+1 >= cc.max )
-	cc.ccs = grealloc(cc.ccs,(cc.max += 1)*sizeof(struct cc_data));
+	cc.ccs = realloc(cc.ccs,(cc.max += 1)*sizeof(struct cc_data));
     cc.ccs[cc.cnt].base = NULL;		/* End of list mark */
-    for ( i=0; i<ac_cnt; ++i )
-	free(cc.marks[i]);
-    free(cc.marks);
-    free(cc.mcnt);
-    free(cc.mpos);
-    free(mmax);
     *total = cc.cnt;
 return( cc.ccs );
-}
-
-static void CCFree(struct cc_data *cc) {
-    int i;
-    struct cc_accents *cca, *next;
-
-    if ( cc==NULL )
-return;
-    for ( i=0; cc[i].base!=NULL; ++i ) {
-	free(cc[i].name);
-	for ( cca = cc[i].accents; cca!=NULL; cca = next ) {
-	    next = cca->next;
-	    chunkfree(cca,sizeof(struct cc_accents));
-	}
-    }
-    free( cc );
 }
 
 static void AfmComposites(FILE *afm, SplineFont *sf, struct cc_data *cc, int cc_cnt) {
@@ -1680,7 +1635,6 @@ int AfmSplineFont(FILE *afm, SplineFont *sf, int formattype,EncMap *map,
     SFLigatureCleanup(sf);
     SFKernCleanup(sf,false);
     SFKernCleanup(sf,true);
-    CCFree(cc);
 
 return( !ferror(afm));
 }
@@ -1747,28 +1701,13 @@ return( !ferror(amfm));
 }
 
 void SFLigatureCleanup(SplineFont *sf) {
-    LigList *l, *next;
-    struct splinecharlist *scl, *sclnext;
     int j;
 
     if (sf->internal_temp)
 return;
 
-    for ( j=0; j<sf->glyphcnt; ++j ) if ( sf->glyphs[j]!=NULL ) {
-	for ( l = sf->glyphs[j]->ligofme; l!=NULL; l = next ) {
-	    next = l->next;
-	    for ( scl = l->components; scl!=NULL; scl = sclnext ) {
-		sclnext = scl->next;
-		chunkfree(scl,sizeof(struct splinecharlist));
-	    }
-	    if ( l->lig->temporary ) {
-		free(l->lig->u.lig.components);
-		chunkfree(l->lig,sizeof(PST));
-	    }
-	    free( l );
-	}
+    for ( j=0; j<sf->glyphcnt; ++j ) if ( sf->glyphs[j]!=NULL )
 	sf->glyphs[j]->ligofme = NULL;
-    }
 }
 
 void SFLigaturePrepare(SplineFont *sf) {
@@ -1779,7 +1718,7 @@ void SFLigaturePrepare(SplineFont *sf) {
     SplineChar *sc, *tsc;
     struct splinecharlist *head, *last;
     int ccnt, lcnt, lmax=20;
-    LigList **all = galloc(lmax*sizeof(LigList *));
+    LigList **all = malloc(lmax*sizeof(LigList *));
 
     /* First clear out any old stuff */
     for ( j=0; j<sf->glyphcnt; ++j ) if ( sf->glyphs[j]!=NULL )
@@ -1807,7 +1746,7 @@ void SFLigaturePrepare(SplineFont *sf) {
 			sc = tsc;
 			ccnt = 1;
 		    } else {
-			struct splinecharlist *cur = chunkalloc(sizeof(struct splinecharlist));
+			struct splinecharlist *cur = XZALLOC(struct splinecharlist);
 			if ( head==NULL )
 			    head = cur;
 			else
@@ -1824,19 +1763,13 @@ void SFLigaturePrepare(SplineFont *sf) {
 		while ( *pt==' ' ) ++pt;
 	    }
 	    if ( sc!=NULL ) {
-		ll = galloc(sizeof(LigList));
+		ll = malloc(sizeof(LigList));
 		ll->lig = lig;
 		ll->next = sc->ligofme;
 		ll->first = sc;
 		ll->components = head;
 		ll->ccnt = ccnt;
 		sc->ligofme = ll;
-	    } else {
-		while ( head!=NULL ) {
-		    last = head->next;
-		    chunkfree(head,sizeof(*head));
-		    head = last;
-		}
 	    }
 	}
     }
@@ -1845,7 +1778,7 @@ void SFLigaturePrepare(SplineFont *sf) {
 	/* Finally, order the list so that the longest ligatures are first */
 	if ( lcnt>1 ) {
 	    if ( lcnt>=lmax )
-		all = grealloc(all,(lmax=lcnt+30)*sizeof(LigList *));
+		all = realloc(all,(lmax=lcnt+30)*sizeof(LigList *));
 	    for ( ll=sc->ligofme, k=0; ll!=NULL; ll=ll->next, ++k )
 		all[k] = ll;
 	    for ( k=0; k<lcnt-1; ++k ) for ( j=k+1; j<lcnt; ++j )
@@ -1860,7 +1793,6 @@ void SFLigaturePrepare(SplineFont *sf) {
 	    all[k]->next = NULL;
 	}
     }
-    free( all );
 }
 
 static void LigatureClosure(SplineFont *sf) {
@@ -1891,22 +1823,22 @@ static void LigatureClosure(SplineFont *sf) {
 			}
 			if ( l3!=NULL )	/* The ligature we want to add already exists */
 		break;
-			lig = chunkalloc(sizeof(PST));
+			lig = XZALLOC(PST);
 			*lig = *l->lig;
 			lig->temporary = true;
 			lig->next = NULL;
-			lig->u.lig.components = galloc(strlen(sublig->name)+
+			lig->u.lig.components = malloc(strlen(sublig->name)+
 					strlen(l->components->next->sc->name)+
 					2);
 			sprintf(lig->u.lig.components,"%s %s",sublig->name,
 				l->components->next->sc->name);
-			l3 = galloc(sizeof(LigList));
+			l3 = malloc(sizeof(LigList));
 			l3->lig = lig;
 			l3->next = sublig->ligofme;
 			l3->first = sublig;
 			l3->ccnt = 2;
 			sublig->ligofme = l3;
-			l3->components = chunkalloc(sizeof(struct splinecharlist));
+			l3->components = XZALLOC(struct splinecharlist);
 			l3->components->sc = l->components->next->sc;
 		break;
 		    }
@@ -1936,7 +1868,6 @@ return;
 		    sf->glyphs[i]->vkerns = n;
 		else
 		    sf->glyphs[i]->kerns = n;
-		chunkfree(kp,sizeof(*kp));
 	    } else
 		p = kp;
 	}
@@ -1948,17 +1879,9 @@ return;
 		otlp->next = otln;
 	    else
 		sf->gpos_lookups = otln;
-	    OTLookupFree(otl);
 	} else
 	    otlp = otl;
     }
-}
-
-static void KCSfree(SplineChar ***scs,int cnt) {
-    int i;
-    for ( i=1; i<cnt; ++i )
-	free( scs[i]);
-    free(scs);
 }
 
 static SplineChar ***KernClassToSC(SplineFont *sf, char **classnames, int cnt) {
@@ -1966,11 +1889,11 @@ static SplineChar ***KernClassToSC(SplineFont *sf, char **classnames, int cnt) {
     int i,j;
     char *pt, *end, ch;
 
-    scs = galloc(cnt*sizeof(SplineChar **));
+    scs = malloc(cnt*sizeof(SplineChar **));
     for ( i=1; i<cnt; ++i ) {
 	for ( pt=classnames[i]-1, j=0; pt!=NULL; pt=strchr(pt+1,' ') )
 	    ++j;
-	scs[i] = galloc((j+1)*sizeof(SplineChar *));
+	scs[i] = malloc((j+1)*sizeof(SplineChar *));
 	for ( pt=classnames[i], j=0; *pt!='\0'; pt=end+1 ) {
 	    end = strchr(pt,' ');
 	    if ( end==NULL )
@@ -1997,7 +1920,7 @@ static void AddTempKP(SplineChar *first,SplineChar *second,
 	if ( kp->sc == second )
     break;
     if ( kp==NULL ) {
-	kp = chunkalloc(sizeof(KernPair));
+	kp = XZALLOC(KernPair);
 	kp->sc = second;
 	kp->off = offset;
 	kp->subtable = sub;
@@ -2029,7 +1952,7 @@ void SFKernClassTempDecompose(SplineFont *sf,int isv) {
 	kc->kcid = ++i;
     for ( kc = head; kc!=NULL; kc = kc->next ) {
 
-	otl = chunkalloc(sizeof(OTLookup));
+	otl = XZALLOC(OTLookup);
 	otl->next = sf->gpos_lookups;
 	sf->gpos_lookups = otl;
 	otl->lookup_type = gpos_pair;
@@ -2037,7 +1960,7 @@ void SFKernClassTempDecompose(SplineFont *sf,int isv) {
 	otl->features = FeatureListCopy(kc->subtable->lookup->features);
 	otl->lookup_name = copy(_("<Temporary kerning>"));
 	otl->temporary_kern = otl->store_in_afm = true;
-	otl->subtables = chunkalloc(sizeof(struct lookup_subtable));
+	otl->subtables = XZALLOC(struct lookup_subtable);
 	otl->subtables->lookup = otl;
 	otl->subtables->per_glyph_pst_or_kern = true;
 	otl->subtables->subtable_name = copy(_("<Temporary kerning>"));
@@ -2053,8 +1976,6 @@ void SFKernClassTempDecompose(SplineFont *sf,int isv) {
 			        otl->subtables,kc->kcid,isv);
 	    }
 	}
-	KCSfree(first,kc->first_cnt);
-	KCSfree(last,kc->second_cnt);
     }
 }
 
@@ -2152,11 +2073,11 @@ static int revwinmap(int winmap[256], int gid) {
 return( i );
 }
 
-int PfmSplineFont(FILE *pfm, SplineFont *sf, int type0,EncMap *map,int layer) {
+int PfmSplineFont(FILE *pfm, SplineFont *sf, EncMap *map,int layer) {
     int caph=0, xh=0, ash=0, dsh=0, cnt=0, first=-1, samewid=-1, maxwid= -1, last=0, wid=0, ymax=0, ymin=0;
     int kerncnt=0, spacepos=0x20;
     int i, ii;
-    char *pt;
+    const char *pt;
     KernPair *kp;
     int winmap[256];
     /* my docs imply that pfm files can only handle 1byte fonts */
@@ -2552,7 +2473,7 @@ struct extension {
 
 static struct ligkern *TfmAddKern(KernPair *kp,struct ligkern *last,double *kerns,
 	int *_kcnt, EncMap *map,int maxc) {
-    struct ligkern *new = gcalloc(1,sizeof(struct ligkern));
+    struct ligkern *new = calloc(1,sizeof(struct ligkern));
     int i;
 
     new->other_char = map->backmap[kp->sc->orig_pos];
@@ -2575,7 +2496,7 @@ return( new );
 }
 
 static struct ligkern *TfmAddLiga(LigList *l,struct ligkern *last,EncMap *map,
-	int maxc, SplineChar *sc) {
+	int maxc) {
     struct ligkern *new;
 
     if ( !l->lig->subtable->lookup->store_in_afm )
@@ -2585,7 +2506,7 @@ return( last );
     if ( l->components==NULL ||  map->backmap[l->components->sc->orig_pos]>=maxc ||
 	    l->components->next!=NULL )
 return( last );
-    new = gcalloc(1,sizeof(struct ligkern));
+    new = calloc(1,sizeof(struct ligkern));
     new->other_char = map->backmap[l->components->sc->orig_pos];
     new->remainder = map->backmap[l->lig->u.lig.lig->orig_pos];
     new->next = last;
@@ -2632,7 +2553,7 @@ static int FindExtensions(SplineFont *sf,struct extension *extensions,int *exten
     int i;
     int j,k;
     char *foundnames[4];
-    int16 founds[4]; int fcnt, ecnt=0;
+    int16 founds[4]; int ecnt=0;
 
     memset(extenindex,-1,(maxc+1)*sizeof(int));
     for ( i=0; i<maxc && i<map->enccount; ++i ) if ( map->map[i]!=-1 && SCWorthOutputting(sf->glyphs[map->map[i]])) {
@@ -2645,7 +2566,6 @@ static int FindExtensions(SplineFont *sf,struct extension *extensions,int *exten
 	else if ( sc->horiz_variants!=NULL && sc->horiz_variants->part_cnt>0 )
 	    gv = sc->horiz_variants;
 	if ( gv!=NULL ) {
-	    fcnt = 0;
 	    foundnames[0] = foundnames[1] = foundnames[2] = foundnames[3] = NULL;
 	    for ( j=k=0; j<gv->part_cnt; ++j ) {
 		if ( !gv->parts[j].is_extender ) {
@@ -2702,10 +2622,10 @@ static int CoalesceValues(double *values,int max,int *index,int maxc) {
 	totvalues = _totvalues;
 	cnt = _cnt;
     } else {
-	backindex = galloc((maxc+1)*sizeof(int));
-	topvalues = galloc((maxc+1)*sizeof(double));
-	totvalues = galloc((maxc+1)*sizeof(double));
-	cnt = galloc((maxc+1)*sizeof(int));
+	backindex = malloc((maxc+1)*sizeof(int));
+	topvalues = malloc((maxc+1)*sizeof(double));
+	totvalues = malloc((maxc+1)*sizeof(double));
+	cnt = malloc((maxc+1)*sizeof(int));
     }
 
     values[maxc] = 0;
@@ -2768,12 +2688,6 @@ static int CoalesceValues(double *values,int max,int *index,int maxc) {
 		}
 	    }
 	}
-	if ( maxc>256 ) {
-	    free(backindex);
-	    free(topvalues);
-	    free(totvalues);
-	    free(cnt);
-	}
 return( top );
     }
 
@@ -2811,12 +2725,6 @@ return( top );
     values[0] = 0;
     for ( i=1; i<top; ++i )
 	values[i] = totvalues[i]/cnt[i];
-    if ( maxc>256 ) {
-	free(backindex);
-	free(topvalues);
-	free(totvalues);
-	free(cnt);
-    }
 return( top );
 }
 
@@ -2864,38 +2772,10 @@ return;
     sf->texdata.params[21] = rint(.25*(1<<20));
 }
 
-#if 0
-static int OfmGuessDirection(SplineFont *sf) {
-    /* I'm only going to worry about L2R or R2L. Japanese can be either L2R or*/
-    /*  T2B so it seems stupid for the font to claim it is one or the other */
-    /* Ah. It appears that omega realized this. All ofm files have fontdir=0 */
-    /*  even if they are arabic only */
-    int i, l2rcnt=0, r2lcnt=0;
-    SplineChar *sc;
-
-    for ( i=0; i<sf->glyphcnt; ++i ) if ( (sc=sf->glyphs[i])!=NULL && sc->unicodeenc!=-1 ) {
-	if ( sc->unicodeenc>0x10000 ) {
-	    if ( SCRightToLeft(sc))
-		++r2lcnt;
-	    else
-		++l2rcnt;
-	} else if ( isrighttoleft(sc->unicodeenc) )
-	    ++r2lcnt;
-	else if ( islefttoright(sc->unicodeenc) )
-	    ++l2rcnt;
-	else
-	    /* Neutrals, or weakly oriented characters. Don't count them */;
-    }
-    if ( r2lcnt>l2rcnt )
-return( 2 );	/* In omega this means Top, Right */
-
-return( 0 );	/* In omega this means Top, Left */
-}
-#endif
-
-static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map,int maxc,int layer) {
+static int _OTfmSplineFont(FILE *tfm, SplineFont *sf,EncMap *map,int maxc,int layer) {
     struct tfm_header header;
-    char *full=NULL, *encname;
+    char *full=NULL;
+    const char *encname;
     int i;
     DBounds b;
     struct ligkern *_ligkerns[256], **ligkerns, *lk, *lknext;
@@ -2939,21 +2819,21 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
 	depthindex = _depthindex;
 	italicindex = _italicindex;
     } else {
-	ligkerns = galloc(maxc*sizeof(struct ligkern *));
-	widths = galloc((maxc+1)*sizeof(double));
-	heights = galloc((maxc+1)*sizeof(double));
-	depths = galloc((maxc+1)*sizeof(double));
-	italics = galloc((maxc+1)*sizeof(double));
-	tags = galloc(maxc*sizeof(uint8));
-	lkindex = galloc(maxc*sizeof(uint16));
-	former = galloc(maxc*sizeof(int));
-	charlistindex = galloc((maxc+1)*sizeof(int));
-	extensions = galloc((maxc+1)*sizeof(struct extension));
-	extenindex = galloc((maxc+1)*sizeof(int));
-	widthindex = galloc((maxc+1)*sizeof(int));
-	heightindex = galloc((maxc+1)*sizeof(int));
-	depthindex = galloc((maxc+1)*sizeof(int));
-	italicindex = galloc((maxc+1)*sizeof(int));
+	ligkerns = malloc(maxc*sizeof(struct ligkern *));
+	widths = malloc((maxc+1)*sizeof(double));
+	heights = malloc((maxc+1)*sizeof(double));
+	depths = malloc((maxc+1)*sizeof(double));
+	italics = malloc((maxc+1)*sizeof(double));
+	tags = malloc(maxc*sizeof(uint8));
+	lkindex = malloc(maxc*sizeof(uint16));
+	former = malloc(maxc*sizeof(int));
+	charlistindex = malloc((maxc+1)*sizeof(int));
+	extensions = malloc((maxc+1)*sizeof(struct extension));
+	extenindex = malloc((maxc+1)*sizeof(int));
+	widthindex = malloc((maxc+1)*sizeof(int));
+	heightindex = malloc((maxc+1)*sizeof(int));
+	depthindex = malloc((maxc+1)*sizeof(int));
+	italicindex = malloc((maxc+1)*sizeof(int));
     }
     SFLigaturePrepare(sf);
     LigatureClosure(sf);		/* Convert 3 character ligs to a set of two character ones when possible */
@@ -2973,7 +2853,7 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
     else if ( sf->subfontcnt==0 &&  map->enc!=&custom )
 	encname = EncodingName( map->enc );
     if ( encname==NULL ) {
-	full = galloc(strlen(sf->fontname)+10);
+	full = malloc(strlen(sf->fontname)+10);
 	strcpy(full,sf->fontname);
 	strcat(full,"-Enc");
 	encname = full;
@@ -2984,7 +2864,6 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
 	memcpy(header.encoding+1,encname,39);
     } else
 	strcpy(header.encoding+1,encname);
-    if ( full ) free(full);
 
     familyname = sf->cidmaster ? sf->cidmaster->familyname : sf->familyname;
     header.family[0] = strlen(familyname);
@@ -3098,7 +2977,7 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
     }
     kerns = NULL;
     if ( kcnt!=0 )
-	kerns = galloc(kcnt*sizeof(double));
+	kerns = malloc(kcnt*sizeof(double));
     kcnt = lkcnt = 0;
     memset(ligkerns,0,maxc*sizeof(struct ligkern *));
     for ( i=0; i<maxc && i<map->enccount; ++i ) {
@@ -3109,7 +2988,7 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
 			map->backmap[kp->sc->orig_pos]<maxc )
 		    ligkerns[i] = TfmAddKern(kp,ligkerns[i],kerns,&kcnt,map,maxc);
 	    for ( l=sc->ligofme; l!=NULL; l=l->next )
-		ligkerns[i] = TfmAddLiga(l,ligkerns[i],map,maxc,sc);
+		ligkerns[i] = TfmAddLiga(l,ligkerns[i],map,maxc);
 	    if ( ligkerns[i]!=NULL ) {
 		tags[i] = 1;
 		for ( lk=ligkerns[i]; lk!=NULL; lk=lk->next )
@@ -3129,7 +3008,7 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
     memset(former,-1,maxc*sizeof(int));
     memset(lkindex,0,maxc*sizeof(uint16));
     if ( maxc==256 ) {
-	lkarray = galloc(lkcnt*sizeof(uint32));
+	lkarray = malloc(lkcnt*sizeof(uint32));
 	if ( sccnt<128 ) {
 	    lkcnt = 0;
 	    do {
@@ -3149,7 +3028,6 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
 					(lk->other_char<<16) |
 					(lk->op<<8) |
 					lk->remainder;
-		    free( lk );
 		    any = true;
 		}
 	    } while ( any );
@@ -3170,7 +3048,6 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
 					(lk->other_char<<16) |
 					(lk->op<<8) |
 					lk->remainder;
-		    free( lk );
 		}
 	    }
 	    if ( lkcnt>sccnt )
@@ -3178,7 +3055,7 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
 	    lkcnt = lkcnt2;
 	}
     } else {
-	o_lkarray = gcalloc(lkcnt,sizeof(struct ligkern));
+	o_lkarray = calloc(lkcnt,sizeof(struct ligkern));
 	if ( sccnt<128 ) {
 	    lkcnt = 0;
 	    do {
@@ -3198,7 +3075,6 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
 		    o_lkarray[lkcnt].other_char = lk->other_char;
 		    o_lkarray[lkcnt].op = lk->op;
 		    o_lkarray[lkcnt++].remainder = lk->remainder;
-		    free( lk );
 		    any = true;
 		}
 	    } while ( any );
@@ -3221,7 +3097,6 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
 		    o_lkarray[lkcnt2].other_char = lk->other_char;
 		    o_lkarray[lkcnt2].op = lk->op;
 		    o_lkarray[lkcnt2++].remainder = lk->remainder;
-		    free( lk );
 		}
 	    }
 	    if ( lkcnt>sccnt )
@@ -3294,9 +3169,6 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
 	putlong(tfm,kcnt);
 	putlong(tfm,ecnt);
 	putlong(tfm,pcnt);
-#if 0
-	font_dir = OfmGuessDirection(sf);
-#endif
 	putlong(tfm,font_dir);
     }
 	    /* header */
@@ -3387,37 +3259,18 @@ static int _OTfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map
     SFLigatureCleanup(sf);
     SFKernCleanup(sf,false);
 
-    if ( maxc>256 ) {
-	free( o_lkarray );
-	free( ligkerns );
-	free( widths );
-	free( heights );
-	free( depths );
-	free( italics );
-	free( tags );
-	free( lkindex );
-	free( former );
-	free( charlistindex );
-	free( extensions );
-	free( extenindex );
-	free( widthindex );
-	free( heightindex );
-	free( depthindex );
-	free( italicindex );
-    } else
-	free( lkarray );
 return( !ferror(tfm));
 }
 
-int TfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map,int layer) {
-return( _OTfmSplineFont(tfm,sf,formattype,map,256,layer));
+int TfmSplineFont(FILE *tfm, SplineFont *sf, EncMap *map,int layer) {
+return( _OTfmSplineFont(tfm,sf,map,256,layer));
 }
 /* ************************************************************************** */
 /* **************************** Writing OFM files *************************** */
 /* ************************************************************************** */
 
-int OfmSplineFont(FILE *tfm, SplineFont *sf, int formattype,EncMap *map,int layer) {
-return( _OTfmSplineFont(tfm,sf,formattype,map,65536,layer));
+int OfmSplineFont(FILE *tfm, SplineFont *sf, EncMap *map,int layer) {
+return( _OTfmSplineFont(tfm,sf,map,65536,layer));
 }
 
 /* ************************************************************************** */
@@ -3500,10 +3353,10 @@ int LoadKerningDataFromMetricsFile(SplineFont *sf,char *filename,EncMap *map) {
 
     switch ( MetricsFormatType(filename)) {
       case mf_afm:
-	ret = LoadKerningDataFromAfm(sf,filename,map);
+	ret = LoadKerningDataFromAfm(sf,filename);
       break;
       case mf_amfm:
-	ret = LoadKerningDataFromAmfm(sf,filename,map);
+	ret = LoadKerningDataFromAmfm(sf,filename);
       break;
       case mf_tfm:
 	ret = LoadKerningDataFromTfm(sf,filename,map);

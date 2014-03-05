@@ -1060,7 +1060,6 @@ extern void CVShowPoint(CharView *cv, BasePoint *me);
 
 extern BitmapView *BitmapViewCreate(BDFChar *bc, BDFFont *bdf, FontView *fv,int enc);
 extern BitmapView *BitmapViewCreatePick(int enc, FontView *fv);
-extern void BitmapViewFree(BitmapView *bv);
 extern void BVMenuRotateInvoked(GWindow gw,struct gmenuitem *mi, GEvent *e);
 extern void BVRotateBitmap(BitmapView *bv,enum bvtools type );
 extern int  BVColor(BitmapView *bv);
@@ -1074,7 +1073,6 @@ extern void MVRefreshChar(MetricsView *mv, SplineChar *sc);
 extern void MVRegenChar(MetricsView *mv, SplineChar *sc);
 extern void MVReKern(MetricsView *mv);
 extern MetricsView *MetricsViewCreate(FontView *fv,SplineChar *sc,BDFFont *bdf);
-extern void MetricsViewFree(MetricsView *mv);
 extern void MVRefreshAll(MetricsView *mv);
 extern void MV_FriendlyFeatures(GGadget *g, int pos);
 extern GTextInfo *SLOfFont(SplineFont *sf);
@@ -1155,7 +1153,6 @@ extern void SCDeGridFit(SplineChar *sc);
 extern void SCReGridFit(SplineChar *sc,int layer);
 
 extern void CVDebugReInit(CharView *cv,int restart_debug,int dbg_fpgm);
-extern void CVDebugFree(DebugView *dv);
 extern int DVChar(DebugView *dv, GEvent *e);
 
 extern void KernClassD(KernClass *kc, SplineFont *sf, int layer, int isv);
@@ -1165,7 +1162,6 @@ extern void KCLD_MvDetach(struct kernclasslistdlg *kcld,MetricsView *mv);
 extern void KernPairD(SplineFont *sf,SplineChar *sc1,SplineChar *sc2,int layer, int isv);
 extern void KCD_DrawGlyph(GWindow pixmap,int x,int baseline,BDFChar *bdfc,int mag);
 extern GTextInfo *BuildFontList(FontView *except);
-extern void TFFree(GTextInfo *tf);
 
 extern void AnchorControl(SplineChar *sc,AnchorPoint *ap,int layer);
 extern void AnchorControlClass(SplineFont *_sf,AnchorClass *ac,int layer);
@@ -1315,9 +1311,8 @@ extern void _CVMenuNameContour(CharView *cv);
 extern void SFD_DumpPST( FILE *sfd, SplineChar *sc );
 extern void SFD_DumpKerns( FILE *sfd, SplineChar *sc, int *newgids );
 extern void SFDDumpCharStartingMarker(FILE *sfd,SplineChar *sc);
-extern Undoes *SFDGetUndo( SplineFont *sf, FILE *sfd, SplineChar *sc,
-			   const char* startTag, const char* endTag,
-			   int current_layer );
+extern Undoes *SFDGetUndo( FILE *sfd, SplineChar *sc,
+			   const char* startTag, int current_layer );
 
 /**
  * Create, open and unlink a new temporary file. This allows the
@@ -1390,7 +1385,7 @@ extern void SFDFixupRefs(SplineFont *sf);
  * so that a stream of single undo/redo elements can be saved and reloaded
  * in the correct order.
  */
-extern void SFDDumpUndo(FILE *sfd,SplineChar *sc,Undoes *u, char* keyPrefix, int idx );
+extern void SFDDumpUndo(FILE *sfd,SplineChar *sc,Undoes *u, const char* keyPrefix, int idx );
 
 extern void Prefs_LoadDefaultPreferences( void );
 

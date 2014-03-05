@@ -64,18 +64,10 @@ extern uninm_blocks_db blocks_db;
 extern void setup_cocoa_app();
 #endif
 
-#ifdef _NO_LIBPNG
-#  define PNGLIBNAME	"libpng"
-#else
-#  include <png.h>		/* for version number to find up shared image name */
-#  if !defined(PNG_LIBPNG_VER_MAJOR) || (PNG_LIBPNG_VER_MAJOR==1 && PNG_LIBPNG_VER_MINOR<2)
-#    define PNGLIBNAME	"libpng"
-#  else
-#    define xstr(s) str(s)
-#    define str(s) #s
-#    define PNGLIBNAME	"libpng" xstr(PNG_LIBPNG_VER_MAJOR) xstr(PNG_LIBPNG_VER_MINOR)
-#  endif
-#endif
+#include <png.h>		/* for version number to find up shared image name */
+#define xstr(s) str(s)
+#define str(s) #s
+#define PNGLIBNAME	"libpng" xstr(PNG_LIBPNG_VER_MAJOR) xstr(PNG_LIBPNG_VER_MINOR)
 #ifdef __Mac
 #  include <carbon.h>
 /* For reasons obscure to me RunApplicationEventLoop is not defined in */
@@ -98,6 +90,7 @@ int splash = 1;
 static int localsplash;
 static int unique = 0;
 static int listen_to_apple_events = false;
+static bool ProcessPythonInitFiles = 1;
 
 static void _dousage(void) {
     printf( "fontforge [options] [fontfiles]\n" );
@@ -128,12 +121,8 @@ static void _dousage(void) {
     printf( "\t-docs\t\t\t (displays this message, invokes a browser)\n\t\t\t\t (Using the BROWSER environment variable)\n" );
     printf( "\t-version\t\t (prints the version of fontforge and exits)\n" );
     printf( "\t-library-status\t (prints information about optional libraries\n\t\t\t\t and exits)\n" );
-#ifndef _NO_PYTHON
     printf( "\t-lang=py\t\t use python for scripts (may precede -script)\n" );
-#endif
-#ifndef _NO_FFSCRIPT
     printf( "\t-lang=ff\t\t use fontforge's legacy scripting language\n" );
-#endif
     printf( "\t-script scriptfile\t (executes scriptfile)\n" );
     printf( "\t\tmust be the first option (or follow -lang).\n" );
     printf( "\t\tAll others passed to scriptfile.\n" );
@@ -242,27 +231,21 @@ static void SplashLayout() {
     pt += u_strlen(pt);
     lines[linecnt++] = pt;
     uc_strcpy(pt,"  Version: ");;
-    uc_strcat(pt,source_modtime_str);
+    uc_strcat(pt,FONTFORGE_MODTIME_STR);
 
     pt += u_strlen(pt);
     lines[linecnt++] = pt;
     uc_strcat(pt,"           (");
-    uc_strcat(pt,source_version_str);
+    uc_strcat(pt,FONTFORGE_MODTIME_STR);
     uc_strcat(pt,"-ML");
 #ifdef FREETYPE_HAS_DEBUGGER
     uc_strcat(pt,"-TtfDb");
-#endif
-#ifdef _NO_PYTHON
-    uc_strcat(pt,"-NoPython");
-#endif
-#ifdef FONTFORGE_CONFIG_USE_DOUBLE
-    uc_strcat(pt,"-D");
 #endif
     uc_strcat(pt,")");
     pt += u_strlen(pt);
     lines[linecnt++] = pt;
     uc_strcpy(pt,"  Lib Version: ");
-    uc_strcat(pt,library_version_configuration.library_source_modtime_string);
+    uc_strcat(pt,FONTFORGE_MODTIME_STR);
     lines[linecnt++] = pt+u_strlen(pt);
     lines[linecnt] = NULL;
     is = u_strchr(msg,'(');
@@ -270,7 +253,7 @@ static void SplashLayout() {
 }
 
 void DelayEvent(void (*func)(void *), void *data) {
-    struct delayed_event *info = gcalloc(1,sizeof(struct delayed_event));
+    struct delayed_event *info = calloc(1,sizeof(struct delayed_event));
 
     info->data = data;
     info->func = func;
@@ -281,10 +264,8 @@ static void DoDelayedEvents(GEvent *event) {
     GTimer *t = event->u.timer.timer;
     struct delayed_event *info = (struct delayed_event *) (event->u.timer.userdata);
 
-    if ( info!=NULL ) {
+    if ( info!=NULL )
 	(info->func)(info->data);
-	free(info);
-    }
     GDrawCancelTimer(t);
 }
 
@@ -323,7 +304,7 @@ exit(0);		/* Sent everything */
     GDrawGrabSelection(splashw,sn_user1);
     GDrawAddSelectionType(splashw,sn_user1,"STRING",
 	    copy(msg),strlen(msg),1,
-	    NULL,NULL);
+	    NULL);
 
 	/* If we just sent the other fontforge a request to die, it will never*/
 	/*  take the selection back. So we should just die quietly */
@@ -509,12 +490,8 @@ static  OSErr install_apple_event_handlers(void) {
  /* some debugging code, for now */
  if ( getenv("HOME")!=NULL ) {
   char buffer[1024];
-#ifdef __VMS
-    sprintf( buffer, "%s/_FontForge-LogFile.txt", getenv("HOME"));
-#else
-    sprintf( buffer, "%s/.FontForge-LogFile.txt", getenv("HOME"));
-#endif
-    logfile = fopen("/tmp/LogFile.txt","w");
+  sprintf( buffer, "%s/.FontForge-LogFile.txt", getenv("HOME"));
+  logfile = fopen("/tmp/LogFile.txt","w");
  }
  if ( logfile==NULL )
   logfile = stderr;
@@ -630,7 +607,6 @@ return( true );
 		MenuExit(NULL,NULL,NULL);
 	    else
 		ViewPostScriptFont(arg,0);
-	    free(arg);
 	    GDrawGrabSelection(splashw,sn_user1);
 	}
       break;
@@ -651,7 +627,6 @@ static void  AddR(char *program_name, char *window_name, char *cmndline_val) {
 	strcat(full,": ");
 	strcat(full,cmndline_val);
 	GResourceAddResourceString(full,program_name);
-	free(full);
     }
 }
 
@@ -785,16 +760,6 @@ static void ensureDotFontForgeIsSetup() {
     ffensuredir( basedir, "python", S_IRWXU );
 }
 
-static void DoAutoRecoveryPostRecover_PromptUserGraphically(SplineFont *sf)
-{
-    /* Ask user to save-as file */
-    char *buts[4];
-    buts[0] = _("_OK");
-    buts[1] = 0;
-    gwwv_ask( _("Recovery Complete"),(const char **) buts,0,1,_("Your file %s has been recovered.\nYou must now Save your file to continue working on it."), sf->filename );
-    _FVMenuSaveAs( (FontView*)sf->fv );
-}
-
 
 int fontforge_main( int argc, char **argv ) {
     extern const char *source_modtime_str;
@@ -834,20 +799,12 @@ int fontforge_main( int argc, char **argv ) {
         fprintf( stderr, "Copyright (c) 2000-2014 by George Williams. See AUTHORS for Contributors.\n" );
         fprintf( stderr, " License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n" );
         fprintf( stderr, " with many parts BSD <http://fontforge.org/license.html>. Please read LICENSE.\n" );
-        fprintf( stderr, " Executable based on sources from %s"
-	        "-ML"
+        fprintf( stderr, " Based on sources from %s"
 #ifdef FREETYPE_HAS_DEBUGGER
 	        "-TtfDb"
 #endif
-#ifdef _NO_PYTHON
-	        "-NoPython"
-#endif
-#ifdef FONTFORGE_CONFIG_USE_DOUBLE
-	        "-D"
-#endif
 	        ".\n",
-	        source_modtime_str );
-        fprintf( stderr, " Library based on sources from %s.\n", library_version_configuration.library_source_modtime_string );
+	        FONTFORGE_MODTIME_STR );
         fprintf( stderr, " Based on source from git with hash:%s\n", FONTFORGE_GIT_VERSION );
     }
 
@@ -860,14 +817,10 @@ int fontforge_main( int argc, char **argv ) {
 	/* Don't start X if we're just going to quit. */
 	/* if X exists, it isn't needed. If X doesn't exist it's wrong */
 	if ( !hasquit(argc,argv)) {
-#if 1
 	    /* This sequence is supposed to bring up an app without a window */
 	    /*  but X still opens an xterm */
 	    system( "osascript -e 'tell application \"X11\" to launch'" );
 	    system( "osascript -e 'tell application \"X11\" to activate'" );
-#else
-	    system( "open /Applications/Utilities/X11.app/" );
-#endif
 	}
 	setenv("DISPLAY",":0.0",0);
     } else if ( local_x==1 && *getenv("DISPLAY")!='/' && strcmp(getenv("DISPLAY"),":0.0")!=0 && strcmp(getenv("DISPLAY"),":0")!=0 )
@@ -899,9 +852,7 @@ int fontforge_main( int argc, char **argv ) {
     FF_SetFIInterface(&gdraw_fi_interface);
     FF_SetMVInterface(&gdraw_mv_interface);
     FF_SetClipInterface(&gdraw_clip_interface);
-#ifndef _NO_PYTHON
     PythonUI_Init();
-#endif
 
     FindProgDir(argv[0]);
     InitSimpleStuff();
@@ -924,11 +875,11 @@ int fontforge_main( int argc, char **argv ) {
 #if defined(__Mac)
     /* The mac seems to default to the "C" locale, LANG and LC_MESSAGES are not*/
     /*  defined. This means that gettext will not bother to look up any message*/
-    /*  files -- even if we have a "C" or "POSIX" entry in the locale diretory */
+    /*  files -- even if we have a "C" or "POSIX" entry in the locale directory */
     /* Now if X11 gives us the command key, I want to force a rebinding to use */
     /*  Cmd rather than Control key -- more mac-like. But I can't do that if   */
     /*  there is no locale. So I force a locale if there is none specified */
-    /* I force the US English locale, because that's the what the messages are */
+    /* I force the US English locale, because that's what the messages are */
     /*  by default so I'm changing as little as I can. I think. */
     /* Now the locale command will treat a LANG which is "" as undefined, but */
     /*  gettext will not. So I don't bother to check for null strings or "C"  */
@@ -983,7 +934,6 @@ int fontforge_main( int argc, char **argv ) {
 	GResourceAddResourceFile(path, GResourceProgramName,false);
     }
     hotkeysLoad();
-//    loadPrefsFiles();
     Prefs_LoadDefaultPreferences();
 
     if ( load_prefs!=NULL && strcasecmp(load_prefs,"Always")==0 )
@@ -1065,7 +1015,7 @@ int fontforge_main( int argc, char **argv ) {
 	else if ( strcmp(pt,"-help")==0 )
 	    dousage();
 	else if ( strcmp(pt,"-version")==0 || strcmp(pt,"-v")==0 || strcmp(pt,"-V")==0 )
-	    doversion(source_version_str);
+	    doversion(FONTFORGE_MODTIME_STR);
 	else if ( strcmp(pt,"-quit")==0 )
 	    quit_request = true;
 	else if ( strcmp(pt,"-home")==0 )
@@ -1088,15 +1038,22 @@ int fontforge_main( int argc, char **argv ) {
     InitToolIconClut(default_background);
     InitToolIcons();
     InitCursors();
-#ifndef _NO_PYTHON
-    PyFF_ProcessInitFiles();
-#endif
 
-    /* Wait until the UI has started, otherwise people who don't have consoles*/
-    /*  open won't get our error messages, and it's an important one */
-    /* Scripting doesn't care about a mismatch, because scripting interpretation */
-    /*  all lives in the library */
-    check_library_version(&exe_library_version_configuration,true,false);
+    /**
+     * we have to do a quick sniff of argv[] here to see if the user
+     * wanted to skip loading these python init files.
+     */
+    for ( i=1; i<argc; ++i ) {
+	char buffer[1025];
+	char *pt = argv[i];
+
+	if ( !strcmp(pt,"-SkipPythonInitFiles")) {
+	    ProcessPythonInitFiles = 0;
+	}
+    }
+    
+    if( ProcessPythonInitFiles )
+	PyFF_ProcessInitFiles();
 
     /* the splash screen used not to have a title bar (wam_nodecor) */
     /*  but I found I needed to know how much the window manager moved */
@@ -1161,12 +1118,8 @@ exit( 0 );
     if ( recover==-1 )
 	CleanAutoRecovery();
     else if ( recover )
-    {
-	any = DoAutoRecoveryExtended( recover-1,
-				      DoAutoRecoveryPostRecover_PromptUserGraphically );
-    }
-
-
+	any = DoAutoRecoveryExtended( recover-1 );
+			
     openflags = 0;
     for ( i=1; i<argc; ++i ) {
 	char buffer[1025];
@@ -1183,6 +1136,8 @@ exit( 0 );
 	    MenuNewComposition(NULL,NULL,NULL);
 	    any = 1;
 #  endif
+	} else if ( !strcmp(pt,"-SkipPythonInitFiles")) {
+	    // already handled above.
 	} else if ( strcmp(pt,"-last")==0 ) {
 	    if ( next_recent<RECENT_MAX && RecentFiles[next_recent]!=NULL )
 		if ( ViewPostScriptFont(RecentFiles[next_recent++],openflags))
@@ -1214,22 +1169,19 @@ exit( 0 );
 		GFileGetAbsoluteName(argv[i],buffer,sizeof(buffer));
 	    if ( GFileIsDir(buffer) || (strstr(buffer,"://")!=NULL && buffer[strlen(buffer)-1]=='/')) {
 		char *fname;
-		fname = galloc(strlen(buffer)+strlen("/glyphs/contents.plist")+1);
+		fname = malloc(strlen(buffer)+strlen("/glyphs/contents.plist")+1);
 		strcpy(fname,buffer); strcat(fname,"/glyphs/contents.plist");
 		if ( GFileExists(fname)) {
 		    /* It's probably a Unified Font Object directory */
-		    free(fname);
 		    if ( ViewPostScriptFont(buffer,openflags) )
 			any = 1;
 		} else {
 		    strcpy(fname,buffer); strcat(fname,"/font.props");
 		    if ( GFileExists(fname)) {
 			/* It's probably a sf dir collection */
-			free(fname);
 			if ( ViewPostScriptFont(buffer,openflags) )
 			    any = 1;
 		    } else {
-			free(fname);
 			if ( buffer[strlen(buffer)-1]!='/' ) {
 			    /* If dirname doesn't end in "/" we'll be looking in parent dir */
 			    buffer[strlen(buffer)+1]='\0';
@@ -1239,7 +1191,6 @@ exit( 0 );
 			if ( fname!=NULL )
 			    ViewPostScriptFont(fname,openflags);
 			any = 1;	/* Even if we didn't get a font, don't bring up dlg again */
-			free(fname);
 		    }
 		}
 	    } else if ( ViewPostScriptFont(buffer,openflags)!=0 )

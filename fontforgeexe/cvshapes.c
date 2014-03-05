@@ -35,23 +35,6 @@ static struct shapedescrip {
     { { 1, 0 }, { 1, 0.552 }, { 1, -0.552 }, false },
     { { 0, -1 }, { 0.552, -1 }, { -0.552, -1 }, false },
     { { 0, 0 }, { 0, 0 }, { 0, 0 }, 0 }
-#if 0
-},
-ellipse2[] = {
-    { { -1,0 }, { -1, -0.2679 }, { -1, 0.2679 }, false },
-    { { -0.866, 0.5 }, { -1, 0.2679 }, { -0.7321, 0.7321 }, false },
-    { { -0.5, 0.866 }, { -0.7321, 0.7321 }, { -0.2679, 1 }, false },
-    { { 0, 1 }, { -0.2679, 1 }, { 0.2679, 1 }, false },
-    { { 0.5, 0.866 }, { 0.2679, 1 }, { 0.7321, 0.7321 }, false },
-    { { 0.866, 0.5 }, { 0.7321, 0.7321 }, { 1, 0.2679 }, false },
-    { { 1, 0 }, { 1, 0.2679 }, { 1, -0.2679 }, false },
-    { { 0.866, -0.5 }, { 1, -0.2679 }, { 0.7321, -0.7321 }, false },
-    { { 0.5, -0.866 }, { 0.7321, -0.7321 }, { 0.2679, -1 }, false },
-    { { 0, -1 }, { 0.2679, -1 }, { -0.2679, -1 }, false },
-    { { -0.5, -0.866 }, { -0.2679, -1 }, { -0.7321, -0.7321 }, false },
-    { { -0.866, -0.5 }, { -0.7321, -0.7321 }, { -1, -0.2679 }, false },
-    { { 0, 0 }, { 0, 0 }, { 0, 0 }, 0 }
-#endif
 };
 
 static SplinePoint *SPMake(BasePoint *base,int pt) {
@@ -84,7 +67,7 @@ return;
     CVClearSel(cv);
     CVPreserveState(&cv->b);
     CVSetCharChanged(cv,true);
-    cv->active_shape = chunkalloc(sizeof(SplineSet));
+    cv->active_shape = XZALLOC(SplineSet);
     cv->active_shape->next = cv->b.layerheads[cv->b.drawmode]->splines;
     cv->b.layerheads[cv->b.drawmode]->splines = cv->active_shape;
     cv->active_shape->first = last = SPMake(&cv->info,pt_corner);
@@ -332,7 +315,6 @@ return;
 		cv->b.layerheads[cv->b.drawmode]->splines = new;
 	    else
 		prev->next = new;
-	    SplinePointListsFree(cv->active_shape);
 	    cv->active_shape = new;
 	}
     }
@@ -360,7 +342,6 @@ return;
 	}
     }
     if ( cv->b.sc->inspiro && hasspiro()) {
-	free(cv->active_shape->spiros);
 	cv->active_shape->spiros = SplineSet2SpiroCP(cv->active_shape,&cv->active_shape->spiro_cnt);
 	cv->active_shape->spiro_max = cv->active_shape->spiro_cnt;
     }

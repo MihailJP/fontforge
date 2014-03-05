@@ -121,7 +121,7 @@ static int PSTComponentCount(PST *pst) {
     int cnt=0;
     char *pt = pst->u.lig.components;
 
-    forever {
+    for (;;) {
 	while ( *pt==' ' ) ++pt;
 	if ( *pt=='\0' )
 return( cnt );
@@ -339,7 +339,7 @@ static void *genunicodedata(void *_gt,int32 *len) {
     SFTextArea *st = _gt;
     unichar_t *temp;
     *len = st->sel_end-st->sel_start + 1;
-    temp = galloc((*len+2)*sizeof(unichar_t));
+    temp = malloc((*len+2)*sizeof(unichar_t));
     temp[0] = 0xfeff;		/* KDE expects a byte order flag */
     u_strncpy(temp+1,st->li.text+st->sel_start,st->sel_end-st->sel_start);
     temp[*len+1] = 0;
@@ -350,7 +350,6 @@ static void *genutf8data(void *_gt,int32 *len) {
     SFTextArea *st = _gt;
     unichar_t *temp =u_copyn(st->li.text+st->sel_start,st->sel_end-st->sel_start);
     char *ret = u2utf8_copy(temp);
-    free(temp);
     *len = strlen(ret);
 return( ret );
 }
@@ -367,7 +366,6 @@ static void *genlocaldata(void *_gt,int32 *len) {
     SFTextArea *st = _gt;
     unichar_t *temp =u_copyn(st->li.text+st->sel_start,st->sel_end-st->sel_start);
     char *ret = u2def_copy(temp);
-    free(temp);
     *len = strlen(ret);
 return( ret );
 }
@@ -380,9 +378,6 @@ static void *ddgenlocaldata(void *_gt,int32 *len) {
 return( temp );
 }
 
-static void noop(void *_st) {
-}
-
 static void SFTextAreaGrabPrimarySelection(SFTextArea *st) {
     int ss = st->sel_start, se = st->sel_end;
 
@@ -390,12 +385,12 @@ static void SFTextAreaGrabPrimarySelection(SFTextArea *st) {
     st->sel_start = ss; st->sel_end = se;
     GDrawAddSelectionType(st->g.base,sn_primary,"text/plain;charset=ISO-10646-UCS-4",st,st->sel_end-st->sel_start,
 	    sizeof(unichar_t),
-	    genunicodedata,noop);
+	    genunicodedata);
     GDrawAddSelectionType(st->g.base,sn_primary,"UTF8_STRING",st,3*(st->sel_end-st->sel_start),
 	    sizeof(unichar_t),
-	    genutf8data,noop);
+	    genutf8data);
     GDrawAddSelectionType(st->g.base,sn_primary,"STRING",st,st->sel_end-st->sel_start,sizeof(char),
-	    genlocaldata,noop);
+	    genlocaldata);
 }
 
 static void SFTextAreaGrabDDSelection(SFTextArea *st) {
@@ -403,9 +398,9 @@ static void SFTextAreaGrabDDSelection(SFTextArea *st) {
     GDrawGrabSelection(st->g.base,sn_drag_and_drop);
     GDrawAddSelectionType(st->g.base,sn_drag_and_drop,"text/plain;charset=ISO-10646-UCS-4",st,st->sel_end-st->sel_start,
 	    sizeof(unichar_t),
-	    ddgenunicodedata,noop);
+	    ddgenunicodedata);
     GDrawAddSelectionType(st->g.base,sn_drag_and_drop,"STRING",st,st->sel_end-st->sel_start,sizeof(char),
-	    ddgenlocaldata,noop);
+	    ddgenlocaldata);
 }
 
 static void SFTextAreaGrabSelection(SFTextArea *st, enum selnames sel ) {
@@ -417,24 +412,24 @@ static void SFTextAreaGrabSelection(SFTextArea *st, enum selnames sel ) {
 	uint16 *u2temp;
 
 	GDrawGrabSelection(st->g.base,sel);
-	temp = galloc((st->sel_end-st->sel_start + 2)*sizeof(unichar_t));
+	temp = malloc((st->sel_end-st->sel_start + 2)*sizeof(unichar_t));
 	temp[0] = 0xfeff;		/* KDE expects a byte order flag */
 	u_strncpy(temp+1,st->li.text+st->sel_start,st->sel_end-st->sel_start);
 	ctemp = u2utf8_copy(temp);
 	GDrawAddSelectionType(st->g.base,sel,"text/plain;charset=ISO-10646-UCS-4",temp,u_strlen(temp),
 		sizeof(unichar_t),
-		NULL,NULL);
-	u2temp = galloc((st->sel_end-st->sel_start + 2)*sizeof(uint16));
+		NULL);
+	u2temp = malloc((st->sel_end-st->sel_start + 2)*sizeof(uint16));
 	for ( i=0; temp[i]!=0; ++i )
 	    u2temp[i] = temp[i];
 	u2temp[i] = 0;
 	GDrawAddSelectionType(st->g.base,sel,"text/plain;charset=ISO-10646-UCS-2",u2temp,u_strlen(temp),
 		2,
-		NULL,NULL);
+		NULL);
 	GDrawAddSelectionType(st->g.base,sel,"UTF8_STRING",ctemp,strlen(ctemp),sizeof(char),
-		NULL,NULL);
+		NULL);
 	GDrawAddSelectionType(st->g.base,sel,"STRING",u2def_copy(temp),u_strlen(temp),sizeof(char),
-		NULL,NULL);
+		NULL);
     }
 }
 
@@ -523,7 +518,6 @@ static void SFTextAreaPaste(SFTextArea *st,enum selnames sel) {
 	if ( ctemp!=NULL ) {
 	    temp = utf82u_copyn(ctemp,strlen(ctemp));
 	    SFTextArea_Replace(st,temp);
-	    free(ctemp); free(temp);
 	}
     } else if ( GDrawSelectionHasType(st->g.base,sel,"text/plain;charset=ISO-10646-UCS-4")) {
 	unichar_t *temp;
@@ -532,7 +526,6 @@ static void SFTextAreaPaste(SFTextArea *st,enum selnames sel) {
 	/* Bug! I don't handle byte reversed selections. But I don't think there should be any anyway... */
 	if ( temp!=NULL )
 	    SFTextArea_Replace(st,temp[0]==0xfeff?temp+1:temp);
-	free(temp);
     } else if ( GDrawSelectionHasType(st->g.base,sel,"Unicode") ||
 	    GDrawSelectionHasType(st->g.base,sel,"text/plain;charset=ISO-10646-UCS-2")) {
 	unichar_t *temp;
@@ -543,14 +536,12 @@ static void SFTextAreaPaste(SFTextArea *st,enum selnames sel) {
 	    temp2 = GDrawRequestSelection(st->g.base,sel,"Unicode",&len);
 	if ( temp2!=NULL ) {
 	    int i;
-	    temp = galloc((len/2+1)*sizeof(unichar_t));
+	    temp = malloc((len/2+1)*sizeof(unichar_t));
 	    for ( i=0; temp2[i]!=0; ++i )
 		temp[i] = temp2[i];
 	    temp[i] = 0;
 	    SFTextArea_Replace(st,temp[0]==0xfeff?temp+1:temp);
-	    free(temp);
 	}
-	free(temp2);
     } else if ( GDrawSelectionHasType(st->g.base,sel,"STRING")) {
 	unichar_t *temp; char *ctemp;
 	int32 len;
@@ -558,7 +549,6 @@ static void SFTextAreaPaste(SFTextArea *st,enum selnames sel) {
 	if ( ctemp!=NULL ) {
 	    temp = def2u_copy(ctemp);
 	    SFTextArea_Replace(st,temp);
-	    free(ctemp); free(temp);
 	}
     }
 }
@@ -596,13 +586,7 @@ return( true );
 	    s = st->sel_start; st->sel_start = st->sel_oldstart; st->sel_oldstart = s;
 	    s = st->sel_end; st->sel_end = st->sel_oldend; st->sel_oldend = s;
 	    s = st->sel_base; st->sel_base = st->sel_oldbase; st->sel_oldbase = s;
-	    for ( i=0; i<st->li.pcnt; ++i )
-		free( st->li.paras[i].para);
-	    free(st->li.paras); st->li.paras = NULL; st->li.pcnt = 0; st->li.pmax = 0;
-	    for ( i=0; i<st->li.lcnt; ++i )
-		free( st->li.lines[i]);
-	    free( st->li.lines );
-	    free( st->li.lineheights );
+            st->li.paras = NULL; st->li.pcnt = 0; st->li.pmax = 0;
 	    st->li.lines = NULL; st->li.lineheights = NULL; st->li.lcnt = 0;
 	    SFTextAreaRefigureLines(st, 0, -1);
 	    SFTextArea_Show(st,st->sel_end);
@@ -641,20 +625,6 @@ static int GTBackPos(SFTextArea *st,int pos, int ismeta) {
 	newpos = SFTextAreaSelBackword(st->li.text,pos);
     else
 	newpos = pos-1;
-#if 0		/* Why did I think this mattered? */
-    /* Best just to step over each ligature component even if the cursor */
-    /*  stays put. Or that's what I think today */
-
-    /* There are some cases (a ligature of a ligature perhaps) where we can't */
-    /*  show a difference between pos and pos-1, so keep subtracting until we */
-    /*  can */
-    l = SFTextAreaFindLine(st,pos);
-    xloc = SFTextAreaGetXPosFromOffset(st,l,pos);
-    while ( newpos!=-1 &&
-	    SFTextAreaFindLine(st,newpos) == l &&
-	    xloc == SFTextAreaGetXPosFromOffset(st,l,newpos) )
-	--newpos;
-#endif
     if ( newpos==-1 ) newpos = 0;
 return( newpos );
 }
@@ -668,20 +638,6 @@ static int GTForePos(SFTextArea *st,int pos, int ismeta) {
 	if ( st->li.text[pos]!=0 )
 	    newpos = pos+1;
     }
-#if 0		/* Why did I think this mattered? */
-    /* Best just to step over each ligature component even if the cursor */
-    /*  stays put. Or that's what I think today */
-
-    /* There are some cases (a ligature of a ligature perhaps) where we can't */
-    /*  show a difference between pos and pos-1, so keep subtracting until we */
-    /*  can */
-    l = SFTextAreaFindLine(st,pos);
-    xloc = SFTextAreaGetXPosFromOffset(st,l,pos);
-    while ( st->li.text[newpos]!=0 &&
-	    SFTextAreaFindLine(st,newpos) == l &&
-	    xloc == SFTextAreaGetXPosFromOffset(st,l,newpos) )
-	++newpos;
-#endif
 return( newpos );
 }
 
@@ -695,12 +651,9 @@ return;
     str = _GGadgetFileToUString(cret,65536);
     if ( str==NULL ) {
 	ff_post_error(_("Could not open"),_("Could not open %.100s"),cret);
-	free(cret);
 return;
     }
-    free(cret);
     SFTextArea_Replace(st,str);
-    free(str);
 }
 
 static void SFTextAreaInsertRandom(SFTextArea *st) {
@@ -720,8 +673,6 @@ return;
     scriptlangs = SFScriptLangs(prev->fd->sf,&freq);
     if ( scriptlangs==NULL || scriptlangs[0]==NULL ) {
 	ff_post_error(_("No letters in font"), _("No letters in font"));
-	free(scriptlangs);
-	free(freq);
 return;
     }
     for ( cnt=0; scriptlangs[cnt]!=NULL; ++cnt );
@@ -744,13 +695,6 @@ return;
     start = st->sel_start;
     SFTextArea_Replace(st,str);
     SFTFSetScriptLang(&st->g,start,start+u_strlen(str),script,lang);
-
-    free(str);
-    free(utf8_str);
-    for ( i=0; scriptlangs[i]!=NULL; ++i )
-	free(scriptlangs[i]);
-    free(scriptlangs);
-    free(freq);
 }
 
 static void SFTextAreaSave(SFTextArea *st) {
@@ -763,10 +707,8 @@ return;
     file = fopen(cret,"w");
     if ( file==NULL ) {
 	ff_post_error(_("Could not open"),_("Could not open %.100s"),cret);
-	free(cret);
 return;
     }
-    free(cret);
 
 	putc(0xef,file);		/* Zero width something or other. Marks this as unicode, utf8 */
 	putc(0xbb,file);
@@ -806,20 +748,11 @@ return;
 
     basename = NULL;
     if ( st->li.fontlist!=NULL ) {
-	basename = galloc(strlen(st->li.fontlist->fd->sf->fontname)+8);
+	basename = malloc(strlen(st->li.fontlist->fd->sf->fontname)+8);
 	strcpy(basename, st->li.fontlist->fd->sf->fontname);
-#ifdef _NO_LIBPNG
-	strcat(basename,".bmp");
-#else
 	strcat(basename,".png");
-#endif
     }
-#ifdef _NO_LIBPNG
-    cret = gwwv_save_filename(_("Save Image"),basename, "*.bmp");
-#else
     cret = gwwv_save_filename(_("Save Image"),basename, "*.{bmp,png}");
-#endif
-    free(basename);
     if ( cret==NULL )
 return;
 
@@ -853,25 +786,15 @@ return;
 	    x += line[j]->advance_width + line[j]->vr.h_adv_off;
 	}
     }
-#ifndef _NO_LIBPNG
     if ( strstrmatch(cret,".png")!=NULL )
 	ret = GImageWritePng(image,cret,false);
     else
-#endif
     if ( strstrmatch(cret,".bmp")!=NULL )
 	ret = GImageWriteBmp(image,cret);
     else
-	ff_post_error(_("Unsupported image format"),
-#ifndef _NO_LIBPNG
-		_("Unsupported image format must be bmp or png")
-#else
-		_("Unsupported image format must be bmp")
-#endif
-	    );
+	ff_post_error(_("Unsupported image format"), _("Unsupported image format must be bmp or png"));
     if ( !ret )
 	ff_post_error(_("Could not write"),_("Could not write %.100s"),cret);
-    free( cret );
-    GImageDestroy(image);
 }
 
 #define MID_Cut		1
@@ -1389,7 +1312,7 @@ static int SFTextAreaDoDrop(SFTextArea *st,GEvent *event,int endpos) {
 		unichar_t *old=st->li.oldtext, *temp;
 		int pos=0;
 		if ( event->u.mouse.state&ksm_control ) {
-		    temp = galloc((u_strlen(st->li.text)+st->sel_end-st->sel_start+1)*sizeof(unichar_t));
+		    temp = malloc((u_strlen(st->li.text)+st->sel_end-st->sel_start+1)*sizeof(unichar_t));
 		    memcpy(temp,st->li.text,endpos*sizeof(unichar_t));
 		    memcpy(temp+endpos,st->li.text+st->sel_start,
 			    (st->sel_end-st->sel_start)*sizeof(unichar_t));
@@ -1415,7 +1338,6 @@ static int SFTextAreaDoDrop(SFTextArea *st,GEvent *event,int endpos) {
 		st->sel_oldbase = st->sel_base;
 		st->sel_start = st->sel_end = pos;
 		st->li.text = temp;
-		free(old);
 		SFTextAreaRefigureLines(st, endpos<st->sel_oldstart?endpos:st->sel_oldstart,-1);
 	    }
 	} else if ( !GGadgetWithin(&st->g,event->u.mouse.x,event->u.mouse.y) ) {
@@ -1732,12 +1654,6 @@ static int sftextarea_sel(GGadget *g, GEvent *event) {
 
     if ( event->type == et_selclear ) {
 	if ( event->u.selclear.sel==sn_primary && st->sel_start!=st->sel_end ) {
-#if 0		/* Retain the drawn selection even if X says we don't own */
-		/*  the selection property. Otherwise we can't change the */
-		/*  fontsize (ie. must select the fontsize field) */
-	    st->sel_start = st->sel_end = st->sel_base;
-	    _ggadget_redraw(g);
-#endif
 return( true );
 	}
 return( false );
@@ -1793,7 +1709,6 @@ return;
     st->li.oldtext = st->li.text;
     st->sel_oldstart = st->sel_start; st->sel_oldend = st->sel_end; st->sel_oldbase = st->sel_base;
     st->li.text = u_copy(tit);		/* tit might be oldtext, so must copy before freeing */
-    free(old);
     st->sel_start = st->sel_end = st->sel_base = u_strlen(tit);
     LI_fontlistmergecheck(&st->li);
     LayoutInfoRefigureLines(&st->li,0,-1,st->g.inner.width);
@@ -2262,7 +2177,7 @@ static SFTextArea *_SFTextAreaCreate(SFTextArea *st, struct gwindow *base, GGadg
 	st->sel_start = st->sel_end = st->sel_base = u_strlen(st->li.text);
     }
     if ( st->li.text==NULL )
-	st->li.text = gcalloc(1,sizeof(unichar_t));
+	st->li.text = calloc(1,sizeof(unichar_t));
     st->font = sftextarea_font;
     if ( gd->label!=NULL && gd->label->font!=NULL )
 	st->font = gd->label->font;
@@ -2279,7 +2194,7 @@ return( st );
 }
 
 GGadget *SFTextAreaCreate(struct gwindow *base, GGadgetData *gd,void *data) {
-    SFTextArea *st = gcalloc(1,sizeof(SFTextArea));
+    SFTextArea *st = calloc(1,sizeof(SFTextArea));
     st->multi_line = true;
     st->accepts_returns = true;
     st->li.wrap = true;
@@ -2405,10 +2320,8 @@ int SFTFSetScriptLang(GGadget *g, int start, int end, uint32 script, uint32 lang
     start = SFTF_NormalizeStartEnd(st, start, &end);
     fl = LI_BreakFontList(&st->li,start,end);
     while ( fl!=NULL && fl->end<=end ) {
-	if ( fl->script != script ) {
-	    free(fl->feats);
+	if ( fl->script != script )
 	    fl->feats = LI_TagsCopy(StdFeaturesOfScript(script));
-	}
 	fl->script = script;
 	fl->lang = lang;
 	fl = fl->next;
@@ -2425,7 +2338,6 @@ int SFTFSetFeatures(GGadget *g, int start, int end, uint32 *features) {
     start = SFTF_NormalizeStartEnd(st, start, &end);
     fl = LI_BreakFontList(&st->li,start,end);
     while ( fl!=NULL && fl->end<=end ) {
-	free(fl->feats);
 	fl->feats = LI_TagsCopy(features);
 	fl = fl->next;
     }
@@ -2475,21 +2387,18 @@ void SFTFRefreshFonts(GGadget *g) {
 
     /* First regenerate the EncMaps. Glyphs might have been added or removed */
     for ( sfmaps = st->li.sfmaps; sfmaps!=NULL; sfmaps = sfmaps->next ) {
-	EncMapFree(sfmaps->map);
 	SplineCharFree(sfmaps->fake_notdef);
 	sfmaps->fake_notdef = NULL;
 	SFMapFill(sfmaps,sfmaps->sf);
     }
 
-    /* Then free all old generated bitmaps */
+    /* Then remove all old generated bitmaps */
     /* need to do this first because otherwise we might reuse a freetype context */
     for ( fd = st->li.generated; fd!=NULL; fd=fd->next ) {
 	if ( fd->depends_on )
 	    fd->bdf->freetype_context = NULL;
-	if ( fd->fonttype!=sftf_bitmap ) {
-	    BDFFontFree(fd->bdf);
+	if ( fd->fonttype!=sftf_bitmap )
 	    fd->bdf = NULL;
-	}
     }
     for ( fd = st->li.generated; fd!=NULL; fd=fd->next ) {
 	LI_RegenFontData(&st->li,fd);

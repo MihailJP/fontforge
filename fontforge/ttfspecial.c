@@ -354,7 +354,7 @@ return( V_B );
 
 static void pfed_write_data(FILE *ttf, float val, int mod) {
     if ( mod==V_F )
-	putlong(ttf,(int) rint(val*256.0));
+	putlong(ttf,(int) rint(val*256.0f));
     else if ( mod==V_S )
 	putshort(ttf,(int) rint(val));
     else
@@ -667,7 +667,7 @@ static void PfEd_Layer(SplineFont *sf, struct glyphinfo *gi, int layer, int dosp
 	}
 
     offset = ftell(layr);
-    glyph_data_offset_location = gcalloc(gi->gcnt,sizeof(uint32));
+    glyph_data_offset_location = calloc(gi->gcnt,sizeof(uint32));
     for ( j=0; j<4; ++j ) {
 	cnt = 0;
 	for ( i=0; i<gi->gcnt; ++i ) if ( (gid=gi->bygid[i])!=-1 && (sc=sf->glyphs[gid])!=NULL ) {
@@ -719,7 +719,6 @@ static void PfEd_Layer(SplineFont *sf, struct glyphinfo *gi, int layer, int dosp
 	    putshort(layr,cnt);
 	}
     }
-    free(glyph_data_offset_location);
 }
 
 static void PfEd_Layers(SplineFont *sf, struct PfEd_subtabs *pfed,
@@ -736,7 +735,7 @@ static void PfEd_Layers(SplineFont *sf, struct PfEd_subtabs *pfed,
     SplineChar *sc;
     FILE *layr;
 
-    otherlayers = gcalloc(sf->layer_cnt,sizeof(uint8));
+    otherlayers = calloc(sf->layer_cnt,sizeof(uint8));
 
     /* We don't need to check in bygid order. We just want to know existance */
     /* We don't check for refs because a reference to an empty glyph is empty too */
@@ -812,7 +811,6 @@ return;
 	putc('\0',layr);
     if ( ftell(layr) & 2 )
 	putshort(layr,0);
-    free(otherlayers);
 }
 
 void pfed_dump(struct alltabs *at, SplineFont *sf) {
@@ -876,7 +874,7 @@ static void pfed_readfontcomment(FILE *ttf,struct ttfinfo *info,uint32 base,
     if ( use_utf8!=0 && use_utf8!=1 )
 return;			/* Bad version number */
     len = getushort(ttf);
-    start = pt = galloc(len+1);
+    start = pt = malloc(len+1);
 
     end = pt+len;
     if ( use_utf8 ) {
@@ -889,7 +887,6 @@ return;			/* Bad version number */
     *pt = '\0';
     if ( !use_utf8 ) {
 	pt = latin1_2_utf8_copy(info->fontcomments);
-	free(start);
 	start = pt;
     }
     if ( tag==flog_TAG )
@@ -907,7 +904,7 @@ static char *pfed_read_utf8(FILE *ttf, uint32 start) {
     while ( (ch=getc(ttf))!='\0' && ch!=EOF )
 	++len;
     fseek( ttf, start, SEEK_SET);
-    str = pt = galloc(len+1);
+    str = pt = malloc(len+1);
     while ( (ch=getc(ttf))!='\0' && ch!=EOF )
 	*pt++ = ch;
     *pt = '\0';
@@ -941,7 +938,7 @@ return( NULL );
 	pt = utf8_idpb(pt,uch,0);
     }
     *pt++ = 0;
-return( grealloc(str,pt-str) );
+return( realloc(str,pt-str) );
 }
 
 static char *pfed_read_utf8_len(FILE *ttf,uint32 offset,int len) {
@@ -951,7 +948,7 @@ static char *pfed_read_utf8_len(FILE *ttf,uint32 offset,int len) {
     if ( len<0 )
 return( NULL );
 
-    pt = str = galloc(len+1);
+    pt = str = malloc(len+1);
     fseek(ttf,offset,SEEK_SET);
     for ( i=0; i<len; ++i )
 	*pt++ = getc(ttf);
@@ -968,8 +965,8 @@ static void pfed_readcvtcomments(FILE *ttf,struct ttfinfo *info,uint32 base ) {
 return;			/* Bad version number */
     count = getushort(ttf);
 
-    offsets = galloc(count*sizeof(uint16));
-    info->cvt_names = galloc((count+1)*sizeof(char *));
+    offsets = malloc(count*sizeof(uint16));
+    info->cvt_names = malloc((count+1)*sizeof(char *));
     for ( i=0; i<count; ++i )
 	offsets[i] = getushort(ttf);
     for ( i=0; i<count; ++i ) {
@@ -978,7 +975,6 @@ return;			/* Bad version number */
 	else
 	    info->cvt_names[i] = pfed_read_utf8(ttf,base+offsets[i]);
     }
-    free(offsets);
 }
 
 static void pfed_readglyphcomments(FILE *ttf,struct ttfinfo *info,uint32 base) {
@@ -992,7 +988,7 @@ static void pfed_readglyphcomments(FILE *ttf,struct ttfinfo *info,uint32 base) {
     if ( use_utf8!=0 && use_utf8!=1 )
 return;			/* Bad version number */
     n = getushort(ttf);
-    grange = galloc(n*sizeof(struct grange));
+    grange = malloc(n*sizeof(struct grange));
     for ( i=0; i<n; ++i ) {
 	grange[i].start = getushort(ttf);
 	grange[i].end = getushort(ttf);
@@ -1016,7 +1012,6 @@ return;			/* Bad version number */
 			info->chars[j]->name );
 	}
     }
-    free(grange);
 }
 
 static void pfed_readcolours(FILE *ttf,struct ttfinfo *info,uint32 base) {
@@ -1052,63 +1047,54 @@ static void pfed_readlookupnames(FILE *ttf,struct ttfinfo *info,uint32 base,
     if ( getushort(ttf)!=0 )
 return;			/* Bad version number */
     n = getushort(ttf);
-    ls = galloc(n*sizeof(struct lstruct));
+    ls = malloc(n*sizeof(struct lstruct));
     for ( i=0; i<n; ++i ) {
 	ls[i].name_off = getushort(ttf);
 	ls[i].subs_off = getushort(ttf);
     }
     for ( i=0, otl=lookups; i<n && otl!=NULL; ++i, otl=otl->next ) {
-	if ( ls[i].name_off!=0 ) {
-	    free( otl->lookup_name );
+	if ( ls[i].name_off!=0 )
 	    otl->lookup_name = pfed_read_utf8(ttf,base+ls[i].name_off);
-	}
 	if ( ls[i].subs_off!=0 ) {
 	    fseek(ttf,base+ls[i].subs_off,SEEK_SET);
 	    s = getushort(ttf);
-	    ss = galloc(s*sizeof(struct lstruct));
+	    ss = malloc(s*sizeof(struct lstruct));
 	    for ( j=0; j<s; ++j ) {
 		ss[j].name_off = getushort(ttf);
 		ss[j].subs_off = getushort(ttf);
 	    }
 	    for ( j=0, sub=otl->subtables; j<s && sub!=NULL; ++j, sub=sub->next ) {
-		if ( ss[j].name_off!=0 ) {
-		    free( sub->subtable_name );
+		if ( ss[j].name_off!=0 )
 		    sub->subtable_name = pfed_read_utf8(ttf,base+ss[j].name_off);
-		}
 		if ( ss[j].subs_off!=0 ) {
 		    if ( !sub->anchor_classes )
 			LogError(_("Whoops, attempt to name anchors in a subtable which doesn't contain any\n"));
 		    else {
 			fseek(ttf,base+ss[j].subs_off,SEEK_SET);
 			a = getushort(ttf);
-			as = galloc(a*sizeof(struct lstruct));
+			as = malloc(a*sizeof(struct lstruct));
 			for ( k=0; k<a; ++k ) {
 			    as[k].name_off = getushort(ttf);
 			}
 			k=0;
 			for ( ac=info->ahead; ac!=NULL; ac=ac->next ) {
 			    if ( ac->subtable==sub ) {
-				if ( as[k].name_off!=0 ) {
-				    free( ac->name );
+				if ( as[k].name_off!=0 )
 				    ac->name = pfed_read_utf8(ttf,base+as[k].name_off);
-				}
 			        ++k;
 			    }
 			}
-			free(as);
 		    }
 		}
 	    }
 	    /* I guess it's ok for some subtables to be unnamed, so no check for sub!=NULL */
 	    if ( j<s )
 		LogError(_("Whoops, more names than subtables of lookup %s\n"), otl->lookup_name );
-	    free(ss);
 	}
     }
     /* I guess it's ok for some lookups to be unnamed, so no check for otf!=NULL */
     if ( i<n )
 	LogError(_("Whoops, more names than lookups\n") );
-    free(ls);
 }
 
 static float pfed_get_coord(FILE *ttf,int mod) {
@@ -1142,7 +1128,7 @@ return;
     offx = pfed_get_coord(ttf,COM_MOD(verb));
     offy = pfed_get_coord(ttf,COM_MOD(verb));
     ss->first = current = SplinePointCreate(offx,offy);
-    forever {
+    for (;;) {
 	verb = getc(ttf);
 	v = COM_VERB(verb); m = COM_MOD(verb);
 	if ( m==3 ) {
@@ -1235,14 +1221,13 @@ return;
 	    ss->first->prev = current->prev;
 	    ss->first->prevcp = current->prevcp;
 	    ss->first->noprevcp = current->noprevcp;
-	    SplinePointFree(current);
 	} else
 	    SplineMake(current,ss->first,type==2);
 	ss->last = ss->first;
     } else {
 	ss->last = current;
     }
-    SPLCatagorizePoints(ss);
+    SPLCategorizePoints(ss);
 }
 
 static void pfed_read_spiro_contour(FILE *ttf,SplineSet *ss,
@@ -1260,7 +1245,7 @@ static void pfed_read_spiro_contour(FILE *ttf,SplineSet *ss,
     break;
 	}
 	if ( ss->spiro_cnt>=ss->spiro_max )
-	    ss->spiros = grealloc(ss->spiros,(ss->spiro_max+=10)*sizeof(spiro_cp));
+	    ss->spiros = realloc(ss->spiros,(ss->spiro_max+=10)*sizeof(spiro_cp));
 	ss->spiros[ss->spiro_cnt].ty = ch;
 	if ( ch!=SPIRO_END ) {
 	    ss->spiros[ss->spiro_cnt].x = getlong(ttf)/256.0;
@@ -1277,7 +1262,7 @@ static void pfed_read_spiro_contour(FILE *ttf,SplineSet *ss,
 	if ( ss->spiros[ss->spiro_cnt-1].ty==SPIRO_CLOSE_CONTOUR )
 	    ss->spiros[ss->spiro_cnt-1].ty = SPIRO_G4;
 	if ( ss->spiro_cnt>=ss->spiro_max )
-	    ss->spiros = grealloc(ss->spiros,(ss->spiro_max+=2)*sizeof(spiro_cp));
+	    ss->spiros = realloc(ss->spiros,(ss->spiro_max+=2)*sizeof(spiro_cp));
 	ss->spiros[ss->spiro_cnt].ty = SPIRO_END;
 	ss->spiros[ss->spiro_cnt].x = 0;
 	ss->spiros[ss->spiro_cnt].y = 0;
@@ -1298,7 +1283,7 @@ static void pfed_read_glyph_layer(FILE *ttf,struct ttfinfo *info,Layer *ly,
     if ( version==1 )
 	rc = getushort(ttf);		/* References */
     ic = getushort(ttf);		/* Images */
-    contours = galloc(cc*sizeof(struct contours));
+    contours = malloc(cc*sizeof(struct contours));
     for ( i=0; i<cc; ++i ) {
 	contours[i].data_off = getushort(ttf);
 	contours[i].name_off = getushort(ttf);
@@ -1326,7 +1311,7 @@ static void pfed_read_glyph_layer(FILE *ttf,struct ttfinfo *info,Layer *ly,
     ss = ly->splines;			/* Only relevant for spiros where they live in someone else's layer */
     for ( i=0; i<cc; ++i ) {
 	if ( type!=1 ) {		/* Not spiros */
-	    contours[i].ss = chunkalloc(sizeof(SplineSet));
+	    contours[i].ss = XZALLOC(SplineSet);
 	    if ( i==0 )
 		ly->splines = contours[i].ss;
 	    else
@@ -1343,7 +1328,6 @@ static void pfed_read_glyph_layer(FILE *ttf,struct ttfinfo *info,Layer *ly,
 		LogError(_("Whoops, Ran out of spiros\n"));
 	}
     }
-    free(contours);
 }
 
 static void pfed_readguidelines(FILE *ttf,struct ttfinfo *info,uint32 base) {
@@ -1365,8 +1349,8 @@ return;			/* Bad version number */
 	pfed_read_glyph_layer(ttf,info,&info->guidelines,base+off,info->to_order2?2:3,version);
     } else {
 	struct npos { int pos; int offset; } *vs, *hs;
-	vs = galloc(v*sizeof(struct npos));
-	hs = galloc(h*sizeof(struct npos));
+	vs = malloc(v*sizeof(struct npos));
+	hs = malloc(h*sizeof(struct npos));
 	for ( i=0; i<v; ++i ) {
 	    vs[i].pos = (short) getushort(ttf);
 	    vs[i].offset = getushort(ttf);
@@ -1379,7 +1363,7 @@ return;			/* Bad version number */
 	    sp = SplinePointCreate(vs[i].pos,-info->emsize);
 	    nsp = SplinePointCreate(vs[i].pos,2*info->emsize);
 	    SplineMake(sp,nsp,info->to_order2);
-	    ss = chunkalloc(sizeof(SplineSet));
+	    ss = XZALLOC(SplineSet);
 	    ss->first = sp; ss->last = nsp;
 	    if ( vs[i].offset!=0 )
 		ss->contour_name = pfed_read_utf8(ttf,base+vs[i].offset);
@@ -1390,15 +1374,14 @@ return;			/* Bad version number */
 	    sp = SplinePointCreate(-info->emsize,hs[i].pos);
 	    nsp = SplinePointCreate(2*info->emsize,hs[i].pos);
 	    SplineMake(sp,nsp,info->to_order2);
-	    ss = chunkalloc(sizeof(SplineSet));
+	    ss = XZALLOC(SplineSet);
 	    ss->first = sp; ss->last = nsp;
 	    if ( hs[i].offset!=0 )
 		ss->contour_name = pfed_read_utf8(ttf,base+hs[i].offset);
 	    ss->next = info->guidelines.splines;
 	    info->guidelines.splines = ss;
 	}
-	SPLCatagorizePoints(info->guidelines.splines);
-	free(vs); free(hs);
+	SPLCategorizePoints(info->guidelines.splines);
     }
 }
 
@@ -1417,7 +1400,7 @@ static void pfed_redo_refs(SplineChar *sc,int layer) {
 
 static void pfed_read_layer(FILE *ttf,struct ttfinfo *info,int layer,int type, uint32 base,
 	uint32 start,int version) {
-    uint32 *loca = gcalloc(info->glyph_cnt,sizeof(uint32));
+    uint32 *loca = calloc(info->glyph_cnt,sizeof(uint32));
     int i,j;
     SplineChar *sc;
     int rcnt;
@@ -1425,7 +1408,7 @@ static void pfed_read_layer(FILE *ttf,struct ttfinfo *info,int layer,int type, u
 
     fseek(ttf,start,SEEK_SET);
     rcnt = getushort(ttf);
-    ranges = galloc(rcnt*sizeof(struct range));
+    ranges = malloc(rcnt*sizeof(struct range));
     for ( i=0; i<rcnt; ++i ) {
 	ranges[i].start  = getushort(ttf);
 	ranges[i].last   = getushort(ttf);
@@ -1443,7 +1426,6 @@ static void pfed_read_layer(FILE *ttf,struct ttfinfo *info,int layer,int type, u
 		pfed_read_glyph_layer(ttf,info,ly,base+loca[j],type,version);
 	}
     }
-    free(ranges); free(loca);
 
     for ( i=0; i<info->glyph_cnt; ++i ) if ( info->chars[i]!=NULL )
 	info->chars[i]->ticked = false;
@@ -1463,7 +1445,7 @@ static void pfed_readotherlayers(FILE *ttf,struct ttfinfo *info,uint32 base) {
     if ( version>1 )
 return;			/* Bad version number */
     lcnt = getushort(ttf);
-    layers = galloc(lcnt*sizeof(struct layer_info));
+    layers = malloc(lcnt*sizeof(struct layer_info));
     for ( i=0; i<lcnt; ++i ) {
 	layers[i].type     = getushort(ttf);
 	layers[i].name_off = getushort(ttf);
@@ -1493,7 +1475,7 @@ return;			/* Bad version number */
 
     if ( non_spiro_cnt!=0 ) {
 	info->layer_cnt = non_spiro_cnt+1;
-	info->layers = gcalloc(info->layer_cnt+1,sizeof(LayerInfo));
+	info->layers = calloc(info->layer_cnt+1,sizeof(LayerInfo));
 	info->layers[ly_back].background = true;
 	info->layers[ly_fore].order2 = info->to_order2;
 	info->layers[ly_fore].background = false;
@@ -1516,7 +1498,7 @@ return;			/* Bad version number */
 	}
 	if ( info->layer_cnt!=2 ) {
 	    for ( gid = 0; gid<info->glyph_cnt; ++gid ) if ((sc=info->chars[gid])!=NULL ) {
-		sc->layers = grealloc(sc->layers,info->layer_cnt*sizeof(Layer));
+		sc->layers = realloc(sc->layers,info->layer_cnt*sizeof(Layer));
 		memset(sc->layers+2,0,(info->layer_cnt-2)*sizeof(Layer));
 		sc->layer_cnt = info->layer_cnt;
 	    }
@@ -1528,9 +1510,6 @@ return;			/* Bad version number */
 	pfed_read_layer(ttf,info,layers[i].sf_layer,layers[i].type&0xff,
 		base,base+layers[i].data_off,version);
     }
-    for ( i=0; i<lcnt; ++i )
-	free( layers[i].name );
-    free( layers );
 }
 
 void pfed_read(FILE *ttf,struct ttfinfo *info) {
@@ -1984,7 +1963,7 @@ static char *MergeComments(BDFFont *bdf) {
     if ( len==0 )
 return( copy( "" ));
 
-    str = galloc( len+1 );
+    str = malloc( len+1 );
     len = 0;
     for ( i=0; i<bdf->prop_cnt; ++i ) {
 	if ( strmatch(bdf->props[i].name,"COMMENT")==0 &&
@@ -2068,8 +2047,6 @@ return(true);
 			(bdf->props[j].type & ~prt_property)==prt_atom ) {
 		    putlong(at->bdf,ftell(strings));
 		    fwrite(str,1,strlen(str)+1,strings);
-		    if ( str!=bdf->props[j].u.str )
-			free(str);
 		} else {
 		    putlong(at->bdf,bdf->props[j].u.val);
 		}
@@ -2108,7 +2085,7 @@ static char *getstring(FILE *ttf,long start) {
     fseek(ttf,start,SEEK_SET);
     for ( len=1; (ch=getc(ttf))>0 ; ++len );
     fseek(ttf,start,SEEK_SET);
-    pt = str = galloc(len);
+    pt = str = malloc(len);
     while ( (ch=getc(ttf))>0 )
 	*pt++ = ch;
     *pt = '\0';
@@ -2128,7 +2105,7 @@ static int CheckForNewlines(BDFFont *bdf,int k) {
 return( k );
 
     bdf->prop_cnt += cnt;
-    bdf->props = grealloc(bdf->props, bdf->prop_cnt*sizeof( BDFProperties ));
+    bdf->props = realloc(bdf->props, bdf->prop_cnt*sizeof( BDFProperties ));
 
     pt = strchr(bdf->props[k].u.atom,'\n');
     *pt = '\0'; ++pt;
@@ -2141,7 +2118,6 @@ return( k );
 	if ( *pt=='\n' ) ++pt;
     }
     pt = copy( bdf->props[k].u.atom );
-    free( bdf->props[k].u.atom );
     bdf->props[k].u.atom = pt;
 return( k+cnt );
 }
@@ -2160,7 +2136,7 @@ return;
     strike_cnt = getushort(ttf);
     string_start = getlong(ttf) + info->bdf_start;
 
-    bdfinfo = galloc(strike_cnt*sizeof(struct bdfinfo));
+    bdfinfo = malloc(strike_cnt*sizeof(struct bdfinfo));
     for ( i=0; i<strike_cnt; ++i ) {
 	int ppem, num_items;
 	ppem = getushort(ttf);
@@ -2177,7 +2153,7 @@ return;
 	    fseek(ttf,10*bdfinfo[i].cnt,SEEK_CUR);
 	else {
 	    bdf->prop_cnt = bdfinfo[i].cnt;
-	    bdf->props = galloc(bdf->prop_cnt*sizeof(BDFProperties));
+	    bdf->props = malloc(bdf->prop_cnt*sizeof(BDFProperties));
 	    for ( j=k=0; j<bdfinfo[i].cnt; ++j, ++k ) {
 		long name = getlong(ttf);
 		int type = getushort(ttf);
@@ -2221,7 +2197,7 @@ int ttf_fftm_dump(SplineFont *sf,struct alltabs *at) {
 
     putlong(at->fftmf,0x00000001);	/* Version */
 
-    cvt_unix_to_1904(library_version_configuration.library_source_modtime,results);
+    cvt_unix_to_1904(LibFF_ModTime,results);
     putlong(at->fftmf,results[1]);
     putlong(at->fftmf,results[0]);
 

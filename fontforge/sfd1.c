@@ -65,12 +65,12 @@ static void SFGuessScriptList(SplineFont1 *sf) {
     else if ( sf->sf.mm!=NULL ) sf=(SplineFont1 *) sf->sf.mm->normal;
     if ( sf->script_lang!=NULL )
 return;
-    sf->script_lang = gcalloc(2,sizeof(struct script_record *));
-    sf->script_lang[0] = gcalloc(scnt+1,sizeof(struct script_record));
+    sf->script_lang = calloc(2,sizeof(struct script_record *));
+    sf->script_lang[0] = calloc(scnt+1,sizeof(struct script_record));
     sf->sli_cnt = 1;
     for ( j=0; j<scnt; ++j ) {
 	sf->script_lang[0][j].script = scripts[j];
-	sf->script_lang[0][j].langs = galloc(2*sizeof(uint32));
+	sf->script_lang[0][j].langs = malloc(2*sizeof(uint32));
 	sf->script_lang[0][j].langs[0] = DEFAULT_LANG;
 	sf->script_lang[0][j].langs[1] = 0;
     }
@@ -112,7 +112,7 @@ int SFAddScriptIndex(SplineFont1 *sf,uint32 *scripts,int scnt) {
 
     if ( sf->sf.cidmaster ) sf = (SplineFont1 *) sf->sf.cidmaster;
     if ( sf->script_lang==NULL )	/* It's an old sfd file */
-	sf->script_lang = gcalloc(1,sizeof(struct script_record *));
+	sf->script_lang = calloc(1,sizeof(struct script_record *));
     for ( i=0; sf->script_lang[i]!=NULL; ++i ) {
 	sr = sf->script_lang[i];
 	for ( j=0; sr[j].script!=0 && j<scnt &&
@@ -121,12 +121,12 @@ int SFAddScriptIndex(SplineFont1 *sf,uint32 *scripts,int scnt) {
 return( i );
     }
 
-    sf->script_lang = grealloc(sf->script_lang,(i+2)*sizeof(struct script_record *));
+    sf->script_lang = realloc(sf->script_lang,(i+2)*sizeof(struct script_record *));
     sf->script_lang[i+1] = NULL;
-    sr = sf->script_lang[i] = gcalloc(scnt+1,sizeof(struct script_record));
+    sr = sf->script_lang[i] = calloc(scnt+1,sizeof(struct script_record));
     for ( j = 0; j<scnt; ++j ) {
 	sr[j].script = scripts[j];
-	sr[j].langs = galloc(2*sizeof(uint32));
+	sr[j].langs = malloc(2*sizeof(uint32));
 	sr[j].langs[0] = DEFAULT_LANG;
 	sr[j].langs[1] = 0;
     }
@@ -148,17 +148,17 @@ static int SFAddScriptLangIndex(SplineFont *_sf,uint32 script,uint32 lang) {
     if ( script==0 ) script=DEFAULT_SCRIPT;
     if ( lang==0 ) lang=DEFAULT_LANG;
     if ( sf->script_lang==NULL )
-	sf->script_lang = gcalloc(2,sizeof(struct script_record *));
+	sf->script_lang = calloc(2,sizeof(struct script_record *));
     for ( i=0; sf->script_lang[i]!=NULL; ++i ) {
 	if ( sf->script_lang[i][0].script==script && sf->script_lang[i][1].script==0 &&
 		sf->script_lang[i][0].langs[0]==lang &&
 		sf->script_lang[i][0].langs[1]==0 )
 return( i );
     }
-    sf->script_lang = grealloc(sf->script_lang,(i+2)*sizeof(struct script_record *));
-    sf->script_lang[i] = gcalloc(2,sizeof(struct script_record));
+    sf->script_lang = realloc(sf->script_lang,(i+2)*sizeof(struct script_record *));
+    sf->script_lang[i] = calloc(2,sizeof(struct script_record));
     sf->script_lang[i][0].script = script;
-    sf->script_lang[i][0].langs = galloc(2*sizeof(uint32));
+    sf->script_lang[i][0].langs = malloc(2*sizeof(uint32));
     sf->script_lang[i][0].langs[0] = lang;
     sf->script_lang[i][0].langs[1] = 0;
     sf->script_lang[i+1] = NULL;
@@ -207,18 +207,18 @@ static FeatureScriptLangList *FeaturesFromTagSli(uint32 tag,int sli,SplineFont1 
     struct scriptlanglist *cur, *last;
     int i;
 
-    fl = chunkalloc(sizeof(FeatureScriptLangList));
+    fl = XZALLOC(FeatureScriptLangList);
     fl->featuretag = tag;
     if ( sli==SLI_NESTED || sli<0 || sli>=sf->sli_cnt )
 return( fl );
     last = NULL;
     for ( sr = sf->script_lang[sli]; sr->script!=0; ++sr ) {
-	cur = chunkalloc(sizeof(struct scriptlanglist));
+	cur = XZALLOC(struct scriptlanglist);
 	cur->script = sr->script;
 	for ( i=0; sr->langs[i]!=0; ++i );
 	cur->lang_cnt = i;
 	if ( i>MAX_LANG )
-	    cur->morelangs = galloc((i-MAX_LANG) * sizeof(uint32));
+	    cur->morelangs = malloc((i-MAX_LANG) * sizeof(uint32));
 	for ( i=0; sr->langs[i]!=0; ++i ) {
 	    if ( i<MAX_LANG )
 		cur->langs[i] = sr->langs[i];
@@ -236,7 +236,7 @@ return( fl );
 
 static OTLookup *CreateLookup(SplineFont1 *sf,uint32 tag, int sli,
 	int flags,enum possub_type type) {
-    OTLookup *otl = chunkalloc(sizeof(OTLookup));
+    OTLookup *otl = XZALLOC(OTLookup);
 
     otl->lookup_type =
 	    type == pst_position ? gpos_single :
@@ -268,7 +268,7 @@ return( otl );
 }
 
 static OTLookup *CreateACLookup(SplineFont1 *sf,AnchorClass1 *ac) {
-    OTLookup *otl = chunkalloc(sizeof(OTLookup));
+    OTLookup *otl = XZALLOC(OTLookup);
 
     otl->lookup_type =
 	    ac->ac.type == act_mark ? gpos_mark2base :
@@ -289,12 +289,12 @@ return( otl );
 }
 
 static OTLookup *CreateMacLookup(SplineFont1 *sf,ASM1 *sm) {
-    OTLookup *otl = chunkalloc(sizeof(OTLookup));
+    OTLookup *otl = XZALLOC(OTLookup);
     int i, ch;
     char *pt, *start;
     SplineChar *sc;
 
-    otl->features = chunkalloc(sizeof(FeatureScriptLangList));
+    otl->features = XZALLOC(FeatureScriptLangList);
     if ( sm->sm.type == asm_kern ) {
 	otl->lookup_type = kern_statemachine;
 	otl->next = sf->sf.gpos_lookups;
@@ -333,7 +333,7 @@ return( otl );
 static struct lookup_subtable *CreateSubtable(OTLookup *otl,SplineFont1 *sf) {
     struct lookup_subtable *cur, *prev;
 
-    cur = chunkalloc(sizeof(struct lookup_subtable));
+    cur = XZALLOC(struct lookup_subtable);
     if ( otl->subtables==NULL )
 	otl->subtables = cur;
     else {
@@ -446,7 +446,7 @@ static void ACDisassociateLigatures(SplineFont1 *sf,AnchorClass1 *ac) {
     AnchorClass1 *lac;
     char *format;
 
-    lac = chunkalloc(sizeof(AnchorClass1));
+    lac = XZALLOC(AnchorClass1);
     *lac = *ac;
     lac->ac.type = act_mklg;
     ac->ac.next = (AnchorClass *) lac;
@@ -455,7 +455,7 @@ static void ACDisassociateLigatures(SplineFont1 *sf,AnchorClass1 *ac) {
   /* GT:  base letters, and one for ligatures. So create a new AnchorClass */
   /* GT:  name for the ligature version */
     format = _("Ligature %s");
-    lac->ac.name = galloc(strlen(ac->ac.name)+strlen(format)+1);
+    lac->ac.name = malloc(strlen(ac->ac.name)+strlen(format)+1);
     sprintf( lac->ac.name, format, ac->ac.name );
 
     k=0;
@@ -466,7 +466,7 @@ static void ACDisassociateLigatures(SplineFont1 *sf,AnchorClass1 *ac) {
 		if ( ap->anchor!=(AnchorClass *) ac )
 	    continue;
 		if ( ap->type==at_mark ) {
-		    lap = chunkalloc(sizeof(AnchorPoint));
+		    lap = XZALLOC(AnchorPoint);
 		    *lap = *ap;
 		    ap->next = lap;
 		    lap->anchor = (AnchorClass *) lac;
@@ -794,10 +794,8 @@ void SFD_AssignLookups(SplineFont1 *sf) {
     for ( isgpos=0; isgpos<2; ++isgpos ) {
 	for ( otl = isgpos ? sf->sf.gpos_lookups : sf->sf.gsub_lookups ;
 		otl != NULL; otl=otl->next ) {
-	    if ( otl->features!=NULL && otl->features->scripts==NULL ) {
-		chunkfree(otl->features,sizeof(FeatureScriptLangList));
+	    if ( otl->features!=NULL && otl->features->scripts==NULL )
 		otl->features = NULL;
-	    }
 	}
     }
 
@@ -831,7 +829,7 @@ void SFD_AssignLookups(SplineFont1 *sf) {
     /*  lookups because I didn't before */
     for ( otl=sf->sf.gsub_lookups, cnt=0; otl!=NULL; otl=otl->next, ++cnt );
     if ( cnt!=0 ) {
-	all = galloc(cnt*sizeof(OTLookup *));
+	all = malloc(cnt*sizeof(OTLookup *));
 	for ( otl=sf->sf.gsub_lookups, cnt=0; otl!=NULL; otl=otl->next, ++cnt ) {
 	    all[cnt] = otl;
 	    otl->lookup_index = GSubOrder(sf,otl->features);
@@ -841,7 +839,6 @@ void SFD_AssignLookups(SplineFont1 *sf) {
 	for ( i=1; i<cnt; ++i )
 	    all[i-1]->next = all[i];
 	all[cnt-1]->next = NULL;
-	free( all );
     }
 
     for ( isgpos=0; isgpos<2; ++isgpos ) {

@@ -30,8 +30,6 @@
 #include "ffglib.h"
 #include "splinefont.h"
 
-#define free_with_debug(x) { fprintf(stderr,"%p FREE()\n",x); free(x); }
-
 
 enum widthtype { wt_width, wt_lbearing, wt_rbearing, wt_bearings, wt_vwidth };
 
@@ -187,12 +185,8 @@ typedef struct fontviewbase {
     int active_layer;
     BDFFont *active_bitmap;		/* Set if the fontview displays a bitmap strike */
     uint8 *selected;			/* Current selection */
-#ifndef _NO_FFSCRIPT
     struct dictionary *fontvars;	/* Scripting */
-#endif
-#ifndef _NO_PYTHON
     void *python_fv_object;
-#endif
     struct fvcontainer *container;
     void* collabClient;                 /* The data used to talk to the collab server process */
     enum collabState_t collabState;     /* Since we want to know if we are connected, or used to be
@@ -311,7 +305,6 @@ extern void PasteRemoveAnchorClass(SplineFont *sf,AnchorClass *dying);
 
 /**
  * Serialize and undo into a string.
- * You must free() the returned string.
  */
 extern char* UndoToString( SplineChar* sc, Undoes *undo );
 
@@ -364,11 +357,11 @@ extern void FVAutoInstr(FontViewBase *fv);
 extern void FVClearInstrs(FontViewBase *fv);
 extern void FVClearHints(FontViewBase *fv);
 extern void SCAutoTrace(SplineChar *sc,int layer, int ask);
-extern char *FindAutoTraceName(void);
+extern const char *FindAutoTraceName(void);
 extern void *GetAutoTraceArgs(void);
 extern void SetAutoTraceArgs(void *a);
-extern char *FindMFName(void);
-extern char *ProgramExists(char *prog,char *buffer);
+extern const char *FindMFName(void);
+extern char *ProgramExists(const char *prog,char *buffer);
 extern void MfArgsInit(void);
 extern void FVAutoTrace(FontViewBase *fv,int ask);
 extern void FVAddEncodingSlot(FontViewBase *fv,int gid);
@@ -491,10 +484,6 @@ extern int AutoWidthScript(FontViewBase *fv,int spacing);
 extern int AutoKernScript(FontViewBase *fv,int spacing, int threshold,
 	struct lookup_subtable *sub, char *kernfile);
 
-#ifndef _NO_FFSCRIPT
-extern void DictionaryFree(struct dictionary *dica);
-#endif
-
 extern void BCTrans(BDFFont *bdf,BDFChar *bc,BVTFunc *bvts,FontViewBase *fv );
 extern void BCSetPoint(BDFChar *bc, int x, int y, int color);
 extern void BCTransFunc(BDFChar *bc,enum bvtools type,int xoff,int yoff);
@@ -503,7 +492,6 @@ extern void skewselect(BVTFunc *bvtf,real t);
 extern BDFFloat *BDFFloatCreate(BDFChar *bc,int xmin,int xmax,int ymin,int ymax, int clear);
 extern BDFFloat *BDFFloatCopy(BDFFloat *sel);
 extern BDFFloat *BDFFloatConvert(BDFFloat *sel,int newdepth, int olddepth);
-extern void BDFFloatFree(BDFFloat *sel);
 
 extern void BCMergeReferences(BDFChar *base,BDFChar *cur,int8 xoff,int8 yoff);
 extern BDFChar *BDFGetMergedChar(BDFChar *bc) ;
@@ -579,16 +567,10 @@ typedef struct searchdata {
     real matched_x, matched_y;
     double matched_co, matched_si;		/* Precomputed sin, cos */
     enum flipset matched_flip;
-#ifdef _HAS_LONGLONG
     unsigned long long matched_refs;	/* Bit map of which refs in the char were matched */
     unsigned long long matched_ss;	/* Bit map of which splines in the char were matched */
 				    /* In multi-path mode */
     unsigned long long matched_ss_start;/* Bit map of which splines we tried to start matches with */
-#else
-    unsigned long matched_refs;
-    unsigned long matched_ss;
-    unsigned long matched_ss_start;
-#endif
     FontViewBase *fv;
     SplineChar *curchar;
     int last_gid;
@@ -673,5 +655,6 @@ extern void AutoKern2BuildClasses(SplineFont *sf,int layer,
 
 extern void MVSelectFirstKerningTable(struct metricsview *mv);
 
+extern float joinsnap;
 
 #endif

@@ -75,10 +75,10 @@ static int getsgiheader(struct sgiheader *head,FILE *fp) {
     if ( (head->magic=getshort(fp))<0	|| head->magic!=SGI_MAGIC || \
 	 (head->format=fgetc(fp))<0	|| \
 	 (head->bpc=fgetc(fp))<0	|| \
-	 (head->dim=getshort(fp))<0	|| \
-	 (head->width=getshort(fp))<0	|| \
-	 (head->height=getshort(fp))<0	|| \
-	 (head->chans=getshort(fp))<0	|| \
+	 (head->dim=getshort(fp))==(unsigned short)-1	||      \
+	 (head->width=getshort(fp))==(unsigned short)-1	||      \
+	 (head->height=getshort(fp))==(unsigned short)-1||      \
+	 (head->chans=getshort(fp))==(unsigned short)-1	||      \
 	 getlong(fp,&head->pixmin)	|| \
 	 getlong(fp,&head->pixmax)	|| \
 	 fread(head->dummy,sizeof(head->dummy),1,fp)<1 || \
@@ -109,7 +109,7 @@ static int readlongtab(FILE *fp,unsigned long *tab,long tablen) {
     long i;
 
     for ( i=0; i<tablen; ++i )
-	if ( getlong(fp,&tab[i]) )
+	if ( getlong(fp,(long *)&tab[i]) )
 	    return( -1 ); /* had a read error */
 
     return( 0 ); /* read everything okay */
@@ -118,7 +118,7 @@ static int readlongtab(FILE *fp,unsigned long *tab,long tablen) {
 static int find_scanline(FILE *fp,struct sgiheader *header,int cur,
 	unsigned long *starttab,unsigned char **ptrtab) {
 /* Find and expand a scanline. Return 0 if okay, else -ve if error */
-    int ch,i,cnt;
+    int ch = 0,i,cnt;
     long val;
     unsigned char *pt;
 
@@ -170,12 +170,10 @@ static void freeptrtab(unsigned char **ptrtab,long tot) {
 
     if ( ptrtab!=NULL )
 	for ( i=0; i<tot; ++i )
-	    if ( ptrtab[i]!=NULL ) {
+	    if ( ptrtab[i]!=NULL )
 		for ( j=i+1; j<tot; ++j )
 		    if ( ptrtab[j]==ptrtab[i] )
 			ptrtab[j] = NULL;
-		free(ptrtab[i]);
-	    }
 }
 
 GImage *GImageReadRgb(char *filename) {
@@ -242,7 +240,6 @@ GImage *GImageReadRgb(char *filename) {
 	    }
 	}
 	freeptrtab(ptrtab,tablen);
-	free(ptrtab); free(starttab); /*free(lengthtab);*/
     } else {
 	/* working with Verbatim image data*/
 	if ( header.chans==1 && header.bpc==1 ) {
@@ -310,7 +307,6 @@ GImage *GImageReadRgb(char *filename) {
 		    *ipt++ = COLOR_CREATE(*rpt++,*gpt++,*bpt++);
 	    }
 	    }
-	    free(r); free(g); free(b); free(a);
 	}
     }
     return( ret );
@@ -319,9 +315,6 @@ errorGImageReadRgbFile:
     fprintf(stderr,"Bad input file \"%s\"\n",filename );
 errorGImageReadRgbMem:
     freeptrtab(ptrtab,tablen);
-    free(ptrtab); free(starttab); /*free(lengthtab);*/
-    free(r); free(g); free(b); free(a);
-    GImageDestroy(ret);
     fclose(fp);
     return( NULL );
 }

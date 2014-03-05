@@ -53,7 +53,7 @@ int URLFromFile(char *url,FILE *from) {
 #include <sys/types.h>
 #include <sys/socket.h>
 #ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL        0x0		/* linux man page for "send" implies MSG_NOSIGNAL is in sys/socket.h, but it ain't implemente for Mac and Solaris */
+#define MSG_NOSIGNAL        0x0		/* MSG_NOSIGNAL is POSIX.1-2008 (not implemented on Mac and Solaris) */
 #endif
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -92,7 +92,7 @@ return( 0 );
     for ( i=0; hostent->h_addr_list[i]!=NULL; ++i );
     memcpy(&addr->sin_addr,hostent->h_addr_list[rand()%i],hostent->h_length);
     if ( hostent->h_length < sizeof(last_addr)) {	/* Cache the last hostname, in case they ask for it again */
-	free(last_host); last_host = copy(hostname);
+	last_host = copy(hostname);
 	last_len = hostent->h_length;
 	memcpy(last_addr,hostent->h_addr_list[rand()%i],hostent->h_length);
     }
@@ -363,7 +363,6 @@ return( 404 );		/* Random error */
 	ff_progress_change_total((int) ((ftell(msg)+databuflen-1)/databuflen) );
 	rewind(msg);
 	while ( (len=fread(databuf,1,databuflen,msg))>0 ) {
-/*fprintf( stderr, "Total read=%d\n", tot += len );*/
 	    if ( write(soc,databuf,len)==-1 ) {
 		fprintf( stderr, "Socket write failed3\n" );
 		close( soc );
@@ -382,17 +381,7 @@ return( 404 );
 
     first = 1; ended = 0;
     code = 404;
-#if 0
- { FILE *out;
-   char fbuf[400];
-   static int msgid=0;
-   sprintf(fbuf,"response%d", ++msgid);
-   out = fopen( fbuf,"w");
-#endif
     while ((len = read(soc,databuf,databuflen))>0 ) {
-#if 0
-  fwrite(databuf,1,len,out);
-#endif
 	if ( first ) {
 	    databuf[len] = '\0';
 	    sscanf(databuf,"HTTP/%*f %d", &code );
@@ -448,10 +437,6 @@ return( 404 );
 	if ( verbose>=2 || ( verbose!=0 && verbose<2 && !ended) )
 	    write(fileno(stdout),databuf,len);
     }
-#if 0
- fclose(out);
- }
-#endif
     if ( len==-1 )
 	fprintf( stderr, "Socket read failed\n" );
     close( soc );
@@ -709,7 +694,7 @@ return( false );
     }
 
     datalen = 8*8*1024;
-    databuf = galloc(datalen+1);
+    databuf = malloc(datalen+1);
     memset(&siteinfo,0,sizeof(siteinfo));
     siteinfo.user_id = -1;
 
@@ -730,7 +715,6 @@ return( false );
     code = Converse( soc, databuf, datalen, NULL, ct_savecookies, &siteinfo );
     /* Amusingly a success return of 200 is actually an error */
     if ( code!=302 ) {
-	free(databuf);
 	ff_progress_end_indicator();
 	ff_post_error(_("Login failed"),_("Could not log in.") );
 return( false );
@@ -740,7 +724,6 @@ return( false );
     soc = makeConnection(&addr);
     if ( soc==-1 ) {
 	ff_progress_end_indicator();
-	free(databuf);
 	ff_post_error(_("Could not connect to host"),_("Could not connect to \"%s\"."), "openfontlibrary.org" );
 return( false );
     }
@@ -754,7 +737,6 @@ return( false );
     code = Converse( soc, databuf, datalen, NULL, ct_getuserid, &siteinfo );
     if ( siteinfo.user_id==-1 ) {
 	ff_progress_end_indicator();
-	free(databuf);
 	ff_post_error(_("Could not read state"),_("Could not read state.") );
 return( false );
     }
@@ -777,38 +759,9 @@ return( false );
     fprintf(formdata,"Content-Disposition: form-data; name=\"upload_file_name\"; filename=\"%s\"\r\n"
 		     "Content-Type: application/octet-stream\r\n\r\n", fontfilename );
     if ( !dumpfile(formdata,NULL,oflib->pathspec)) {
-	free(databuf);
 	ff_post_error(_("Font file vanished"),_("The font file we just created can no longer be opened.") );
 return( false );
     }
-#if 0		/* Posting multiple files doesn't work */
-    } else {
-	char *previewname;
-	fprintf(formdata,"Content-Disposition: form-data; name=\"upload_file_name\";\r\n"
-			 "Content-Type: multipart/mixed; boundary=Sub%s\r\n\r\n", boundary  );
-	fprintf(formdata,"--Sub%s\r\n", boundary );
-	fprintf(formdata,"Content-Disposition: file; filename=\"%s\"\r\n"
-			 "Content-Type: application/octet-stream\r\n\r\n", fontfilename );
-	if ( !dumpfile(formdata,NULL,oflib->pathspec)) {
-	    free(databuf);
-	    ff_post_error(_("Font file vanished"),_("The font file we just created can no longer be opened.") );
-return( false );
-	}
-	fprintf(formdata,"--Sub%s\r\n", boundary );
-	previewname = strrchr(oflib->previewimage,'/');
-	if ( previewname==NULL ) previewname = oflib->previewimage;
-	else ++previewname;
-	fprintf(formdata,"Content-Disposition: file; filename=\"%s\"\r\n"
-			 "Content-Type: %s\r\n\r\n", previewname,
-			 ImageMimeType(strrchr(previewname,'.')));
-	if ( !dumpfile(formdata,NULL,oflib->previewimage)) {
-	    free(databuf);
-	    ff_post_error(_("Image file vanished"),_("The preview image we just created can no longer be opened.") );
-return( false );
-	}
-	fprintf(formdata,"--Sub%s--\r\n", boundary );
-    }
-#endif
 
     fprintf(formdata,"--%s\r\n", boundary );
     fprintf(formdata,"Content-Disposition: form-data; name=\"upload_tags\"\r\n"
@@ -854,14 +807,11 @@ return( false );
     fprintf(formdata,"--%s--\r\n", boundary );
 
     ChangeLine2_8("Transmitting font...");
-#if 0
-    findHTTPhost(&addr, "powerbook",-1);	/* Debug!!!! */
+    /*findHTTPhost(&addr, "powerbook",-1); */	/* Debug!!!! */
 	/*addr.sin_port = htons(8080); */	/* Debug!!!! */
-#endif
     soc = makeConnection(&addr);
     if ( soc==-1 ) {
 	ff_progress_end_indicator();
-	free(databuf);
 	fclose(formdata);
 	ff_post_error(_("Could not connect to host"),_("Could not connect to \"%s\"."), "openfontlibrary.org" );
 return( false );
@@ -886,14 +836,12 @@ return( false );
     if ( code<200 || code > 399 ) {
 	ff_post_error(_("Error from openfontlibrary"),_("Server error code=%d"), code );
 	ff_progress_end_indicator();
-	free( databuf );
 return( false );
     } else if ( code!=200 )
 	ff_post_notice(_("Unexpected server return"),_("Unexpected server return code=%d"), code );
     if ( siteinfo.upload_id==NULL ) {
 	ff_post_error(_("Error from openfontlibrary"),_("Failed to find an upload id.") );
 	ff_progress_end_indicator();
-	free( databuf );
 return( false );
     }
 
@@ -911,10 +859,8 @@ return( false );
 	    if ( previewname==NULL ) previewname = oflib->previewimage;
 	    else ++previewname;
 	    if ( !UploadAdditionalFile(previewfile,previewname,databuf,datalen,
-		    boundary,&siteinfo,&addr,"preview")) {
-		free(databuf);
+		    boundary,&siteinfo,&addr,"preview"))
 return( false );
-	    }
 	}
     }
 
@@ -925,10 +871,8 @@ return( false );
 	fwrite(oflib->sf->fontlog,1,strlen(oflib->sf->fontlog),tmp);
 	rewind(tmp);
 	if ( !UploadAdditionalFile(tmp,"FontLog.txt",databuf,datalen,
-		boundary,&siteinfo,&addr,"font log")) {
-	    free(databuf);
+		boundary,&siteinfo,&addr,"font log"))
 return( false );
-	}
     }
 
     if ( oflib->upload_fontlog && HasLicense(oflib->sf,NULL) ) {
@@ -937,19 +881,14 @@ return( false );
 	HasLicense(oflib->sf,tmp);
 	rewind(tmp);
 	if ( !UploadAdditionalFile(tmp,"License.txt",databuf,datalen,
-		boundary,&siteinfo,&addr,"license")) {
-	    free(databuf);
+		boundary,&siteinfo,&addr,"license"))
 return( false );
-	}
     }
 
-    if ( !HowIDidIt(databuf,datalen, boundary,&siteinfo,&addr)) {
-	free(databuf);
+    if ( !HowIDidIt(databuf,datalen, boundary,&siteinfo,&addr))
 return( false );
-    }
 
     ff_progress_end_indicator();
-    free( databuf );
 
 return( true );
 }
@@ -997,7 +936,6 @@ return( copy(url));
 	*port = strtol(temp,&end,10);
 	if ( *end!='\0' )
 	    *port = -2;
-	free(temp);
 	pt2 = ppt;
     }
     *host = copyn(pt,pt2-pt);
@@ -1037,7 +975,6 @@ return( NULL );
 	pthread_mutex_lock(lock);
     filename = decomposeURL(url, &host, &port, &username, &password);
     /* I don't support username/passwords for http */
-    free( username ); free( password );
     if ( lock!=NULL )
 	pthread_mutex_unlock(lock);
 
@@ -1049,14 +986,13 @@ return( NULL );
 	ff_progress_allow_events();
     }
 
-    /* This routine contains it's own lock */
+    /* This routine contains its own lock */
     if ( !findHTTPhost(&addr, host, port)) {
 	if ( lock==NULL )
 	    ff_progress_end_indicator();
 	else
 	    pthread_mutex_lock(lock);
 	ff_post_error(_("Could not find host"),_("Could not find \"%s\"\nAre you connected to the internet?"), host );
-	free( host ); free( filename );
 	if ( lock!=NULL )
 	    pthread_mutex_unlock(lock);
 return( false );
@@ -1068,7 +1004,6 @@ return( false );
 	else
 	    pthread_mutex_lock(lock);
 	ff_post_error(_("Could not connect to host"),_("Could not connect to \"%s\"."), host );
-	free( host ); free( filename );
 	if ( lock!=NULL )
 	    pthread_mutex_unlock(lock);
 return( false );
@@ -1077,7 +1012,7 @@ return( false );
     if ( lock!=NULL )
 	pthread_mutex_lock(lock);
     datalen = 8*8*1024;
-    databuf = galloc(datalen+1);
+    databuf = malloc(datalen+1);
     if ( lock!=NULL )
 	pthread_mutex_unlock(lock);
     else
@@ -1094,9 +1029,6 @@ return( false );
 	    pthread_mutex_lock(lock);
 	ff_post_error(_("Could not send request"),_("Could not send request to \"%s\"."), host );
 	close( soc );
-	free( databuf );
-	free( host ); free( filename );
-	free( host ); free( filename );
 	if ( lock!=NULL )
 	    pthread_mutex_unlock(lock);
 return( NULL );
@@ -1128,8 +1060,6 @@ return( NULL );
 		if ( lock!=NULL )
 		    pthread_mutex_lock(lock);
 		fclose(ret);
-		free(host); free( filename );
-		free(databuf);
 		if ( lock!=NULL )
 		    pthread_mutex_unlock(lock);
 		ret = URLToTempFile(newurl,lock);
@@ -1156,10 +1086,8 @@ return( ret );
     if ( lock==NULL )
 	ff_progress_end_indicator();
     close( soc );
-    free( databuf );
     if ( lock!=NULL )
 	pthread_mutex_lock(lock);
-    free( host ); free( filename );
     if ( len==-1 ) {
 	ff_post_error(_("Could not download data"),_("Could not download data.") );
 	fclose(ret);
@@ -1200,7 +1128,6 @@ return( -1 );
 	pthread_mutex_lock(lock);
     filename = decomposeURL(url, &host, &port, &username, &password);
     /* I don't support username/passwords for http */
-    free( username ); free( password );
     if ( lock!=NULL )
 	pthread_mutex_unlock(lock);
 
@@ -1219,7 +1146,6 @@ return( -1 );
 	else
 	    pthread_mutex_lock(lock);
 	ff_post_error(_("Could not find host"),_("Could not find \"%s\"\nAre you connected to the internet?"), host );
-	free( host ); free( filename );
 	if ( lock!=NULL )
 	    pthread_mutex_unlock(lock);
 return( -1 );
@@ -1231,7 +1157,6 @@ return( -1 );
 	else
 	    pthread_mutex_lock(lock);
 	ff_post_error(_("Could not connect to host"),_("Could not connect to \"%s\"."), host );
-	free( host ); free( filename );
 	if ( lock!=NULL )
 	    pthread_mutex_unlock(lock);
 return( -1 );
@@ -1249,7 +1174,6 @@ return( -1 );
 	if ( lock!=NULL )
 	    pthread_mutex_lock(lock);
 	ff_post_error(_("Could not send request"),_("Could not send request to \"%s\"."), host );
-	free( host ); free( filename );
 	if ( lock!=NULL )
 	    pthread_mutex_unlock(lock);
 	close( soc );
@@ -1276,7 +1200,6 @@ return( -1 );
 		close( soc );
 		if ( lock!=NULL )
 		    pthread_mutex_lock(lock);
-		free(host); free( filename );
 		if ( lock!=NULL )
 		    pthread_mutex_unlock(lock);
 		sofar = HttpGetBuf(newurl, databuf, datalen,lock);
@@ -1292,7 +1215,7 @@ return( sofar );
 		if ( tot+1>*datalen ) {
 		    if ( lock!=NULL )
 			pthread_mutex_lock(lock);
-		    databuf = grealloc(databuf,*datalen = tot+10);
+		    databuf = realloc(databuf,*datalen = tot+10);
 		    if ( lock!=NULL )
 			pthread_mutex_unlock(lock);
 		}
@@ -1310,7 +1233,6 @@ return( sofar );
 	    if ( lock==NULL && !ff_progress_increment(len)) {
 		ff_progress_end_indicator();
 		close( soc );
-		free( host ); free( filename );
 return( -2 );		/* Stopped by user */
 	    }
 	}
@@ -1321,7 +1243,6 @@ return( -2 );		/* Stopped by user */
     close( soc );
     if ( lock!=NULL )
 	pthread_mutex_lock(lock);
-    free( host ); free( filename );
     if ( len==-1 ) {
 	ff_post_error(_("Could not download data"),_("Could not download data.") );
 	sofar = -1;
@@ -1365,30 +1286,26 @@ return( false );
     if ( !findFTPhost(&addr, host, port)) {
 	ff_progress_end_indicator();
 	ff_post_error(_("Could not find host"),_("Could not find \"%s\"\nAre you connected to the internet?"), host );
-	free( host ); free( filename );
 return( false );
     }
     soc = makeConnection(&addr);
     if ( soc==-1 ) {
 	ff_progress_end_indicator();
 	ff_post_error(_("Could not connect to host"),_("Could not connect to \"%s\"."), host );
-	free( host ); free( filename );
 return( false );
     }
 
     datalen = 8*8*1024;
-    databuf = galloc(datalen+1);
+    databuf = malloc(datalen+1);
     cmd = databuf;
 
     ChangeLine2_8(_("Logging in..."));
     if ( getresponse(soc,databuf,datalen) == -1 ) {		/* ftp servers say "Hi" when then connect */
 	ff_progress_end_indicator();
 	ff_post_error(_("Could not connect to host"),_("Could not connect to \"%s\"."), host );
-	free( host ); free( filename ); free(username); free(password);
 	close( soc );
 return( false );
     }
-    free( host );
 
     if ( username==NULL ) {
 	username=copy("anonymous");
@@ -1400,21 +1317,20 @@ return( false );
     sprintf(cmd,"USER %s\r\n", username);
     if ( ftpsendr(soc,cmd,databuf,datalen)== -1 ) {
 	ff_progress_end_indicator();
-	close( soc ); free(filename); free(databuf); free(username); free(password);
+	close( soc );
 return( false );
     }
     sprintf(cmd,"PASS %s\r\n", password);
-    free(username); free(password);
     if ( ftpsendr(soc,cmd,databuf,datalen)<=0 ) {
 	ff_progress_end_indicator();
 	LogError(_("Bad Username/Password\n"));
-	close( soc ); free(filename); free(databuf);
+	close( soc );
 return( false );
     }
 
     if ( ftpsendr(soc,"TYPE I\r\n",databuf,datalen)==-1 ) {	/* Binary */
 	ff_progress_end_indicator();
-	close( soc ); free(filename); free(databuf);
+	close( soc );
 return( false );
     }
 
@@ -1425,7 +1341,7 @@ return( false );
 	
     if ( ftpsendpassive(soc,&data_addr,databuf,datalen)<= 0 ) {
 	ff_progress_end_indicator();
-	close( soc ); free(filename); free(databuf);
+	close( soc );
 return( false );
     }
     if (( data = socket(PF_INET,SOCK_STREAM,0))==-1 ||
@@ -1433,7 +1349,7 @@ return( false );
 	ff_progress_end_indicator();
 	if ( data!=-1 )
 	    close(data);
-	close( soc ); free(filename); free(databuf);
+	close( soc );
 	LogError(_("FTP passive Data Connect failed\n"));
 return( 0 );
     }
@@ -1444,7 +1360,7 @@ return( 0 );
 	    ff_progress_end_indicator();
 	    ff_post_error(_("Could not download data"),_("Could not find file.") );
 	    close(data);
-	    close( soc ); free(filename); free(databuf);
+	    close( soc );
 return( false );
 	}
 
@@ -1463,7 +1379,7 @@ return( false );
 	    ff_progress_end_indicator();
 	    ff_post_error(_("Could not download data"),_("Could not find file.") );
 	    close(data);
-	    close( soc ); free(filename); free(databuf);
+	    close( soc );
 return( false );
 	}
 
@@ -1478,8 +1394,6 @@ return( false );
     }
     ff_progress_end_indicator();
     close( soc ); close( data );
-    free( databuf );
-    free( filename );
     if ( len==-1 ) {
 	ff_post_error(_("Could not transmit data"),_("Could not transmit data.") );
 	if ( ret!=NULL ) fclose(ret);

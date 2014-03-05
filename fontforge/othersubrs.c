@@ -454,13 +454,13 @@ static const char **CopyLines(char **lines, int l,int is_copyright) {
     int i;
 
     if ( l==0 && !is_copyright ) {
-	ret = galloc(2*sizeof(char *));
+	ret = malloc(2*sizeof(char *));
 	ret[0] = copy("{}");
 	ret[1] = NULL;
 return( ret );
     }
 
-    ret = galloc((l+1)*sizeof(char *));
+    ret = malloc((l+1)*sizeof(char *));
     for ( i=0; i<l; ++i )
 	ret[i] = lines[i];
     ret[l] = NULL;
@@ -470,19 +470,11 @@ return( ret );
 void DefaultOtherSubrs(void) {
     int i,j;
 
-    if ( othersubrs_copyright[0]!=copyright ) {
-	for ( i=0; othersubrs_copyright[0][i]!=NULL; ++i )
-	    free( (char *) othersubrs_copyright[0][i]);
-	free(othersubrs_copyright[0]);
+    if ( othersubrs_copyright[0]!=copyright )
 	othersubrs_copyright[0] = copyright;
-    }
     for ( j=0; j<=13; ++j ) {
-	if ( othersubrs[j]!=default_othersubrs[j] ) {
-	    for ( i=0; othersubrs[j][i]!=NULL; ++i )
-		free( (char *) othersubrs[j][i]);
-	    free(othersubrs[j]);
+	if ( othersubrs[j]!=default_othersubrs[j] )
 	   othersubrs[j] = default_othersubrs[j];
-	}
     }
 }
 
@@ -517,7 +509,7 @@ return( false );
 	} else {
 	    if ( l>=lmax ) {
 		lmax += 100;
-		lines = grealloc(lines,lmax*sizeof(char *));
+		lines = realloc(lines,lmax*sizeof(char *));
 	    }
 	    lines[l++] = copy(buffer);
 	}
@@ -527,7 +519,7 @@ return( false );
     if ( sub_num<=0 )
 return( false );
     while ( sub_num<14 ) {
-	osubs[sub_num] = gcalloc(2,sizeof(char *));
+	osubs[sub_num] = calloc(2,sizeof(char *));
 	osubs[sub_num][0] = copy("{}");
 	++sub_num;
     }
@@ -535,7 +527,6 @@ return( false );
     othersubrs_copyright[0] = co;
     for ( i=0; i<14; ++i )
 	othersubrs[i] = osubs[i];
-    free(lines);
 return( true );
 }
 	

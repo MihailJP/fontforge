@@ -45,7 +45,7 @@ typedef struct l2ld {
 #define CID_ErrorBound	1003
 
 static GTextInfo *SFLayerList(SplineFont *sf,int def_layer) {
-    GTextInfo *ret = gcalloc(sf->layer_cnt+1,sizeof(GTextInfo));
+    GTextInfo *ret = calloc(sf->layer_cnt+1,sizeof(GTextInfo));
     int l;
 
     for ( l=0; l<sf->layer_cnt; ++l ) {
@@ -323,9 +323,6 @@ static void Layer2Layer(CharView *cv,FontView *fv,enum l2l_type l2l,int def_laye
     if ( l2l==l2l_compare )
 	GHVBoxSetExpandableRow(boxes[4].ret,gb_expandglue);
 
-    GTextInfoListFree(gcd[2].gd.u.list);
-    GTextInfoListFree(gcd[4].gd.u.list);
-    
     GHVBoxFitWindow(boxes[0].ret);
 
     GDrawSetVisible(gw,true);

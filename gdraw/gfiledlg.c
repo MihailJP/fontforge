@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 #include <stdlib.h>
 #include <string.h>
 #include "ustring.h"
@@ -228,21 +230,13 @@ char *GWidgetOpenFileWPath8(const char *title, const char *defaultfile,
 	filt = utf82u_copy(initial_filter);
     if ( mimetypes!=NULL ) {
 	for ( i=0; mimetypes[i]!=NULL; ++i );
-	mimes = galloc((i+1)*sizeof(unichar_t *));
+	mimes = malloc((i+1)*sizeof(unichar_t *));
 	for ( i=0; mimetypes[i]!=NULL; ++i )
 	    mimes[i] = utf82u_copy(mimetypes[i]);
 	mimes[i] = NULL;
     }
     ret = GWidgetOpenFileWPath(tit,def,filt,mimes,filter,path);
-    if ( mimes!=NULL ) {
-	for ( i=0; mimes[i]!=NULL; ++i )
-	    free(mimes[i]);
-	free(mimes);
-    }
-    free(filt); free(def); free(tit);
-    utf8_ret = u2utf8_copy(ret);
-    free(ret);
-return( utf8_ret );
+return( u2utf8_copy(ret) );
 }
 
 char *GWidgetOpenFile8(const char *title, const char *defaultfile,

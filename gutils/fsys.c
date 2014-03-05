@@ -26,6 +26,7 @@
  */
 
 #include <stdio.h>
+#include "inc/basics.h"
 #include "ustring.h"
 #include "fileutil.h"
 #include "gfile.h"
@@ -34,7 +35,6 @@
 #include <unistd.h>
 #include <glib.h>
 #include <errno.h>			/* for mkdir_p */
-
 
 #ifdef _WIN32
 #define MKDIR(A,B) mkdir(A)
@@ -62,9 +62,9 @@ static void _u_backslash_to_slash(unichar_t* c){
 	    *c = '/';
 }
 #else
-static void _backslash_to_slash(char* c){
+static void _backslash_to_slash(char* UNUSED(c)){
 }
-static void _u_backslash_to_slash(unichar_t* c){
+static void _u_backslash_to_slash(unichar_t* UNUSED(c)){
 }
 #endif
 
@@ -111,7 +111,7 @@ return EXIT_SUCCESS;
 }
 
 /* Wrapper for formatted variable list printing. */
-char *smprintf(char *fmt, ...) {
+char *smprintf(const char *fmt, ...) {
 	va_list fmtargs;
 	char *ret;
 	int len;
@@ -144,7 +144,7 @@ return buffer;
 return NULL;
 #else
     static char *dir;
-    int uid;
+    uid_t uid;
     struct passwd *pw;
 
     dir = getenv("HOME");
@@ -167,15 +167,13 @@ return( NULL );
 unichar_t *u_GFileGetHomeDir(void) {
     unichar_t* dir = NULL;
     char* tmp = GFileGetHomeDir();
-    if( tmp ) {
+    if( tmp )
 	dir = uc_copy(tmp);
-	gfree(tmp);
-    }
 return dir;
 }
 
 static void savestrcpy(char *dest,const char *src) {
-    forever {
+    for (;;) {
 	*dest = *src;
 	if ( *dest=='\0' )
     break;
@@ -183,7 +181,7 @@ static void savestrcpy(char *dest,const char *src) {
     }
 }
 
-char *GFileGetAbsoluteName(char *name, char *result, int rsiz) {
+char *GFileGetAbsoluteName(const char *name, char *result, size_t rsiz) {
     /* result may be the same as name */
     char buffer[1000];
 
@@ -245,7 +243,7 @@ char *GFileMakeAbsoluteName(char *name) {
 return( copy(buffer));
 }
 
-char *GFileBuildName(char *dir,char *fname,char *buffer,int size) {
+char *GFileBuildName(char *dir,char *fname,char *buffer,size_t size) {
     int len;
 
     if ( dir==NULL || *dir=='\0' ) {
@@ -279,7 +277,7 @@ return( buffer );
 
 /* Given a filename in a directory, pick the directory out of it, and */
 /*  create a new filename using that directory and the given nametail */
-char *GFileReplaceName(char *oldname,char *fname,char *buffer,int size) {
+char *GFileReplaceName(char *oldname,char *fname,char *buffer,size_t size) {
     int len;
     char *dirend;
 
@@ -315,7 +313,7 @@ return( (char *)oldname );
 char *GFileAppendFile(char *dir,char *name,int isdir) {
     char *ret, *pt;
 
-    ret = (char *) galloc((strlen(dir)+strlen(name)+3));
+    ret = (char *) malloc((strlen(dir)+strlen(name)+3));
     strcpy(ret,dir);
     pt = ret+strlen(ret);
     if ( pt>ret && pt[-1]!='/' )
@@ -414,7 +412,6 @@ char *_GFile_find_program_dir(char *prog) {
 	    if(!pt1) break;
 	    path = pt1+1;
 	}
-	gfree(tmppath);
     }
 #else
     if ( (pt = strrchr(prog,'/'))!=NULL )
@@ -441,7 +438,6 @@ char *_GFile_find_program_dir(char *prog) {
     if ( program_dir==NULL )
 return( NULL );
     GFileGetAbsoluteName(program_dir,filename,sizeof(filename));
-    gfree(program_dir);
     program_dir = copy(filename);
 return( program_dir );
 }
@@ -460,9 +456,7 @@ unichar_t *u_GFileGetAbsoluteName(unichar_t *name, unichar_t *result, int rsiz) 
 	if ( buffer[u_strlen(buffer)-1]!='/' )
 	    uc_strcat(buffer,"/");
 	u_strcat(buffer,name);
-	#if defined(__MINGW32__)
 	_u_backslash_to_slash(buffer);
-	#endif
 
 	/* Normalize out any .. */
 	spt = rpt = buffer;
@@ -490,9 +484,7 @@ unichar_t *u_GFileGetAbsoluteName(unichar_t *name, unichar_t *result, int rsiz) 
     if (result!=name) {
 	u_strncpy(result,name,rsiz);
 	result[rsiz-1]='\0';
-	#if defined(__MINGW32__)
 	_u_backslash_to_slash(result);
-	#endif
     }
 return(result);
 }
@@ -588,7 +580,7 @@ return( name );
 unichar_t *u_GFileAppendFile(unichar_t *dir,unichar_t *name,int isdir) {
     unichar_t *ret, *pt;
 
-    ret = (unichar_t *) galloc((u_strlen(dir)+u_strlen(name)+3)*sizeof(unichar_t));
+    ret = (unichar_t *) malloc((u_strlen(dir)+u_strlen(name)+3)*sizeof(unichar_t));
     u_strcpy(ret,dir);
     pt = ret+u_strlen(ret);
     if ( pt>ret && pt[-1]!='/' )
@@ -675,7 +667,7 @@ return(unlink(buffer));
 
 static char *GResourceProgramDir = 0;
 
-char* getGResourceProgramDir() {
+char* getGResourceProgramDir(void) {
     return GResourceProgramDir;
 }
 
@@ -727,7 +719,7 @@ char *getShareDir(void) {
 #endif
     }
     len = (pt-GResourceProgramDir)+strlen("/share/fontforge")+1;
-    sharedir = galloc(len);
+    sharedir = malloc(len);
     strncpy(sharedir,GResourceProgramDir,pt-GResourceProgramDir);
     strcpy(sharedir+(pt-GResourceProgramDir),"/share/fontforge");
     return( sharedir );
@@ -743,7 +735,7 @@ char *getLocaleDir(void) {
 
     char* prefix = getShareDir();
     int len = strlen(prefix) + strlen("/../locale") + 2;
-    sharedir = galloc(len);
+    sharedir = malloc(len);
     strcpy(sharedir,prefix);
     strcat(sharedir,"/../locale");
     set = true;
@@ -759,7 +751,7 @@ char *getPixmapDir(void) {
 
     char* prefix = getShareDir();
     int len = strlen(prefix) + strlen("/pixmaps") + 2;
-    sharedir = galloc(len);
+    sharedir = malloc(len);
     strcpy(sharedir,prefix);
     strcat(sharedir,"/pixmaps");
     set = true;
@@ -777,9 +769,9 @@ char *getHelpDir(void) {
 #if defined(DOCDIR)
     prefix = DOCDIR;
 #endif
-    char* postfix = "/../doc/fontforge/";
+    const char* postfix = "/../doc/fontforge/";
     int len = strlen(prefix) + strlen(postfix) + 2;
-    sharedir = galloc(len);
+    sharedir = malloc(len);
     strcpy(sharedir,prefix);
     strcat(sharedir,postfix);
     set = true;
@@ -799,7 +791,7 @@ return dir;
 	}
 return NULL;
 #else
-	int uid;
+	uid_t uid;
 	struct passwd *pw;
 	char *home = getenv("HOME");
 
@@ -829,7 +821,8 @@ return NULL;
  * http://standards.freedesktop.org/basedir-spec/basedir-spec-latest.html
  */
 char *getFontForgeUserDir(int dir) {
-	char *def, *home, *xdg;
+	const char *def;
+	const char *home, *xdg;
 	char *buf = NULL;
 
 	/* find home directory first, it is needed if any of the xdg env vars are
@@ -884,7 +877,7 @@ return NULL;
 #endif
 }
 
-long GFileGetSize(char *name) {
+off_t GFileGetSize(char *name) {
 /* Get the binary file size for file 'name'. Return -1 if error. */
     struct stat buf;
     long rc;
@@ -906,16 +899,21 @@ char *GFileReadAll(char *name) {
 	    size_t bread=fread(ret,1,sz,fp);
 	    fclose(fp);
 
-	    if( bread==sz )
+	    if( bread==(size_t)sz )
 		return( ret );
 	}
-	free(ret);
     }
     return( 0 );
 }
 
+/*
+ * Write char string 'data' into file 'name'. Return -1 if error.
+ **/
 int GFileWriteAll(char *filepath, char *data) {
-/* Write char string 'data' into file 'name'. Return -1 if error. */
+    
+    if( !data )
+	return -1;
+    
     size_t bwrite = strlen(data);
     FILE* fp;
 
@@ -928,7 +926,7 @@ int GFileWriteAll(char *filepath, char *data) {
     return -1;
 }
 
-char *getTempDir(void)
+const char *getTempDir(void)
 {
     return g_get_tmp_dir();
 }
@@ -945,7 +943,7 @@ char *GFileGetHomeDocumentsDir(void)
     HRESULT result = SHGetFolderPath(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, my_documents );
     if (result != S_OK)
     {
-    	fprintf(stderr,"Error: Cant get My Documents path!'\n");
+    	fprintf(stderr,"Error: Can't get My Documents path!'\n");
         return ret;
     }
     int pos = strlen(my_documents);
@@ -955,9 +953,8 @@ char *GFileGetHomeDocumentsDir(void)
     return ret;
 #endif
 
-    // For Linux and OSX it was decided that this should be just the
+    // On GNU/Linux and OSX it was decided that this should be just the
     // home directory itself.
-//    ret = GFileAppendFile( GFileGetHomeDir(), "/Documents", 1 );
     ret = GFileGetHomeDir();
     return ret;
 }
@@ -972,19 +969,4 @@ char *GFileDirName(const char *path)
     if ( pt )
 	*pt = '\0';
     return strdup(ret);
-}
-
-/**
- * Filesystem split char, on osx and linux this is /
- * on windows it is \
- *
- * NOTE: it is probably better to normalize paths on windows to use / internally.
- */
-static char getFilesystemSplitChar( void )
-{
-    char splitchar = '/';
-#if defined(__MINGW32__)
-    splitchar = '\\';
-#endif
-    return splitchar;
 }

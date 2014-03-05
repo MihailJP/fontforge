@@ -71,11 +71,7 @@ void gwwv_post_notice(const char *title, const char *msg, ... ) {
     int timer_id;
 
     va_start(va,msg);
-#if defined( _NO_SNPRINTF ) || defined( __VMS )
-    vsprintf( buffer, msg, va);
-#else
     vsnprintf( buffer, sizeof(buffer), msg, va);
-#endif
     va_end(va);
 
     dlg = gtk_dialog_new_with_buttons(title,NULL,0,
@@ -103,11 +99,7 @@ void gwwv_post_error(const char *title, const char *msg, ... ) {
     GtkWidget *dlg, *lab;
 
     va_start(va,msg);
-#if defined( _NO_SNPRINTF ) || defined( __VMS )
-    vsprintf( buffer, msg, va);
-#else
     vsnprintf( buffer, sizeof(buffer), msg, va);
-#endif
     va_end(va);
 
     dlg = gtk_dialog_new_with_buttons(title,NULL,GTK_DIALOG_DESTROY_WITH_PARENT,
@@ -130,11 +122,7 @@ void gwwv_ierror(const char *msg, ... ) {
     va_start(va,msg);
     strcpy(buffer, _("Internal Error: "));
     len = strlen(buffer);
-#if defined( _NO_SNPRINTF ) || defined( __VMS )
-    vsprintf( buffer+len, msg, va);
-#else
     vsnprintf( buffer+len, sizeof(buffer)-len, msg, va);
-#endif
     va_end(va);
 
     dlg = gtk_dialog_new_with_buttons(_("Internal Error"),NULL,GTK_DIALOG_DESTROY_WITH_PARENT,
@@ -174,11 +162,7 @@ int gwwv_ask(const char *title,const char **butnames, int def,int cancel,
     int i, result;
 
     va_start(va,msg);
-#if defined( _NO_SNPRINTF ) || defined( __VMS )
-    vsprintf( buffer, msg, va);
-#else
     vsnprintf( buffer, sizeof(buffer), msg, va);
-#endif
     va_end(va);
 
     ad.cancel = cancel;
@@ -231,11 +215,7 @@ char *gwwv_ask_string(const char *title,const char *def,
     char *ret;
 
     va_start(va,question);
-#if defined( _NO_SNPRINTF ) || defined( __VMS )
-    vsprintf( buffer, question, va);
-#else
     vsnprintf( buffer, sizeof(buffer), question, va);
-#endif
     va_end(va);
 
     dlg = gtk_dialog_new_with_buttons(title,NULL,GTK_DIALOG_DESTROY_WITH_PARENT,
@@ -279,12 +259,7 @@ static int _gwwv_choose_with_buttons(const char *title,
     GtkTreeIter iter;
     GtkTreeSelection *select;
 
-#if defined( _NO_SNPRINTF ) || defined( __VMS )
-    vsprintf( buffer, msg, va);
-#else
     vsnprintf( buffer, sizeof(buffer), msg, va);
-#endif
-
     dlg = gtk_dialog_new();
     gtk_window_set_title(GTK_WINDOW(dlg),title);
     g_signal_connect(G_OBJECT(dlg),"key-press-event",
@@ -523,7 +498,6 @@ static void gwwv_file_def_filters(GtkWidget *dialog, const char *def_name,
 	    gtk_file_chooser_set_current_name( GTK_FILE_CHOOSER( dialog ), pt+1 );
 	} else
 	    gtk_file_chooser_set_current_name( GTK_FILE_CHOOSER( dialog ), temp );
-	free(temp);
     }
     if ( filters!=NULL ) {
 	standard = NULL;
@@ -575,7 +549,6 @@ char *gwwv_open_filename_mult(const char *title, const char *def_name,
     if ( gtk_dialog_run(GTK_DIALOG (dialog)) == GTK_RESPONSE_ACCEPT ) {
 	char *temp = gtk_file_chooser_get_filename (GTK_FILE_CHOOSER (dialog));
 	filename = g_filename_to_utf8(temp,-1,&read,&written,NULL);
-	free(temp);
     }
 
     gtk_widget_destroy (dialog);
@@ -601,7 +574,6 @@ char *gwwv_save_filename_with_gadget(const char *title, const char *def_name,
     if (gtk_dialog_run (GTK_DIALOG (dialog)) == GTK_RESPONSE_ACCEPT) {
 	char *temp = gtk_file_chooser_get_filename (GTK_FILE_CHOOSER (dialog));
 	filename = g_filename_to_utf8(temp,-1,&read,&written,NULL);
-	free(temp);
     }
 
     gtk_widget_destroy (dialog);

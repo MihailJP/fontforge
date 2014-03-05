@@ -46,7 +46,7 @@ char *_GIO_decomposeURL(const unichar_t *url,char **host, int *port, char **user
 	*host = NULL;
 return( cu_copy(url));
     }
-    cu_strncpy(proto,url,pt-url<sizeof(proto)?pt-url:sizeof(proto));
+    cu_strncpy(proto,url,(size_t)(pt-url)<sizeof(proto)?(size_t)(pt-url):sizeof(proto));
     pt += 3;
 
     pt2 = u_strchr(pt,'/');
@@ -75,7 +75,6 @@ return( cu_copy(url));
 	*port = strtol(temp,&end,10);
 	if ( *end!='\0' )
 	    *port = -2;
-	free(temp);
 	pt2 = ppt;
     }
     *host = cu_copyn(pt,pt2-pt);
@@ -114,10 +113,8 @@ return( password );
 		password = copy( pc[i].password );
  goto leave;
 	    }
-	    if ( strcmp(password,pc[i].password)!=0 ) {
-		free( pc[i].password );
+	    if ( strcmp(password,pc[i].password)!=0 )
 		pc[i].password = copy( password );
-	    }
  goto leave;
 	}
     }
@@ -126,7 +123,7 @@ return( password );
  goto leave;
 
     if ( pc_cnt>=pc_max )
-	pc = grealloc(pc,(pc_max+=10)*sizeof(struct passwd_cache));
+	pc = realloc(pc,(pc_max+=10)*sizeof(struct passwd_cache));
     pc[pc_cnt].proto = copy( proto );
     pc[pc_cnt].host  = copy( host  );
     pc[pc_cnt].username = copy( username );
@@ -174,12 +171,11 @@ return NULL;
 return( cur );
     }
 
-    cur = gcalloc(1,sizeof(struct hostdata));
+    cur = calloc(1,sizeof(struct hostdata));
     cur->addr.sin_family = AF_INET;
     cur->addr.sin_port = 0;
     if ( isdigit(host[0])) {
     	if ( !inet_aton(host,&cur->addr.sin_addr)) {
-	    free(cur);
 #ifdef HAVE_PTHREAD_H
 	    pthread_mutex_unlock(&mutex);
 #endif
@@ -189,7 +185,6 @@ return( NULL );
 	struct hostent *he;
 	he = gethostbyname(host);
 	if ( he==NULL ) {
-	    free(cur);
 #ifdef HAVE_PTHREAD_H
 	    pthread_mutex_unlock(&mutex);
 #endif

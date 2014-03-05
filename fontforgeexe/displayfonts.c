@@ -148,7 +148,6 @@ return( true );
 return( true );
 	    }
 	    pgwidth = pw*scale; pgheight = ph*scale;
-	    free(cret);
 	}
 
 	ret = _GGadgetGetTitle(GWidgetGetControl(pi->setup,CID_Printer));
@@ -173,7 +172,7 @@ return( true );
 	    pi->pi.printtype = pt_file;
 
 	printtype = pi->pi.printtype;
-	free(printlazyprinter); printlazyprinter = copy(pi->pi.printer);
+	printlazyprinter = copy(pi->pi.printer);
 	pagewidth = pgwidth; pageheight = pgheight;
 
 	pi->pi.done = true;
@@ -221,7 +220,7 @@ static GTextInfo *PrinterList() {
 
     printcap = fopen("/etc/printcap","r");
     if ( printcap==NULL ) {
-	tis = gcalloc(2,sizeof(GTextInfo));
+	tis = calloc(2,sizeof(GTextInfo));
 	tis[0].text = uc_copy("<default>");
 return( tis );
     }
@@ -248,7 +247,7 @@ return( tis );
 	    fclose(printcap);
 return( tis );
 	}
-	tis = gcalloc((cnt+1),sizeof(GTextInfo));
+	tis = calloc((cnt+1),sizeof(GTextInfo));
 	tis[0].text = uc_copy("<default>");
 	rewind(printcap);
     }
@@ -530,7 +529,6 @@ static int PageSetup(PD *pi) {
     GGadgetsCreate(pi->setup,boxes);
     GHVBoxSetExpandableCol(boxes[4].ret,gb_expandgluesame);
     GHVBoxSetExpandableRow(boxes[0].ret,gb_expandglue);
-    GTextInfoListFree(gcd[12].gd.u.list);
     PG_SetEnabled(pi);
     GHVBoxFitWindow(boxes[0].ret);
     GDrawSetVisible(pi->setup,true);
@@ -627,14 +625,12 @@ static int PRT_OK(GGadget *g, GEvent *e) {
 	    /* int size =*/ GetInt8(pi->gw,CID_Size,_("Size"),&err);
 	    if ( err )
 return(true);
-	    free(old_bind_text);
 	    old_bind_text = GGadgetGetTitle(GWidgetGetControl(pi->gw,CID_SampleText));
 	    sample = LIConvertToPrint(
 			&((SFTextArea *) GWidgetGetControl(pi->gw,CID_SampleText))->li,
 			width, 50000, 72 );
 	    ss = LIConvertToSplines(sample, 72,cv->b.layerheads[cv->b.drawmode]->order2);
 	    LayoutInfo_Destroy(sample);
-	    free(sample);
 	    if ( bound && pi->fit_to_path )
 		SplineSetBindToPath(ss,scale,gunit,align,offset,pi->fit_to_path);
 	    if ( ss ) {
@@ -683,11 +679,9 @@ return(true);
 		if ( ret==NULL )
 return(true);
 		file = utf82def_copy(ret);
-		free(ret);
 		pi->pi.out = fopen(file,"wb");
 		if ( pi->pi.out==NULL ) {
 		    ff_post_error(_("Print Failed"),_("Failed to open file %s for output"), file);
-		    free(file);
 return(true);
 		}
 	    } else {
@@ -712,11 +706,8 @@ return(true);
 	    }
 
 	    DoPrinting(&pi->pi,file);
-	    free(file);
-	    if ( pi->pi.pt==pt_fontsample ) {
+	    if ( pi->pi.pt==pt_fontsample )
 		LayoutInfo_Destroy(pi->pi.sample);
-		free(pi->pi.sample);
-	    }
 	}
 
 	if ( pi->done!=NULL )
@@ -746,16 +737,6 @@ return( true );
 /* ************************ Code for Display dialog ************************* */
 /* ************************************************************************** */
 
-static void TextInfoDataFree(GTextInfo *ti) {
-    int i;
-
-    if ( ti==NULL )
-return;
-    for ( i=0; ti[i].text!=NULL || ti[i].line ; ++i )
-	free(ti[i].userdata);
-    GTextInfoListFree(ti);
-}
-
 static GTextInfo *FontNames(SplineFont *cur_sf, int insert_text) {
     int cnt;
     FontView *fv;
@@ -766,7 +747,7 @@ static GTextInfo *FontNames(SplineFont *cur_sf, int insert_text) {
     for ( fv=fv_list, cnt=0; fv!=NULL; fv=(FontView *) (fv->b.next) )
 	if ( (FontView *) (fv->b.nextsame)==NULL )
 	    ++cnt;
-    ti = gcalloc(cnt+1,sizeof(GTextInfo));
+    ti = calloc(cnt+1,sizeof(GTextInfo));
     for ( fv=fv_list, cnt=0; fv!=NULL; fv=(FontView *) (fv->b.next) ) {
 	if ( (FontView *) (fv->b.nextsame)==NULL ) {
 	    sf = fv->b.sf;
@@ -952,10 +933,8 @@ static void DSP_ChangeFontCallback(void *context,SplineFont *sf,enum sftf_fontty
     GGadgetSetTitle8(GWidgetGetControl(di->gw,CID_ScriptLang),buf);
 
     tags = SFFeaturesInScriptLang(sf,-2,script,lang);
-    if ( tags[0]==0 ) {
-	free(tags);
+    if ( tags[0]==0 )
 	tags = SFFeaturesInScriptLang(sf,-2,script,DEFAULT_LANG);
-    }
     for ( cnt=0; tags[cnt]!=0; ++cnt );
     if ( feats!=NULL )
 	for ( i=0; feats[i]!=0; ++i ) {
@@ -966,9 +945,9 @@ static void DSP_ChangeFontCallback(void *context,SplineFont *sf,enum sftf_fontty
 	    if ( tags[j]==0 )
 		++cnt;
 	}
-    ti = galloc((cnt+2)*sizeof(GTextInfo *));
+    ti = malloc((cnt+2)*sizeof(GTextInfo *));
     for ( i=0; tags[i]!=0; ++i ) {
-	ti[i] = gcalloc( 1,sizeof(GTextInfo));
+	ti[i] = calloc( 1,sizeof(GTextInfo));
 	ti[i]->fg = ti[i]->bg = COLOR_DEFAULT;
 	if ( (tags[i]>>24)<' ' || (tags[i]>>24)>0x7e )
 	    sprintf( buf, "<%d,%d>", tags[i]>>16, tags[i]&0xffff );
@@ -994,7 +973,7 @@ static void DSP_ChangeFontCallback(void *context,SplineFont *sf,enum sftf_fontty
 	    break;
 	    }
 	    if ( tags[j]==0 ) {
-		ti[cnt] = gcalloc( 1,sizeof(GTextInfo));
+		ti[cnt] = calloc( 1,sizeof(GTextInfo));
 		ti[cnt]->bg = COLOR_DEFAULT;
 		ti[cnt]->fg = COLOR_CREATE(0x70,0x70,0x70);
 		ti[cnt]->selected = true;
@@ -1003,10 +982,9 @@ static void DSP_ChangeFontCallback(void *context,SplineFont *sf,enum sftf_fontty
 		ti[cnt++]->userdata = (void *) (intpt) feats[i];
 	    }
 	}
-    ti[cnt] = gcalloc(1,sizeof(GTextInfo));
+    ti[cnt] = calloc(1,sizeof(GTextInfo));
     /* These will become ordered because the list widget will do that */
     GGadgetSetList(GWidgetGetControl(di->gw,CID_Features),ti,false);
-    free(tags);
 }
 
 static int DSP_AAState(SplineFont *sf,BDFFont *bestbdf) {
@@ -1043,7 +1021,6 @@ static int DSP_FontChanged(GGadget *g, GEvent *e) {
 return( true );
 	sf = sel->userdata;
 
-	TextInfoDataFree(di->scriptlangs);
 	di->scriptlangs = SLOfFont(sf);
 	GGadgetSetList(GWidgetGetControl(di->gw,CID_ScriptLang),
 		GTextInfoArrayFromList(di->scriptlangs,&cnt),false);
@@ -1320,7 +1297,6 @@ static int DSP_Refresh(GGadget *g, GEvent *e) {
 	fn = FontNames(sel!=NULL? (SplineFont *) (sel->userdata) : di->pi.mainsf, di->insert_text );
 	GGadgetSetList(fontnames,GTextInfoArrayFromList(fn,NULL),false);
 	GGadgetSetEnabled(fontnames,fn[1].text!=NULL);
-	GTextInfoListFree(fn);
     }
 return( true );
 }
@@ -1417,7 +1393,7 @@ static int DSP_FeaturesChanged(GGadget *g, GEvent *e) {
 
 	for ( i=cnt=0; i<len; ++i )
 	    if ( ti[i]->selected ) ++cnt;
-	feats = galloc((cnt+1)*sizeof(uint32));
+	feats = malloc((cnt+1)*sizeof(uint32));
 	for ( i=cnt=0; i<len; ++i )
 	    if ( ti[i]->selected )
 		feats[cnt++] = (intpt) ti[i]->userdata;
@@ -1509,8 +1485,6 @@ static int dsp_e_h(GWindow gw, GEvent *event) {
 	GDrawDestroyWindow(di->gw);
     } else if ( event->type==et_destroy ) {
 	PD *di = GDrawGetUserData(gw);
-	TextInfoDataFree(di->scriptlangs);
-	free(di);
 	if ( di==printwindow )
 	    printwindow = NULL;
     } else if ( event->type==et_char ) {
@@ -1578,7 +1552,7 @@ return;
     if ( sf->cidmaster )
 	sf = sf->cidmaster;
 
-    active = gcalloc(1,sizeof(PD));
+    active = calloc(1,sizeof(PD));
     if ( isprint )
 	printwindow = active;
     active->fv = fv;
@@ -2207,14 +2181,12 @@ return;
     GListSetSBAlwaysVisible(gcd[11].ret,true);
     GListSetPopupCallback(gcd[11].ret,MV_FriendlyFeatures);
 
-    GTextInfoListFree(gcd[0].gd.u.list);
     DSP_SetFont(active,true);
     if ( isprint ) {
 	SFTFSetDPI(gcd[13].ret,dpi);
 	temp = PrtBuildDef(sf,&((SFTextArea *) gcd[13].ret)->li,
 		(void (*)(void *, int, uint32, uint32))LayoutInfoInitLangSys);
 	GGadgetSetTitle(gcd[13].ret, temp);
-	free(temp);
     } else {
 	active->script_unknown = true;
 	if ( old_bind_text ) {

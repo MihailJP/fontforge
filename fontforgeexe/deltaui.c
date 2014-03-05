@@ -110,12 +110,10 @@ return( true );
 		IError(_("Unexpected error"));
 	      break;
 	    }
-	    free(sizes);
 	    qg->cur = 0;
 return( true );
 	}
 
-	free(delta_sizes);
 	delta_within = within;
 	delta_dpi    = dpi;
 	delta_depth  = depth;
@@ -128,7 +126,7 @@ return( true );
 	}
 
 	if ( qg->cur >= qg->max )
-	    qg->qg = grealloc(qg->qg,(qg->max += 1) * sizeof(QuestionableGrid));
+	    qg->qg = realloc(qg->qg,(qg->max += 1) * sizeof(QuestionableGrid));
 	memset(qg->qg+qg->cur,0,sizeof(QuestionableGrid));
 	GDrawSetVisible(qg->gw,false);
 	StartDeltaDisplay(qg);
@@ -154,10 +152,6 @@ return( false );
     } else if ( event->type == et_map ) {
 	/* Above palettes */
 	GDrawRaise(gw);
-    } else if ( event->type == et_destroy ) {
-	QGData *qg = GDrawGetUserData(gw);
-	free(qg->qg);
-	free(qg);
     }
 return( true );
 }
@@ -187,7 +181,7 @@ return;
     if ( delta_sizes==NULL )
 	delta_sizes = copy("7-40,72,80,88,96");
 
-    data = gcalloc(1,sizeof(QGData));
+    data = calloc(1,sizeof(QGData));
     data->fv = (FontViewBase *) fv;
     data->cv = cv;
     if ( cv!=NULL ) {
@@ -208,7 +202,6 @@ return;
     }
     if ( failed ) {
 	ff_post_error(_("Not quadratic"),_("This must be a truetype layer."));
-	free(data);
 	if ( cv!=NULL )
 	    cv->qg = NULL;
 return;
@@ -542,7 +535,7 @@ return;
 return;
 	}
     }
-    forever {
+    for (;;) {
 	if ( where->parent->parent==NULL ) {
 	    where->parent = NULL;
 	    where->offset = -1;
@@ -556,15 +549,6 @@ return;
 	}
 	where->parent = where->parent->parent;
     }
-}
-
-static void qgnodeFree(struct qgnode *parent) {
-    int i;
-
-    for ( i=0; i<parent->kid_cnt; ++i )
-	qgnodeFree(&parent->kids[i]);
-    free(parent->kids);
-    free(parent->name);
 }
 
 static const QGData *kludge;
@@ -625,7 +609,7 @@ static void QGSecondLevel(QGData *qg, struct qgnode *parent) {
 	    }
 	}
 	parent->kid_cnt = cnt;
-	parent->kids = gcalloc(cnt,sizeof(struct qgnode));
+	parent->kids = calloc(cnt,sizeof(struct qgnode));
 	cnt = 0;
 	lstart = 0; size=-1;
 	for ( l=0; l<parent->qg_cnt; ++l ) {
@@ -659,7 +643,7 @@ static void QGSecondLevel(QGData *qg, struct qgnode *parent) {
 	    }
 	}
 	parent->kid_cnt = cnt;
-	parent->kids = gcalloc(cnt,sizeof(struct qgnode));
+	parent->kids = calloc(cnt,sizeof(struct qgnode));
 	cnt = 0;
 	lstart = 0; pt=-1;
 	for ( l=0; l<parent->qg_cnt; ++l ) {
@@ -693,7 +677,7 @@ static void QGSecondLevel(QGData *qg, struct qgnode *parent) {
 	    }
 	}
 	parent->kid_cnt = cnt;
-	parent->kids = gcalloc(cnt,sizeof(struct qgnode));
+	parent->kids = calloc(cnt,sizeof(struct qgnode));
 	cnt = 0;
 	lstart = 0;
 	sc = NULL;
@@ -734,7 +718,6 @@ static void QGDoSort(QGData *qg) {
     kludge = qg;
     qsort(qg->qg,qg->cur,sizeof(QuestionableGrid),qg_sorter);
 
-    qgnodeFree(&qg->list);
     memset(&qg->list,0,sizeof(struct qgnode));
     qg->list.open = true;
     qg->list.first = qg->qg;
@@ -748,7 +731,7 @@ static void QGDoSort(QGData *qg) {
 	    }
 	}
 	qg->list.kid_cnt = cnt;
-	qg->list.kids = gcalloc(cnt,sizeof(struct qgnode));
+	qg->list.kids = calloc(cnt,sizeof(struct qgnode));
 	cnt = 0;
 	lstart = 0; sc=NULL;
 	for ( l=0; l<qg->cur; ++l ) {
@@ -781,7 +764,7 @@ static void QGDoSort(QGData *qg) {
 	    }
 	}
 	qg->list.kid_cnt = cnt;
-	qg->list.kids = gcalloc(cnt,sizeof(struct qgnode));
+	qg->list.kids = calloc(cnt,sizeof(struct qgnode));
 	cnt = 0;
 	lstart = 0; size=-1;
 	for ( l=0; l<qg->cur; ++l ) {
@@ -1083,6 +1066,5 @@ static void StartDeltaDisplay(QGData *qg) {
 	GDrawProcessOneEvent(NULL);
     GDrawDestroyWindow(gw);
 
-    qgnodeFree(&qg->list);
     qg->gw = oldgw;
 }

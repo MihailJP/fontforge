@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 #include <stdlib.h>
 #include "gdraw.h"
 #include "ggadgetP.h"
@@ -126,7 +128,7 @@ static void GSpacerInit() {
 }
 
 GGadget *GSpacerCreate(struct gwindow *base, GGadgetData *gd,void *data) {
-    GSpacer *gs = gcalloc(1,sizeof(GSpacer));
+    GSpacer *gs = calloc(1,sizeof(GSpacer));
 
     if ( !gspacer_inited )
 	GSpacerInit();

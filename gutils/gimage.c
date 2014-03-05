@@ -24,6 +24,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "inc/basics.h"
 #include "gimage.h"
 
 GImage *GImageCreate(enum image_type type, int32 width, int32 height) {
@@ -50,17 +51,13 @@ GImage *GImageCreate(enum image_type type, int32 width, int32 height) {
     if ( (base->data = (uint8 *) malloc(height*base->bytes_per_line))==NULL )
 	goto errorGImageCreate;
     if ( type==it_index ) {
-	if ( (base->clut = (GClut *) calloc(1,sizeof(GClut)))==NULL ) {
-	    free(base->data);
+	if ( (base->clut = (GClut *) calloc(1,sizeof(GClut)))==NULL )
 	    goto errorGImageCreate;
- 	}
 	base->clut->trans_index = COLOR_UNKNOWN;
     }
     return( gi );
 
 errorGImageCreate:
-    free(base);
-    free(gi);
     NoMoreMemMessage();
     return( NULL );
 }
@@ -92,31 +89,8 @@ GImage *_GImage_Create(enum image_type type, int32 width, int32 height) {
     return( gi );
 
 error_GImage_Create:
-    free(base);
-    free(gi);
     NoMoreMemMessage();
     return( NULL );
-}
-
-void GImageDestroy(GImage *gi) {
-/* Free memory (if GImage exists) */
-    int i;
-
-    if (gi!=NULL ) {
-	if ( gi->list_len!=0 ) {
-	    for ( i=0; i<gi->list_len; ++i ) {
-		free(gi->u.images[i]->clut);
-		free(gi->u.images[i]->data);
-		free(gi->u.images[i]);
-	    }
-	    free(gi->u.images);
-	} else {
-	    free(gi->u.image->clut);
-	    free(gi->u.image->data);
-	    free(gi->u.image);
-	}
-	free(gi);
-    }
 }
 
 GImage *GImageCreateAnimation(GImage **images, int n) {
@@ -140,8 +114,6 @@ GImage *GImageCreateAnimation(GImage **images, int n) {
     gi = (GImage *) calloc(1,sizeof(GImage));
     imgs = (struct _GImage **) malloc(n*sizeof(struct _GImage *));
     if ( gi==NULL || imgs==NULL ) {
-	free(gi);
-	free(imgs);
 	NoMoreMemMessage();
 	return( NULL );
     }
@@ -149,10 +121,8 @@ GImage *GImageCreateAnimation(GImage **images, int n) {
     /* Copy images[i] pointer into 'gi', then release each "images[i]".	*/
     gi->list_len = n;
     gi->u.images = imgs;
-    for ( i=0; i<n; ++i ) {
+    for ( i=0; i<n; ++i )
 	imgs[i] = images[i]->u.image;
-	free(images[i]);
-    }
     return( gi );
 }
 
@@ -191,7 +161,6 @@ return( NULL );
 return( NULL );
 	    imgs[j] = src->u.images[j-i];
 	}
-	free(src->u.images);
     }
     if ( dest->list_len==0 ) {
 	if ( pos==0 ) imgs[j++] = dest->u.image;
@@ -201,7 +170,6 @@ return( NULL );
     }
     dest->u.images = imgs;
     dest->list_len = n;
-    free(src);
 return( dest );
 }
 
@@ -229,7 +197,7 @@ return;
     }
 }
 
-void GImageDrawImage(GImage *dest,GImage *src,GRect *junk,int x, int y) {
+void GImageDrawImage(GImage *dest,GImage *src,GRect *UNUSED(junk),int x, int y) {
     struct _GImage *sbase, *dbase;
     int i,j, di, sbi, dbi, val, factor, maxpix, sbit;
 
@@ -356,11 +324,11 @@ return( val==base->trans?(val&0xffffff):val );
 	val = ((uint32*) (base->data + y*base->bytes_per_line))[x] ;
 return( val==base->trans?(val&0xffffff):(val|0xff000000) );
     } else if ( base->image_type==it_index ) {
-	int pixel = ((uint8*) (base->data + y*base->bytes_per_line))[x];
+	uint8 pixel = ((uint8*) (base->data + y*base->bytes_per_line))[x];
 	val = base->clut->clut[pixel];
 return( pixel==base->trans?(val&0xffffff):(val|0xff000000) );
     } else {
-	int pixel = (((uint8*) (base->data + y*base->bytes_per_line))[x>>3]&(1<<(7-(x&7))) )?1:0;
+	uint8 pixel = (((uint8*) (base->data + y*base->bytes_per_line))[x>>3]&(1<<(7-(x&7))) )?1:0;
 	if ( base->clut==NULL ) {
 	    if ( pixel )
 		val = COLOR_CREATE(0xff,0xff,0xff);
@@ -388,11 +356,11 @@ return( val==base->trans?~val:val );
 	val = ((uint32*) (base->data + y*base->bytes_per_line))[x] ;
 return( val==base->trans?~val:val );
     } else if ( base->image_type==it_index ) {
-	int pixel = ((uint8*) (base->data + y*base->bytes_per_line))[x];
+	uint8 pixel = ((uint8*) (base->data + y*base->bytes_per_line))[x];
 	val = base->clut->clut[pixel];
 return( pixel==base->trans?~val:val );
     } else {
-	int pixel = (((uint8*) (base->data + y*base->bytes_per_line))[x>>3]&(1<<(7-(x&7))) )?1:0;
+	uint8 pixel = (((uint8*) (base->data + y*base->bytes_per_line))[x>>3]&(1<<(7-(x&7))) )?1:0;
 	if ( base->clut==NULL ) {
 	    if ( pixel )
 		val = COLOR_CREATE(0xff,0xff,0xff);

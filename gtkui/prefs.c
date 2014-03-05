@@ -170,8 +170,6 @@ static int pointless;
 extern struct macsettingname macfeat_otftag[], *user_macfeat_otftag;
 
 static void UserSettingsFree(void) {
-
-    free( user_macfeat_otftag );
     user_macfeat_otftag = NULL;
 }
 
@@ -483,10 +481,8 @@ return( -1 );
 return( -1 );
 		if ( pf->set ) {
 		    pf->set( val1->u.sval );
-		} else {
-		    free( *((char **) (pf->val)));
+		} else
 		    *((char **) (pf->val)) = copy( val1->u.sval );
-		}
 	    } else if ( pf->type == pr_encoding ) {
 		if ( val2!=NULL )
 return( -1 );
@@ -640,20 +636,17 @@ static int encmatch(const char *enc,int subok) {
 	{ "UCS-2-INTERNAL", e_unicode },
 	{ "ISO-10646", e_unicode },
 	{ "ISO_10646", e_unicode },
-#if 0
-	{ "eucJP", e_euc },
-	{ "EUC-JP", e_euc },
-	{ "ujis", ??? },
-	{ "EUC-KR", e_euckorean },
-#endif
+	/* { "eucJP", e_euc }, */
+	/* { "EUC-JP", e_euc }, */
+	/* { "ujis", ??? }, */
+	/* { "EUC-KR", e_euckorean }, */
 	{ NULL }};
     int i;
     char buffer[80];
-#if HAVE_ICONV_H
+#if HAVE_ICONV
     static char *last_complaint;
 
     iconv_t test;
-    free(iconv_local_encoding_name);
     iconv_local_encoding_name= NULL;
 #endif
 
@@ -672,20 +665,18 @@ return( encs[i].enc );
 	    if ( strstrmatch(enc,encs[i].name)!=NULL )
 return( encs[i].enc );
 
-#if HAVE_ICONV_H
+#if HAVE_ICONV
 	/* I only try to use iconv if the encoding doesn't match one I support*/
 	/*  loading iconv unicode data takes a while */
 	test = iconv_open(enc,FindUnicharName());
 	if ( test==(iconv_t) (-1) || test==NULL ) {
 	    if ( last_complaint==NULL || strcmp(last_complaint,enc)!=0 ) {
 		fprintf( stderr, "Neither FontForge nor iconv() supports your encoding (%s) we will pretend\n you asked for latin1 instead.\n", enc );
-		free( last_complaint );
 		last_complaint = copy(enc);
 	    }
 	} else {
 	    if ( last_complaint==NULL || strcmp(last_complaint,enc)!=0 ) {
 		fprintf( stderr, "FontForge does not support your encoding (%s), it will try to use iconv()\n or it will pretend the local encoding is latin1\n", enc );
-		free( last_complaint );
 		last_complaint = copy(enc);
 	    }
 	    iconv_local_encoding_name= copy(enc);
@@ -749,7 +740,6 @@ static void DefaultXUID(void) {
     g_random_set_seed(tv.tv_usec+1);
     r2 = g_random_int();
     sprintf( buffer, "1021 %d %d", r1, r2 );
-    free(xuid);
     xuid = copy(buffer);
 }
 
@@ -791,8 +781,6 @@ static void ParseNewMacFeature(FILE *p,char *line) {
     line[strlen("MacFeat:")] ='\0';
     default_mac_feature_map = SFDParseMacFeatures(p,line);
     fseek(p,-strlen(line),SEEK_CUR);
-    if ( user_mac_feature_map!=NULL )
-	MacFeatListFree(user_mac_feature_map);
     user_mac_feature_map = default_mac_feature_map;
 }
 
@@ -805,9 +793,7 @@ static void PrefsUI_LoadPrefs(void) {
     char *pt;
     struct prefs_list *pl;
 
-#if !defined(NOPLUGIN)
     LoadPluginDir(NULL);
-#endif
     LoadPfaEditEncodings();
     LoadGroupList();
 
@@ -842,7 +828,7 @@ static void PrefsUI_LoadPrefs(void) {
 		    script_menu_names[mn++] = copy(pt);
 		else if ( strncmp(line,"FontFilterName:",strlen("FontFilterName:"))==0 ) {
 		    if ( fn>=filt_max )
-			user_font_filters = grealloc(user_font_filters,((filt_max+=10)+1)*sizeof( struct gwwv_filter));
+			user_font_filters = realloc(user_font_filters,((filt_max+=10)+1)*sizeof( struct gwwv_filter));
 		    user_font_filters[fn].filtfunc = NULL;
 		    user_font_filters[fn].wild = NULL;
 		    user_font_filters[fn++].name = copy(pt);
@@ -853,7 +839,7 @@ static void PrefsUI_LoadPrefs(void) {
 		} else if ( strncmp(line,"MacMapCnt:",strlen("MacSetCnt:"))==0 ) {
 		    sscanf( pt, "%d", &msc );
 		    msp = 0;
-		    user_macfeat_otftag = gcalloc(msc+1,sizeof(struct macsettingname));
+		    user_macfeat_otftag = calloc(msc+1,sizeof(struct macsettingname));
 		} else if ( strncmp(line,"MacMapping:",strlen("MacMapping:"))==0 && msp<msc ) {
 		    ParseMacMapping(pt,&user_macfeat_otftag[msp++]);
 		} else if ( strncmp(line,"MacFeat:",strlen("MacFeat:"))==0 ) {
@@ -896,10 +882,6 @@ static void PrefsUI_LoadPrefs(void) {
 	}
 	fclose(p);
     }
-#if 0
-    if ( xdefs_filename!=NULL )
-	GResourceAddResourceFile(xdefs_filename,GResourceProgramName,true);
-#endif
     if ( othersubrsfile!=NULL && ReadOtherSubrsFile(othersubrsfile)<=0 )
 	fprintf( stderr, "Failed to read OtherSubrs from %s\n", othersubrsfile );
 	
@@ -948,8 +930,6 @@ return;
 		temp = (char *) (pl->get());
 	    if ( temp!=NULL )
 		fprintf( p, "%s:\t%s\n", pl->name, temp );
-	    if ( (pl->val)==NULL )
-		free(temp);
 	  break;
 	}
     }
@@ -1004,8 +984,6 @@ void RecentFilesRemember(char *filename) {
 	    RecentFiles[0] = filename;
 	}
     } else {
-	if ( RecentFiles[RECENT_MAX-1]!=NULL )
-	    free( RecentFiles[RECENT_MAX-1]);
 	for ( i=RECENT_MAX-1; i>0; --i )
 	    RecentFiles[i] = RecentFiles[i-1];
 	RecentFiles[0] = copy(filename);

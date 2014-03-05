@@ -63,7 +63,7 @@ GTextInfo **SFLookupListFromType(SplineFont *sf, int lookup_type ) {
 	    if ( lookup_type==gsub_start || lookup_type==gpos_start ||
 		    otl->lookup_type == lookup_type ) {
 		if ( k ) {
-		    ti[cnt] = gcalloc(1,sizeof(GTextInfo));
+		    ti[cnt] = calloc(1,sizeof(GTextInfo));
 		    ti[cnt]->userdata = (void *) otl;
 		    ti[cnt]->fg = ti[cnt]->bg = COLOR_DEFAULT;
 		    ti[cnt]->text = utf82u_copy(otl->lookup_name);
@@ -72,9 +72,9 @@ GTextInfo **SFLookupListFromType(SplineFont *sf, int lookup_type ) {
 	    }
 	}
 	if ( !k )
-	    ti = gcalloc(cnt+2,sizeof(GTextInfo *));
+	    ti = calloc(cnt+2,sizeof(GTextInfo *));
 	else
-	    ti[cnt] = gcalloc(1,sizeof(GTextInfo));
+	    ti[cnt] = calloc(1,sizeof(GTextInfo));
     }
 return( ti );
 }
@@ -99,7 +99,7 @@ GTextInfo *SFLookupArrayFromType(SplineFont *sf, int lookup_type ) {
 	    }
 	}
 	if ( !k )
-	    ti = gcalloc(cnt+2,sizeof(GTextInfo));
+	    ti = calloc(cnt+2,sizeof(GTextInfo));
     }
 return( ti );
 }
@@ -128,7 +128,7 @@ GTextInfo *SFLookupArrayFromMask(SplineFont *sf, int mask ) {
 	    }
 	}
 	if ( !k )
-	    ti = gcalloc(cnt+2,sizeof(GTextInfo ));
+	    ti = calloc(cnt+2,sizeof(GTextInfo ));
     }
 return( ti );
 }
@@ -911,7 +911,7 @@ static char *LK_LangsDlg(GGadget *g, int r, int c) {
 	    done = 0;
  goto retry;
 	}
-	ret = galloc(5*lcnt+1);
+	ret = malloc(5*lcnt+1);
 	*ret = '\0';
 	pt = ret;
 	for ( i=0; i<len; ++i ) {
@@ -971,7 +971,7 @@ static void ScriptMatrixInit(struct matrixinit *mi,char *scriptstr) {
 	    start = langsend;
 	}
 	if ( md==NULL )
-	    md = gcalloc(2*(cnt+10),sizeof(struct matrix_data));
+	    md = calloc(2*(cnt+10),sizeof(struct matrix_data));
     }
     mi->matrix_data = md;
     mi->initial_row_cnt = cnt;
@@ -1037,7 +1037,7 @@ return(true);
 	}
 
 	/* Ok, we validated the script lang list. Now parse it */
-	rpt = ret = galloc(6*script_cnt+5*lang_cnt+10);
+	rpt = ret = malloc(6*script_cnt+5*lang_cnt+10);
 	for ( i=0; i<rows; ++i ) {
 	    memset(foo,' ',sizeof(foo));
 	    for ( j=0, pt = strings[2*i+0].u.md_str; j<4 && *pt; foo[j++] = *pt++ );
@@ -1180,12 +1180,6 @@ static char *LK_ScriptsDlg(GGadget *g, int r, int c) {
 
     GGadgetsCreate(gw,boxes+1);
 
-    for ( i=0; i<mi.initial_row_cnt; ++i ) {
-	free( mi.matrix_data[2*i+0].u.md_str );
-	free( mi.matrix_data[2*i+1].u.md_str );
-    }
-    free( mi.matrix_data );
-
     GMatrixEditSetNewText(gcd[0].ret,S_("OpenTypeFeature|New"));
     GHVBoxSetExpandableRow(boxes[1].ret,0);
     GHVBoxSetExpandableCol(boxes[0].ret,gb_expandgluesame);
@@ -1211,7 +1205,7 @@ static FeatureScriptLangList *LK_ParseFL(struct matrix_data *strings, int rows )
 
     fhead = flast = NULL;
     for ( i=0; i<rows; ++i ) {
-	fl = chunkalloc(sizeof(FeatureScriptLangList));
+	fl = XZALLOC(FeatureScriptLangList);
 	if ( sscanf(strings[2*i+0].u.md_str,"<%d,%d>", &feature, &setting )== 2 ) {
 	    fl->ismac = true;
 	    fl->featuretag = (feature<<16)|setting;
@@ -1231,7 +1225,7 @@ static FeatureScriptLangList *LK_ParseFL(struct matrix_data *strings, int rows )
 	    memset(foo,' ',sizeof(foo));
 	    for ( j=0,pt=start; *pt!='{' && *pt!='\0'; ++pt )
 		foo[j++] = *pt;
-	    sl = chunkalloc(sizeof( struct scriptlanglist ));
+	    sl = XZALLOC( struct scriptlanglist );
 	    sl->script = (foo[0]<<24) | (foo[1]<<16) | (foo[2]<<8) | foo[3];
 	    if ( slast==NULL )
 		fl->scripts = sl;
@@ -1248,7 +1242,7 @@ static FeatureScriptLangList *LK_ParseFL(struct matrix_data *strings, int rows )
 		    memset(foo,' ',sizeof(foo));
 		    for ( j=0,pt=start; *pt!='}' && *pt!=',' && *pt!='\0'; foo[j++] = *pt++ );
 		    if ( lcnt>=lmax )
-			langs = grealloc(langs,(lmax+=20)*sizeof(uint32));
+			langs = realloc(langs,(lmax+=20)*sizeof(uint32));
 		    langs[lcnt++] = (foo[0]<<24) | (foo[1]<<16) | (foo[2]<<8) | foo[3];
 		    start =  ( *pt==',' ) ? pt+1 : pt;
 		}
@@ -1256,7 +1250,7 @@ static FeatureScriptLangList *LK_ParseFL(struct matrix_data *strings, int rows )
 		for ( j=0; j<lcnt && j<MAX_LANG; ++j )
 		    sl->langs[j] = langs[j];
 		if ( lcnt>MAX_LANG ) {
-		    sl->morelangs = galloc((lcnt-MAX_LANG)*sizeof(uint32));
+		    sl->morelangs = malloc((lcnt-MAX_LANG)*sizeof(uint32));
 		    for ( ; j<lcnt; ++j )
 			sl->morelangs[j-MAX_LANG] = langs[j];
 		}
@@ -1265,7 +1259,6 @@ static FeatureScriptLangList *LK_ParseFL(struct matrix_data *strings, int rows )
 	    while ( *start==' ' ) ++start;
 	}
     }
-    free(langs);
 return( fhead );
 }
 
@@ -1292,8 +1285,8 @@ static void LK_FinishEdit(GGadget *g,int row, int col, int wasnew) {
 	otl->features = LK_ParseFL(strings,rows);
 	NameOTLookup(otl,ld->sf);
 	GGadgetSetTitle8(GWidgetGetControl(ld->gw,CID_LookupName),otl->lookup_name);
-	free(otl->lookup_name); otl->lookup_name = NULL;
-	FeatureScriptLangListFree(otl->features); otl->features = oldfl;
+	otl->lookup_name = NULL;
+	otl->features = oldfl;
 	otl->lookup_type = old_type;
     }
 }
@@ -1335,13 +1328,13 @@ static void LK_NewFeature(GGadget *g,int row) {
     if ( scnt==0 )
 	scripts[scnt++] = DEFAULT_SCRIPT;
 
-    buf = galloc(bmax = 100);
+    buf = malloc(bmax = 100);
     bpos = 0;
     for ( i=0; i<scnt; ++i ) {
 	langs = SFLangsInScript(sf,-1,scripts[i]);
 	for ( l=0; langs[l]!=0; ++l );
 	if ( bpos + 5+5*l+4 > bmax )
-	    buf = grealloc( buf, bmax += 5+5*l+100 );
+	    buf = realloc( buf, bmax += 5+5*l+100 );
 	sprintf( buf+bpos, "%c%c%c%c{", scripts[i]>>24, scripts[i]>>16, scripts[i]>>8, scripts[i] );
 	bpos+=5;
 	for ( l=0; langs[l]!=0; ++l ) {
@@ -1352,13 +1345,11 @@ static void LK_NewFeature(GGadget *g,int row) {
 	    --bpos;
 	strcpy(buf+bpos,"} ");
 	bpos += 2;
-	free(langs);
     }
     if ( bpos>0 )
 	buf[bpos-1] = '\0';
 
     strings[2*row+1].u.md_str = copy(buf);
-    free(buf);
 }
 
 static void LKMatrixInit(struct matrixinit *mi,OTLookup *otl) {
@@ -1387,7 +1378,7 @@ static void LKMatrixInit(struct matrixinit *mi,OTLookup *otl) {
 		bpos=0;
 		for ( sl=fl->scripts; sl!=NULL; sl=sl->next ) {
 		    if ( bpos+4/*script*/+1/*open brace*/+5*sl->lang_cnt+1+2 > blen )
-			buf = grealloc(buf,blen+=5+5*sl->lang_cnt+3+200);
+			buf = realloc(buf,blen+=5+5*sl->lang_cnt+3+200);
 		    sprintf( buf+bpos, "%c%c%c%c{", sl->script>>24, sl->script>>16,
 			    sl->script>>8, sl->script );
 		    bpos+=5;
@@ -1415,7 +1406,7 @@ static void LKMatrixInit(struct matrixinit *mi,OTLookup *otl) {
 	    ++cnt;
 	}
 	if ( md==NULL )
-	    md = gcalloc(2*(cnt+10),sizeof(struct matrix_data));
+	    md = calloc(2*(cnt+10),sizeof(struct matrix_data));
     }
     mi->matrix_data = md;
     mi->initial_row_cnt = cnt;
@@ -1426,7 +1417,6 @@ static void LKMatrixInit(struct matrixinit *mi,OTLookup *otl) {
     mi->popupmenu = NULL;
     mi->handle_key = NULL;
     mi->bigedittitle = NULL;
-    free(buf);
 }
 
 static GTextInfo *SFMarkClassList(SplineFont *sf,int class) {
@@ -1437,7 +1427,7 @@ static GTextInfo *SFMarkClassList(SplineFont *sf,int class) {
     else if ( sf->mm!=NULL ) sf=sf->mm->normal;
 
     i = sf->mark_class_cnt;
-    ti = gcalloc(i+4,sizeof( GTextInfo ));
+    ti = calloc(i+4,sizeof( GTextInfo ));
     ti[0].text = utf82u_copy( _("All"));
     ti[0].selected = class==0;
     for ( i=1; i<sf->mark_class_cnt; ++i ) {
@@ -1457,7 +1447,7 @@ static GTextInfo *SFMarkSetList(SplineFont *sf,int set) {
     else if ( sf->mm!=NULL ) sf=sf->mm->normal;
 
     i = sf->mark_set_cnt;
-    ti = gcalloc(i+4,sizeof( GTextInfo ));
+    ti = calloc(i+4,sizeof( GTextInfo ));
     ti[0].text = utf82u_copy( _("All"));
     ti[0].userdata = (void *) (intpt) -1;
     ti[0].selected = set==-1;
@@ -1514,7 +1504,7 @@ static GTextInfo *FeatureListFromLookupType(int lookup_type) {
 	    ++cnt;
 	}
 	if ( !k )
-	    ti = gcalloc(cnt+1,sizeof(GTextInfo));
+	    ti = calloc(cnt+1,sizeof(GTextInfo));
     }
 return( ti );
 }
@@ -1536,7 +1526,6 @@ static int LK_TypeChanged(GGadget *g, GEvent *e) {
 	struct lookup_dlg *ld = GDrawGetUserData(GGadgetGetWindow(g));
 	GTextInfo *ti = FeatureListFromLookupType( lookup_type );
 	GMatrixEditSetColumnChoices( GWidgetGetControl(ld->gw,CID_LookupFeatures), 0, ti );
-	GTextInfoListFree(ti);
 	if ( !ld->isgpos ) {
 	    GGadgetSetEnabled( GWidgetGetControl(ld->gw,CID_LookupAfm ), lookup_type==gsub_ligature );
 	    if ( lookup_type!=gsub_ligature )
@@ -1623,7 +1612,6 @@ return(true);
 	    for ( test = isgpos ? ld->sf->gpos_lookups : ld->sf->gsub_lookups; test!=NULL; test=test->next ) {
 		if ( test!=otl && strcmp(test->lookup_name,name)==0 ) {
 		    ff_post_error(_("Lookup name already used"),_("This name has already been used for another lookup.\nLookup names must be unique.") );
-		    free(name);
 return(true);
 		}
 	    }
@@ -1646,8 +1634,6 @@ return(true);
 
 	/* Ok, we validated the feature script lang list. Now parse it */
 	fhead = LK_ParseFL(strings,rows);
-	free( otl->lookup_name );
-	FeatureScriptLangListFree( otl->features );
 	otl->lookup_name = name;
 	otl->lookup_type = lookup_type;
 	otl->lookup_flags = flags;
@@ -1949,15 +1935,6 @@ int EditLookup(OTLookup *otl,int isgpos,SplineFont *sf) {
 
     GGadgetsCreate(gw,boxes+5);
 
-    GTextInfoListFree(gcd[8].gd.u.list);
-    GTextInfoListFree(gcd[10].gd.u.list);
-
-    for ( i=0; i<mi.initial_row_cnt; ++i ) {
-	free( mi.matrix_data[2*i+0].u.md_str );
-	free( mi.matrix_data[2*i+1].u.md_str );
-    }
-    free( mi.matrix_data );
-
     GMatrixEditSetNewText(gcd[2].ret,S_("OpenTypeFeature|New"));
     GHVBoxSetExpandableRow(boxes[5].ret,1);
     GHVBoxSetExpandableCol(boxes[4].ret,gb_expandgluesame);
@@ -1979,12 +1956,10 @@ static OTLookup *CreateAndSortNewLookupOfType(SplineFont *sf, int lookup_type) {
     OTLookup *newotl;
     int isgpos = lookup_type>=gpos_start;
 
-    newotl = chunkalloc(sizeof(OTLookup));
+    newotl = XZALLOC(OTLookup);
     newotl->lookup_type = lookup_type;
-    if ( !EditLookup(newotl,isgpos,sf)) {
-	chunkfree(newotl,sizeof(OTLookup));
+    if ( !EditLookup(newotl,isgpos,sf))
 return( NULL );
-    }
     SortInsertLookup(sf, newotl);
 return( newotl );
 }
@@ -2045,7 +2020,7 @@ static AnchorClass *SFAddAnchorClass(SplineFont *sf,struct lookup_subtable *sub,
     break;
     }
     if ( ac==NULL ) {
-        ac = chunkalloc(sizeof(AnchorClass));
+        ac = XZALLOC(AnchorClass);
         ac->name = copy(name);
         ac->next = sf->anchor;
         sf->anchor = ac;
@@ -2153,7 +2128,6 @@ return( true );
 		ac = SFAddAnchorClass(acd->sf,acd->sub,classes[2*i+0].u.md_str);
 		ac->processed = true;
 	    } else {
-		free(ac->name);
 		ac->name = copy(classes[2*i+0].u.md_str);
 		ac->processed = true;
 	    }
@@ -2238,10 +2212,10 @@ static void ACDMatrixInit(struct matrixinit *mi,SplineFont *sf, struct lookup_su
 	if ( ac->subtable == sub )
 	    ++cnt;
     if ( cnt==0 ) {
-	md = gcalloc(1,sizeof(struct matrix_data));
+	md = calloc(1,sizeof(struct matrix_data));
 	mi->initial_row_cnt = 0;
     } else {
-	md = gcalloc(2*cnt,sizeof(struct matrix_data));
+	md = calloc(2*cnt,sizeof(struct matrix_data));
 	for ( ac=sf->anchor, cnt=0; ac!=NULL; ac=ac->next )
 	    if ( ac->subtable == sub ) {
 		md[2*cnt   +0].u.md_str  = ac->name;
@@ -2500,10 +2474,10 @@ static void PSTKD_DoSort(PSTKernDlg *pstkd,struct matrix_data *psts,int rows,int
 	byscripts = GGadgetIsChecked(GWidgetGetControl(pstkd->gw,CID_Scripts));
 	stemming = GGadgetIsChecked(GWidgetGetControl(pstkd->gw,CID_BaseChar));
     }
-    primary = gcalloc(rows,sizeof(struct sortinfo));
+    primary = calloc(rows,sizeof(struct sortinfo));
     ispair = pstkd->sub->lookup->lookup_type == gpos_pair;
     if ( ispair )
-	secondary = gcalloc(rows,sizeof(struct sortinfo));
+	secondary = calloc(rows,sizeof(struct sortinfo));
     for ( i=0; i<rows; ++i ) {
 	SortPrep(pstkd,&psts[i*cols+0],&primary[i]);
 	if ( ispair )
@@ -2515,12 +2489,6 @@ static void PSTKD_DoSort(PSTKernDlg *pstkd,struct matrix_data *psts,int rows,int
 	if ( ispair )
 	    SortUnPrep(&psts[i*cols+1]);
     }
-    free(primary);
-    free(secondary);
-}
-
-static void PST_FreeImage(const void *_pstkd, GImage *img) {
-    GImageDestroy(img);
 }
 
 static GImage *_PST_GetImage(const void *_pstkd) {
@@ -2543,7 +2511,7 @@ return;
 	SFGetChar(pstkd->sf,-1, old[cols*r].u.md_str)==NULL )
 return;
     pstkd->popup_r = r;
-    GGadgetPreparePopupImage(GGadgetGetWindow(g),NULL,pstkd,_PST_GetImage,PST_FreeImage);
+    GGadgetPreparePopupImage(GGadgetGetWindow(g),NULL,pstkd,_PST_GetImage);
 }
 
 static void PSTKD_FinishSuffixedEdit(GGadget *g, int row, int col, int wasnew);
@@ -2744,10 +2712,10 @@ static void PSTMatrixInit(struct matrixinit *mi,SplineFont *_sf, struct lookup_s
 	if ( !j ) {
 	    mi->initial_row_cnt = cnt;
 	    if ( cnt==0 ) {
-		md = gcalloc(mi->col_cnt,sizeof(struct matrix_data));
+		md = calloc(mi->col_cnt,sizeof(struct matrix_data));
     break;
 	    } else {
-		md = gcalloc(mi->col_cnt*cnt,sizeof(struct matrix_data));
+		md = calloc(mi->col_cnt*cnt,sizeof(struct matrix_data));
 	    }
 	}
     }
@@ -2829,7 +2797,7 @@ return;
 
     i = pstkd->next_row++;
     if ( i >= pstkd->rows )
-	pstkd->psts = psts = grealloc(psts,(pstkd->rows += 100)*cols*sizeof(struct matrix_data));
+	pstkd->psts = psts = realloc(psts,(pstkd->rows += 100)*cols*sizeof(struct matrix_data));
     memset(psts+i*cols,0,cols*sizeof(struct matrix_data));
     psts[i*cols+0].u.md_str = copy(first->name);
     psts[i*cols+1].u.md_str = copy(second->name);
@@ -2997,10 +2965,8 @@ static int PSTKD_DisplaySizeChanged(GGadget *g, GEvent *e) {
 	while ( *end==' ' ) ++end;
 	if ( pixelsize>4 && pixelsize<400 && *end=='\0' ) {
 	    pstkd->pixelsize = pixelsize;
-	    if ( pstkd->display!=NULL ) {
-		BDFFontFree(pstkd->display);
+	    if ( pstkd->display!=NULL )
 		pstkd->display = NULL;
-	    }
 	    GGadgetRedraw(GWidgetGetControl(pstkd->gw,CID_KernDisplay));
 	}
     }
@@ -3031,8 +2997,6 @@ static int FigureValue(struct matrix_data *old,int rcol,int c, int startc,
     DeviceTableParse(&dt,str);
     if ( pixelsize>=dt.first_pixel_size && pixelsize<=dt.last_pixel_size && dt.corrections!=NULL )
 	val += dt.corrections[pixelsize-dt.first_pixel_size];
-    free(dt.corrections);
-    free(freeme);
 return( val );
 }
 
@@ -3255,7 +3219,7 @@ return( true );
 }
 
 static struct matrix_data *MDCopy(struct matrix_data *old,int rows,int cols) {
-    struct matrix_data *md = galloc(rows*cols*sizeof(struct matrix_data));
+    struct matrix_data *md = malloc(rows*cols*sizeof(struct matrix_data));
     int r;
 
     memcpy(md,old,rows*cols*sizeof(struct matrix_data));
@@ -3358,7 +3322,7 @@ static void PSTKD_DoPopulate(PSTKernDlg *pstkd,char *suffix, enum pop_type pt) {
 			    row_max = sf->glyphcnt;
 			else
 			    row_max += 15;
-			psts = grealloc(psts,row_max*cols*sizeof(struct matrix_data));
+			psts = realloc(psts,row_max*cols*sizeof(struct matrix_data));
 		    }
 		    memset(psts+rows*cols,0,cols*sizeof(struct matrix_data));
 		    psts[rows*cols+0].u.md_str = copy(sc->name);
@@ -3378,7 +3342,7 @@ static void PSTKD_DoPopulate(PSTKernDlg *pstkd,char *suffix, enum pop_type pt) {
 	++k;
     } while ( k<pstkd->sf->subfontcnt );
     if ( rows<row_max )
-	psts = grealloc(psts,rows*cols*sizeof(struct matrix_data));
+	psts = realloc(psts,rows*cols*sizeof(struct matrix_data));
     PSTKD_DoSort(pstkd,psts,rows,cols);
     GMatrixEditSet(pstk,psts,rows,false);
     GGadgetRedraw(pstk);
@@ -3391,11 +3355,8 @@ static void PSTKD_SetSuffix(PSTKernDlg *pstkd) {
 return;		/* Not applicable */
 
     suffix = GGadgetGetTitle8(GWidgetGetControl(pstkd->gw,CID_Suffix));
-    if ( *suffix!='\0' && ( suffix[0]!='.' || suffix[1]!='\0' )) {
-	free(pstkd->sub->suffix);
+    if ( *suffix!='\0' && ( suffix[0]!='.' || suffix[1]!='\0' ))
 	pstkd->sub->suffix = ( *suffix=='.' ) ? copy(suffix+1): copy(suffix);
-	free(suffix);
-    }
 }
 
 static int PSTKD_PopulateWithSuffix(GGadget *g, GEvent *e) {
@@ -3406,7 +3367,6 @@ static int PSTKD_PopulateWithSuffix(GGadget *g, GEvent *e) {
 	    PSTKD_DoPopulate(pstkd,suffix, pt_suffixed);
 	    PSTKD_SetSuffix(pstkd);
 	}
-	free(suffix);
     }
 return( true );
 }
@@ -3418,14 +3378,11 @@ static int PSTKD_Populate(GGadget *g, GEvent *e) {
 	char *suffix = NULL;
 	if ( gsuffix != NULL ) {
 	    suffix = GGadgetGetTitle8(gsuffix);
-	    if ( *suffix=='\0' || ( suffix[0]=='.' && suffix[1]=='\0' )) {
-		free(suffix);
+	    if ( *suffix=='\0' || ( suffix[0]=='.' && suffix[1]=='\0' ))
 		suffix = NULL;
-	    }
 	}
 	PSTKD_SetSuffix(pstkd);
 	PSTKD_DoPopulate(pstkd,suffix,pt_all);
-	free(suffix);
     }
 return( true );
 }
@@ -3437,14 +3394,11 @@ static int PSTKD_PopulateSelected(GGadget *g, GEvent *e) {
 	char *suffix = NULL;
 	if ( gsuffix != NULL ) {
 	    suffix = GGadgetGetTitle8(gsuffix);
-	    if ( *suffix=='\0' || ( suffix[0]=='.' && suffix[1]=='\0' )) {
-		free(suffix);
+	    if ( *suffix=='\0' || ( suffix[0]=='.' && suffix[1]=='\0' ))
 		suffix = NULL;
-	    }
 	}
 	PSTKD_SetSuffix(pstkd);
 	PSTKD_DoPopulate(pstkd,suffix,pt_selected);
-	free(suffix);
     }
 return( true );
 }
@@ -3493,7 +3447,7 @@ static int PSTKD_AutoKern(GGadget *g, GEvent *e) {
 	    ff_post_error(_("No scripts"),_("There are no scripts bound to features bound to this lookup. So nothing happens." ));
 return(true);
 	}
-	scripttags = galloc((cnt+1)*sizeof(uint32));
+	scripttags = malloc((cnt+1)*sizeof(uint32));
 	for ( testf=features,cnt=0; testf!=NULL; testf=testf->next ) {
 	    for ( scripts=testf->scripts; scripts!=NULL; scripts=scripts->next ) {
 		for ( i=0; i<cnt; ++i )
@@ -3505,7 +3459,7 @@ return(true);
 	}
 	scripttags[cnt] = 0;
 
-	list = galloc((sf->glyphcnt+1)*sizeof(SplineChar *));
+	list = malloc((sf->glyphcnt+1)*sizeof(SplineChar *));
 	for ( i=0; scripttags[i]!=0; ++i ) {
 	    uint32 script = scripttags[i];
 
@@ -3518,10 +3472,8 @@ return(true);
 	    list[cnt] = NULL;
 	    PSTKD_DoAutoKern(pstkd,list);
 	}
-	free(list);
-	free(scripttags);
 	if ( pstkd->next_row<pstkd->rows )
-	    pstkd->psts = grealloc(pstkd->psts,pstkd->rows*cols*sizeof(struct matrix_data));
+	    pstkd->psts = realloc(pstkd->psts,pstkd->rows*cols*sizeof(struct matrix_data));
 	PSTKD_DoSort(pstkd,pstkd->psts,pstkd->next_row,cols);
 	GMatrixEditSet(pstk,pstkd->psts,pstkd->next_row,false);
 	GGadgetRedraw(pstk);
@@ -3549,7 +3501,7 @@ static int PSTKD_AutoKernSelected(GGadget *g, GEvent *e) {
 		    SCWorthOutputting(sc = sf->glyphs[gid]))
 		++cnt;
 	}
-	list = galloc((cnt+1)*sizeof(SplineChar *));
+	list = malloc((cnt+1)*sizeof(SplineChar *));
 	for ( enc=0,cnt=0; enc<fv->map->enccount; ++enc ) {
 	    if ( fv->selected[enc] && (gid=fv->map->map[enc])!=-1 &&
 		    SCWorthOutputting(sc = sf->glyphs[gid]))
@@ -3557,9 +3509,8 @@ static int PSTKD_AutoKernSelected(GGadget *g, GEvent *e) {
 	}
 	list[cnt] = NULL;
 	PSTKD_DoAutoKern(pstkd,list);
-	free(list);
 	if ( pstkd->next_row<pstkd->rows )
-	    pstkd->psts = grealloc(pstkd->psts,pstkd->rows*cols*sizeof(struct matrix_data));
+	    pstkd->psts = realloc(pstkd->psts,pstkd->rows*cols*sizeof(struct matrix_data));
 	PSTKD_DoSort(pstkd,pstkd->psts,pstkd->next_row,cols);
 	GMatrixEditSet(pstk,pstkd->psts,pstkd->next_row,false);
 	GGadgetRedraw(pstk);
@@ -3574,7 +3525,7 @@ static int PSTKD_RemoveAll(GGadget *g, GEvent *e) {
 	int cols = GMatrixEditGetColCnt(pstk);
 	struct matrix_data *psts=NULL;
 
-	psts = gcalloc(cols,sizeof(struct matrix_data));
+	psts = calloc(cols,sizeof(struct matrix_data));
 	GMatrixEditSet(pstk,psts,0,false);
     }
 return( true );
@@ -3599,9 +3550,6 @@ static int PSTKD_RemoveEmpty(GGadget *g, GEvent *e) {
 	    if ( empty ) {
 		if ( psts==NULL )
 		    psts = MDCopy(old,rows,cols);
-		free(psts[r*cols+0].u.md_str);
-		if ( cols!=5 )
-		    free(psts[r*cols+1].u.md_str);
 		for ( j=r+1; j<rows-rm_cnt; ++j )
 		    memcpy(psts+(j-1)*cols,psts+j*cols,
 			    cols*sizeof(struct matrix_data));
@@ -3610,7 +3558,7 @@ static int PSTKD_RemoveEmpty(GGadget *g, GEvent *e) {
 	}
 	if ( rm_cnt!=0 ) {
 	    /* Some reallocs explode if given a size of 0 */
-	    psts = grealloc(psts,(rows-rm_cnt+1)*cols*sizeof(struct matrix_data));
+	    psts = realloc(psts,(rows-rm_cnt+1)*cols*sizeof(struct matrix_data));
 	    GMatrixEditSet(pstk,psts,rows-rm_cnt,false);
 	}
     }
@@ -3697,7 +3645,7 @@ static void SCKernsSort( SplineChar *sc ) {
 		continue;
 	    }
 
-	    KernPair** ordered = galloc( sizeof(KernPair*) * length+1 );
+	    KernPair** ordered = malloc( sizeof(KernPair*) * length+1 );
 	    // copy to temp array
 	    idx = 0;
 	    for ( cur = kp; cur; cur=cur->next ) {
@@ -3713,7 +3661,6 @@ static void SCKernsSort( SplineChar *sc ) {
 	    for( idx = 0; idx < length-1; idx++ ) {
 		ordered[idx]->next = ordered[idx+1];
 	    }
-	    free( ordered );
 
 	    // now change the right kerns member of sc
 	    if( v )  sc->vkerns = newlist;
@@ -3730,8 +3677,6 @@ extern char* SFDCreateUndoForLookup( SplineFont *sf, int lookup_type );
  *
  * Note that the kernpair lists may be modified by this function in
  * that those lists might be sorted on return.
- *
- * The caller needs to free() the returned string value.
  */
 char* SFDCreateUndoForLookup( SplineFont *sf, int lookup_type )
 {
@@ -3824,11 +3769,11 @@ static char* SFDTrimUndoOldToNew( SplineFont *sf, char* oldstr, char* newstr ) {
     /* open temporary files */
     FILE *of, *nf, *retf;
     if ( !(retf=MakeTemporaryFile()) )
-	goto error0SFDTrimUndoOldToNew;
+	goto errorSFDTrimUndoOldToNew;
     if ( !(of=MakeTemporaryFile()) )
-	goto error1SFDTrimUndoOldToNew;
+	goto errorSFDTrimUndoOldToNew;
     if ( !(nf=MakeTemporaryFile()) )
-	goto error2SFDTrimUndoOldToNew;
+	goto errorSFDTrimUndoOldToNew;
 
     int glyphsWithUndoInfoCount = 0;
     fwrite( oldstr, strlen(oldstr), 1, of );
@@ -3852,7 +3797,6 @@ static char* SFDTrimUndoOldToNew( SplineFont *sf, char* oldstr, char* newstr ) {
 	}
 	fwrite( oline, strlen(oline), 1, retf );
 	fwrite( "\n", 1, 1, retf );
-	free(oline);
     }
 
     while (oglyph) {
@@ -3864,7 +3808,7 @@ static char* SFDTrimUndoOldToNew( SplineFont *sf, char* oldstr, char* newstr ) {
 	    newGlyphsSeen++;
 	    SplineChar* newsc = SCFindByGlyphName( sf, nglyph );
 	    if( !newsc || !oldsc ) {
-		goto error3SFDTrimUndoOldToNew;
+		goto errorSFDTrimUndoOldToNew;
 	    }
 	    /**
 	     * If the user has deleted a whole glyph from the SFD
@@ -3876,7 +3820,6 @@ static char* SFDTrimUndoOldToNew( SplineFont *sf, char* oldstr, char* newstr ) {
 	    while( newsc->orig_pos > oldsc->orig_pos ) {
 		glyphsWithUndoInfoCount++;
 		SFDTrimUndoOldToNew_Output( retf, oglyph, oline );
-		free(oline);
 		oglyph = SFDMoveToNextStartChar(of);
 		oline = getquotedeol(of);
 		oldsc = SCFindByGlyphName( sf, oglyph );
@@ -3885,24 +3828,19 @@ static char* SFDTrimUndoOldToNew( SplineFont *sf, char* oldstr, char* newstr ) {
 	    nline = getquotedeol(nf);
 	    if( !oline || !nline ) {
 		fprintf(stderr,"failed to read new or old files during SFD diff. Returning entire new data as diff!\n");
-		goto error3SFDTrimUndoOldToNew;
+		goto errorSFDTrimUndoOldToNew;
 	    }
 	    if( strcmp( oglyph, nglyph )) {
-//		fprintf(stderr,"mismatch between old and new SFD fragments. Skipping new glyph that is not in old...\n");
 		glyphsWithUndoInfoCount++;
 		SFDTrimUndoOldToNew_Output( retf, nglyph, "Kerns2: " );
-		free(nline);
 		continue;
 	    }
 
-	    if( !strcmp( oline, nline )) {
-		// printf("old and new have the same data, skipping glyph:%s\n", oglyph );
+	    if( !strcmp( oline, nline )) // old and new have the same data, skipping glyph `oglyph'
 		break;
-	    }
 
 	    glyphsWithUndoInfoCount++;
 	    SFDTrimUndoOldToNew_Output( retf, oglyph, oline );
-	    free(nline);
 	    break;
 	}
 
@@ -3915,7 +3853,6 @@ static char* SFDTrimUndoOldToNew( SplineFont *sf, char* oldstr, char* newstr ) {
 	    SFDTrimUndoOldToNew_Output( retf, oglyph, oline );
 	}
 
-	free(oline);
 	oglyph = SFDMoveToNextStartChar(of);
     }
     fclose(of);
@@ -3934,16 +3871,13 @@ static char* SFDTrimUndoOldToNew( SplineFont *sf, char* oldstr, char* newstr ) {
     fclose(nf);
 
     if( !glyphsWithUndoInfoCount )
-	goto error1SFDTrimUndoOldToNew;
+	goto errorSFDTrimUndoOldToNew;
 
     char* ret = FileToAllocatedString( retf );
     fclose(retf);
     return ret;
 
-error3SFDTrimUndoOldToNew: free(of);
-error2SFDTrimUndoOldToNew: free(nf);
-error1SFDTrimUndoOldToNew: free(retf);
-error0SFDTrimUndoOldToNew:
+errorSFDTrimUndoOldToNew:
     return 0;
 }
 
@@ -4098,13 +4032,12 @@ return( true );
 		break;
 		}
 		if ( pst==NULL ) {
-		    pst = chunkalloc(sizeof(PST));
+		    pst = XZALLOC(PST);
 		    pst->type = _t;
 		    pst->subtable = pstkd->sub;
 		    pst->next = sc->possub;
 		    sc->possub = pst;
-		} else if ( lookup_type!=gpos_single )
-		    free( pst->u.subs.variant );
+		}
 		pst->ticked = true;
 		if ( lookup_type==gpos_single ) {
 		    VRDevTabParse(&pst->u.pos,&psts[cols*r+SIM_DX+1]);
@@ -4141,7 +4074,6 @@ return( true );
 			else
 			    pstprev->next = pstnext;
 			pst->next = NULL;
-			PSTFree(pst);
 		    }
 		}
 		for ( isv=0; isv<2; ++isv ) {
@@ -4157,7 +4089,6 @@ return( true );
 			    else
 				sc->kerns = kpnext;
 			    kp->next = NULL;
-			    KernPairsFree(kp);
 			}
 		    }
 		}
@@ -4201,16 +4132,13 @@ return( true );
 		    // If nothing has changed after all,
 		    // don't create an empty undo
 		    shouldCreateUndoEntry = 0;
-		} else {
-		    free(str);
+		} else
 		    str = diffstr;
-		}
 	    }
 
 	    if( shouldCreateUndoEntry ) {
 
-		dlist_trim_to_limit( (struct dlistnode **)&sf->undoes, fontlevel_undo_limit,
-				     (dlist_visitor_func_type)SFUndoFreeAssociated );
+		dlist_trim_to_limit( (struct dlistnode **)&sf->undoes, fontlevel_undo_limit );
 
 		enum sfundotype t = sfut_lookups;
 		if( lookup_type == gpos_pair ) {
@@ -4245,7 +4173,7 @@ char *GlyphNameListDeUnicode( char *str ) {
     char *pt;
     char *ret, *rpt;
 
-    rpt = ret = galloc(strlen(str)+1);
+    rpt = ret = malloc(strlen(str)+1);
     while ( *str==' ' ) ++str;
     for ( pt=str; *pt!='\0'; ) {
 	if ( *pt==' ' ) {
@@ -4276,7 +4204,7 @@ return( copy(str));
     for ( pt=str; *pt!='\0'; ++pt )
 	if ( *pt==' ' )
 	    ++cnt;
-    rpt = ret = galloc(strlen(str) + (cnt+1)*7 + 1);
+    rpt = ret = malloc(strlen(str) + (cnt+1)*7 + 1);
     for ( start=str; *start!='\0'; ) {
 	while ( *start==' ' ) ++start;
 	if ( *start=='\0' )
@@ -4320,7 +4248,7 @@ return( NULL );
 return( copy(sc->name));
 
     len = strlen(sc->name);
-    temp = galloc(len + 8);
+    temp = malloc(len + 8);
     strcpy(temp,sc->name);
     if ( sc->unicodeenc>32 && sc->unicodeenc!=')' && add_char_to_name_list &&
 	    !( sc->unicodeenc<0x7f && isalpha(sc->unicodeenc)) &&
@@ -4340,7 +4268,7 @@ unichar_t *uSCNameUniStr(SplineChar *sc) {
 
     if ( sc==NULL )
 return( NULL );
-    temp = galloc((strlen(sc->name) + 5) * sizeof(unichar_t));
+    temp = malloc((strlen(sc->name) + 5) * sizeof(unichar_t));
     utf82u_strcpy(temp,sc->name);
     if ( sc->unicodeenc>32 && sc->unicodeenc!=')' && add_char_to_name_list &&
 	    !( sc->unicodeenc<0x7f && isalpha(sc->unicodeenc)) &&
@@ -4385,7 +4313,7 @@ return( NULL );
 	/*  (so "," becomes "comma(,)" */
 	/* Or, a single wildcard followed by a space gets expanded to glyph name */
 	if ( sc!=NULL ) {
-	    ret = galloc((2)*sizeof(unichar_t *));
+	    ret = malloc((2)*sizeof(unichar_t *));
 	    ret[0] = uSCNameUniStr(sc);
 	    ret[1] = NULL;
 return( ret );
@@ -4397,7 +4325,7 @@ return( NULL );
     wild = NULL;
     if ( do_wildcards ) {
 	pt = spt;
-	wild = galloc((u_strlen(spt)+2)*sizeof(unichar_t));
+	wild = malloc((u_strlen(spt)+2)*sizeof(unichar_t));
 	u_strcpy(wild,pt);
 	uc_strcat(wild,"*");
     }
@@ -4411,7 +4339,6 @@ return( NULL );
 	    if ( do_wildcards ) {
 		unichar_t *temp = utf82u_copy(sc->name);
 		matched = GGadgetWildMatch((unichar_t *) wild,temp,false);
-		free(temp);
 	    } else
 		matched = uc_strncmp(spt,sc->name,match_len)==0;
 	    if ( matched ) {
@@ -4419,7 +4346,7 @@ return( NULL );
 		    if ( spt==basept ) {
 			ret[cnt] = uSCNameUniStr(sc);
 		    } else {
-			unichar_t *temp = galloc((spt-basept+strlen(sc->name)+4)*sizeof(unichar_t));
+			unichar_t *temp = malloc((spt-basept+strlen(sc->name)+4)*sizeof(unichar_t));
 			int len;
 			u_strncpy(temp,basept,spt-basept);
 			utf82u_strcpy(temp+(spt-basept),sc->name);
@@ -4443,9 +4370,8 @@ return( NULL );
 	else if ( cnt==0 )
     break;
 	else
-	    ret = galloc((cnt+1)*sizeof(unichar_t *));
+	    ret = malloc((cnt+1)*sizeof(unichar_t *));
     }
-    free(wild);
 return( ret );
 }
 
@@ -4960,10 +4886,8 @@ static void PSTKernD(SplineFont *sf, struct lookup_subtable *sub, int def_layer)
     while ( !pstkd.done )
 	GDrawProcessOneEvent(NULL);
     GDrawDestroyWindow(pstkd.gw);
-    if ( pstkd.display!=NULL ) {
-	BDFFontFree(pstkd.display);
+    if ( pstkd.display!=NULL )
 	pstkd.display = NULL;
-    }
 }
 /* ************************************************************************** */
 /* *************************** Subtable Selection *************************** */
@@ -5011,15 +4935,14 @@ int EditSubtable(struct lookup_subtable *sub,int isgpos,SplineFont *sf,
     int name_search;
 
     if ( new ) {
-	def = freeme = galloc(strlen(sub->lookup->lookup_name)+10);
+	def = freeme = malloc(strlen(sub->lookup->lookup_name)+10);
 	name_search = 1;
 	do {
 	    sprintf( def, "%s-%d", sub->lookup->lookup_name, name_search++ );
 	} while ( SubtableNameInUse(def,sf,sub));
     }
-    forever {
+    for (;;) {
 	def = gwwv_ask_string(_("Please name this subtable"),def,_("Please name this subtable"));
-	free(freeme);
 	if ( def==NULL )
 return( false );
 	freeme = def;
@@ -5028,7 +4951,6 @@ return( false );
 	else
     break;
     }
-    free(sub->subtable_name);
     sub->subtable_name = def;
     if ( new && sub->lookup->lookup_type == gsub_single )
 	sub->suffix = SuffixFromTags(sub->lookup->features);
@@ -5041,14 +4963,12 @@ static struct lookup_subtable *NewSubtable(OTLookup *otl,int isgpos,SplineFont *
     struct lookup_subtable *sub, *last;
     int i,j;
 
-    sub = chunkalloc(sizeof(struct lookup_subtable));
+    sub = XZALLOC(struct lookup_subtable);
     sub->lookup = otl;
     sub->separation = 15*(sf->ascent+sf->descent)/100;
     sub->minkern = sub->separation/10;
-    if ( !EditSubtable(sub,isgpos,sf,sd,def_layer)) {
-	chunkfree(sub,sizeof(struct lookup_subtable));
+    if ( !EditSubtable(sub,isgpos,sf,sd,def_layer))
 return( NULL );
-    }
     if ( otl->subtables==NULL )
 	otl->subtables = sub;
     else {
@@ -5062,7 +4982,7 @@ return( NULL );
 	    IError( "Lookup missing from FontInfo lookup list");
 	} else {
 	    if ( lk->all[i].subtable_cnt>=lk->all[i].subtable_max )
-		lk->all[i].subtables = grealloc(lk->all[i].subtables,(lk->all[i].subtable_max+=10)*sizeof(struct lksubinfo));
+		lk->all[i].subtables = realloc(lk->all[i].subtables,(lk->all[i].subtable_max+=10)*sizeof(struct lksubinfo));
 	    j = lk->all[i].subtable_cnt++;
 	    memset(&lk->all[i].subtables[j],0,sizeof(struct lksubinfo));
 	    lk->all[i].subtables[j].subtable = sub;
@@ -5087,19 +5007,19 @@ GTextInfo **SFSubtablesOfType(SplineFont *sf, int lookup_type, int kernclass,
     for ( k=0; k<2; ++k ) {
 	cnt = lcnt = pos = 0;
 	if ( k && add_none ) {
-	    ti[pos] = gcalloc(1,sizeof(GTextInfo));
+	    ti[pos] = calloc(1,sizeof(GTextInfo));
 	    ti[pos]->fg = ti[pos]->bg = COLOR_DEFAULT;
 	    ti[pos]->userdata = (void *) -1;
 	    ti[pos++]->text = utf82u_copy(_("No Subtable"));
-	    ti[pos] = gcalloc(1,sizeof(GTextInfo));
+	    ti[pos] = calloc(1,sizeof(GTextInfo));
 	    ti[pos]->fg = ti[pos]->bg = COLOR_DEFAULT;
 	    ti[pos++]->line = true;
 	}
 	for ( otl = isgpos ? sf->gpos_lookups : sf->gsub_lookups; otl!=NULL; otl=otl->next ) {
 	    if ( otl->lookup_type==lookup_type && otl->subtables!=NULL ) {
 		if ( k ) {
-		    ti[pos] = gcalloc(1,sizeof(GTextInfo));
-		    ti[pos]->text = galloc((utf82u_strlen(otl->lookup_name)+2)*sizeof(unichar_t));
+		    ti[pos] = calloc(1,sizeof(GTextInfo));
+		    ti[pos]->text = malloc((utf82u_strlen(otl->lookup_name)+2)*sizeof(unichar_t));
 		    ti[pos]->text[0] = ' ';
 		    utf82u_strcpy(ti[pos]->text+1,otl->lookup_name);
 		    ti[pos]->fg = ti[pos]->bg = COLOR_DEFAULT;
@@ -5111,7 +5031,7 @@ GTextInfo **SFSubtablesOfType(SplineFont *sf, int lookup_type, int kernclass,
 			    (kernclass && sub->kc!=NULL) ||
 			    (!kernclass && sub->per_glyph_pst_or_kern)) {
 			if ( k ) {
-			    ti[pos] = gcalloc(1,sizeof(GTextInfo));
+			    ti[pos] = calloc(1,sizeof(GTextInfo));
 			    ti[pos]->text = utf82u_copy(sub->subtable_name);
 			    ti[pos]->fg = ti[pos]->bg = COLOR_DEFAULT;
 			    ti[pos++]->userdata = sub;
@@ -5122,15 +5042,15 @@ GTextInfo **SFSubtablesOfType(SplineFont *sf, int lookup_type, int kernclass,
 	    }
 	}
 	if ( !k ) {
-	    ti = gcalloc(cnt+lcnt+3+2*add_none,sizeof(GTextInfo*));
+	    ti = calloc(cnt+lcnt+3+2*add_none,sizeof(GTextInfo*));
 	} else {
-	    ti[pos] = gcalloc(1,sizeof(GTextInfo));
+	    ti[pos] = calloc(1,sizeof(GTextInfo));
 	    ti[pos]->fg = ti[pos]->bg = COLOR_DEFAULT;
 	    ti[pos++]->line = true;
-	    ti[pos] = gcalloc(1,sizeof(GTextInfo));
+	    ti[pos] = calloc(1,sizeof(GTextInfo));
 	    ti[pos]->fg = ti[pos]->bg = COLOR_DEFAULT;
 	    ti[pos++]->text = utf82u_copy(_("New Lookup Subtable..."));
-	    ti[pos] = gcalloc(1,sizeof(GTextInfo));
+	    ti[pos] = calloc(1,sizeof(GTextInfo));
 return( ti );
 	}
     }
@@ -5146,12 +5066,9 @@ GTextInfo *SFSubtableListOfType(SplineFont *sf, int lookup_type, int kernclass,i
     if ( temp==NULL )
 return( NULL );
     for ( cnt=0; temp[cnt]->text!=NULL || temp[cnt]->line; ++cnt );
-    ti = gcalloc(cnt+1,sizeof(GTextInfo));
-    for ( cnt=0; temp[cnt]->text!=NULL || temp[cnt]->line; ++cnt ) {
+    ti = calloc(cnt+1,sizeof(GTextInfo));
+    for ( cnt=0; temp[cnt]->text!=NULL || temp[cnt]->line; ++cnt )
 	ti[cnt] = *temp[cnt];
-	free(temp[cnt]);
-    }
-    free(temp);
 return( ti );
 }
 
@@ -5185,7 +5102,7 @@ return( sub );
     /*  create a subtable in that lookup... but no. Still give them the */
     /*  option of creating a new lookup */
 
-    choices = galloc((cnt+2)*sizeof(char *));
+    choices = malloc((cnt+2)*sizeof(char *));
     for ( cnt=0, otl=isgpos ? sf->gpos_lookups : sf->gsub_lookups; otl!=NULL; otl=otl->next )
 	if ( otl->lookup_type==lookup_type )
 	    choices[cnt++] = otl->lookup_name;
@@ -5209,7 +5126,6 @@ return( sub );
 	    }
 	}
     }
-    free(choices);
     if ( found==NULL )
 return( NULL );
 
@@ -5431,7 +5347,7 @@ static SplineChar **SelectedGlyphs(FontView *_fv) {
 return(NULL);
     }
 
-    glyphlist = galloc((selcnt+1)*sizeof(SplineChar *));
+    glyphlist = malloc((selcnt+1)*sizeof(SplineChar *));
     selcnt=0;
     for ( enc=0; enc<map->enccount; ++enc ) {
 	if ( fv->selected[enc] && (gid=map->map[enc])!=-1 &&
@@ -5473,7 +5389,7 @@ return( true );
 return( true );
 	    results->secondglyphs = SelectedGlyphs(kf->second_fv);
 	    if ( results->secondglyphs == NULL ) {
-		free(results->firstglyphs); results->firstglyphs=NULL;
+		results->firstglyphs=NULL;
 return( true );
 	    }
 	}
@@ -5838,7 +5754,7 @@ void _LookupSubtableContents(SplineFont *sf, struct lookup_subtable *sub,
 		lookup_type == gsub_reversecchain ||
 		lookup_type == gpos_context || lookup_type == gpos_contextchain) &&
 	    sub->fpst==NULL ) {
-	sub->fpst = chunkalloc(sizeof(FPST));
+	sub->fpst = XZALLOC(FPST);
 	sub->fpst->type = lookup_type == gsub_context ? pst_contextsub :
 		lookup_type == gsub_contextchain ? pst_chainsub :
 		lookup_type == gsub_reversecchain ? pst_reversesub :
@@ -5854,7 +5770,7 @@ void _LookupSubtableContents(SplineFont *sf, struct lookup_subtable *sub,
 		lookup_type == morx_insert ||
 		lookup_type == kern_statemachine) &&
 	    sub->sm==NULL ) {
-	sub->sm = chunkalloc(sizeof(ASM));
+	sub->sm = XZALLOC(ASM);
 	sub->sm->type = lookup_type == morx_indic ? asm_indic :
 		lookup_type == morx_context ? asm_context :
 		lookup_type == morx_insert ? asm_insert :
@@ -5910,7 +5826,7 @@ return;
 		    0,0,0,0, 0, NULL, NULL);
 	    }
 	} else {
-	    sub->kc = chunkalloc(sizeof(KernClass));
+	    sub->kc = XZALLOC(KernClass);
 	    if ( sub->vertical_kerning ) {
 		sub->kc->next = sf->vkerns;
 		sf->vkerns = sub->kc;
@@ -5920,18 +5836,16 @@ return;
 	    }
 	    sub->kc->subtable = sub;
 	    sub->kc->first_cnt = sub->kc->second_cnt = 1;
-	    sub->kc->firsts = gcalloc(1,sizeof(char *));
-	    sub->kc->seconds = gcalloc(1,sizeof(char *));
-	    sub->kc->offsets = gcalloc(1,sizeof(int16));
-	    sub->kc->adjusts = gcalloc(1,sizeof(DeviceTable));
+	    sub->kc->firsts = calloc(1,sizeof(char *));
+	    sub->kc->seconds = calloc(1,sizeof(char *));
+	    sub->kc->offsets = calloc(1,sizeof(int16));
+	    sub->kc->adjusts = calloc(1,sizeof(DeviceTable));
 		/* Need to fix for Hebrew !!!! */
 	    if ( results.autobuild )
 		/* Specifying separation==0 and !touching means use default values */
 		AutoKern2BuildClasses(sf,def_layer,results.firstglyphs,
 			results.secondglyphs,sub,0,0,0,0,0,results.good_enough);
 	}
-	free(results.firstglyphs);
-	free(results.secondglyphs);
     }
 
     if ( sub->fpst && sf->fontinfo!=NULL ) {
@@ -5992,7 +5906,7 @@ static void lk_AddRm(struct lkdata *lk,int add_lang,uint32 script, char *langs) 
 			if ( sl->lang_cnt<MAX_LANG ) {
 			    sl->langs[sl->lang_cnt++] = lang;
 			} else {
-			    sl->morelangs = grealloc(sl->morelangs,(++sl->lang_cnt-MAX_LANG)*sizeof(uint32));
+			    sl->morelangs = realloc(sl->morelangs,(++sl->lang_cnt-MAX_LANG)*sizeof(uint32));
 			    sl->morelangs[sl->lang_cnt-MAX_LANG-1] = lang;
 			}
 		    } else if ( !add_lang && l>=0 ) {
@@ -6061,7 +5975,6 @@ return( true );
 	}
 
 	lk_AddRm(arl->lk,arl->add_lang,script_tag, langs);
-	free(langs);
 	arl->done = true;
     }
 return( true );
@@ -6115,13 +6028,12 @@ static GTextInfo *ScriptListOfFont(SplineFont *sf) {
     char tag[8];
 
     if ( ourscripts==NULL || ourscripts[0]==0 ) {
-	if ( ourscripts!=NULL ) free(ourscripts);
-	ourscripts = galloc(2*sizeof(uint32));
+	ourscripts = malloc(2*sizeof(uint32));
 	ourscripts[0] = DEFAULT_SCRIPT;
 	ourscripts[1] = 0;
     }
     for ( i=0; ourscripts[i]!=0; ++i );
-    ti = gcalloc(i+1,sizeof(GTextInfo));
+    ti = calloc(i+1,sizeof(GTextInfo));
     for ( i=0; ourscripts[i]!=0; ++i ) {
 	ti[i].userdata = (void *) (intpt) ourscripts[i];
 	for ( j=0; scripts[j].text!=NULL; ++j) {
@@ -6141,7 +6053,6 @@ static GTextInfo *ScriptListOfFont(SplineFont *sf) {
 	ti[i].text_is_1byte = true;
     }
     ti[0].selected = true;
-    free(ourscripts);
 return( ti );
 }
 
@@ -6250,8 +6161,6 @@ void AddRmLang(SplineFont *sf, struct lkdata *lk,int add_lang) {
     dummy.u.control.u.tf_changed.from_pulldown = GGadgetGetFirstListSelectedItem(gcd[1].ret);
     ARL_TagChanged(gcd[1].ret,&dummy);
 
-    GTextInfoListFree(gcd[1].gd.u.list);
-
     GHVBoxSetExpandableCol(boxes[2].ret,gb_expandgluesame);
 
     GHVBoxFitWindow(boxes[0].ret);
@@ -6298,14 +6207,11 @@ static int MRD_OK(GGadget *g, GEvent *e) {
 	if ( !themselves ) {
 	    char *freeme = GGadgetGetTitle8(GWidgetGetControl(mrd->gw,CID_StartName));
 	    start_name = GlyphNameListDeUnicode(freeme);
-	    free(freeme);
 	    enc_start = SFFindSlot(mrd->fv->b.sf,mrd->fv->b.map,-1,start_name);
 	    if ( enc_start==-1 ) {
 		ff_post_error(_("No Start Glyph"), _("The encoding does not contain something named %.40s"), start_name );
-		free(start_name);
 return( true );
 	    }
-	    free( start_name );
 	    if ( enc_start+sel_cnt>=enc_max ) {
 		ff_post_error(_("Not enough glyphs"), _("There aren't enough glyphs in the encoding to name all the selected characters"));
 return( true );
@@ -6331,13 +6237,11 @@ return( true );
 	suffix = GGadgetGetTitle8(GWidgetGetControl(mrd->gw,CID_Suffix));
 	if ( *suffix=='\0' || (*suffix=='.' && suffix[1]=='\0')) {
 	    ff_post_error(_("Missing suffix"), _("If you don't specify a suffix, the glyphs don't get renamed."));
-	    free(suffix);
 return( true );
 	}
 	if ( *suffix!='.' ) {
 	    char *old = suffix;
 	    suffix = strconcat(".",suffix);
-	    free(old);
 	}
 
 	for ( enc=sel_cnt=0; enc<enc_max; ++enc ) if ( mrd->fv->b.selected[enc] ) {
@@ -6347,31 +6251,28 @@ return( true );
 		sourcesc = SFMakeChar(mrd->fv->b.sf,mrd->fv->b.map,enc_start+sel_cnt);
 	    oldname = sc->name;
 	    if ( rplsuffix && (pt=strchr(sourcesc->name,'.'))!=NULL ) {
-		char *name = galloc(pt-sourcesc->name+strlen(suffix)+2);
+		char *name = malloc(pt-sourcesc->name+strlen(suffix)+2);
 		strcpy(name,sourcesc->name);
 		strcpy(name+(pt-sourcesc->name),suffix);
 		sc->name = name;
 	    } else
 		sc->name = strconcat(sourcesc->name,suffix);
-	    free(oldname);
 	    sc->unicodeenc = -1;
 	    if ( sub!=NULL ) {
 		/* There can only be one single subs with this subtable */
 		/*  attached to the source glyph */
 		for ( pst=sourcesc->possub; pst!=NULL && pst->subtable!=sub; pst=pst->next );
 		if ( pst==NULL ) {
-		    pst = chunkalloc(sizeof(PST));
+		    pst = XZALLOC(PST);
 		    pst->next = sourcesc->possub;
 		    sourcesc->possub = pst;
 		    pst->subtable = sub;
 		    pst->type = pst_substitution;
 		}
-		free(pst->u.subs.variant);
 		pst->u.subs.variant = copy(sc->name);
 	    }
 	    ++sel_cnt;
 	}
-	free(suffix);
 	mrd->done = true;
     }
 return( true );
@@ -6649,7 +6550,7 @@ static void FI_SortInsertLookup(SplineFont *sf, OTLookup *newotl) {
 	struct lkdata *lk = &sf->fontinfo->tables[isgpos];
 	pos = FeatureOrderId(isgpos,newotl->features);
 	if ( lk->cnt>=lk->max )
-	    lk->all = grealloc(lk->all,(lk->max+=10)*sizeof(struct lkinfo));
+	    lk->all = realloc(lk->all,(lk->max+=10)*sizeof(struct lkinfo));
 	for ( i=0; i<lk->cnt && FeatureOrderId(isgpos,lk->all[i].lookup->features)<pos; ++i );
 	for ( k=lk->cnt; k>i+1; --k )
 	    lk->all[k] = lk->all[k-1];
@@ -6676,7 +6577,7 @@ static void FI_OrderNewLookup(SplineFont *into_sf,OTLookup *otl,OTLookup *before
 	struct lkdata *lk = &into_sf->fontinfo->tables[isgpos];
 
 	if ( lk->cnt>=lk->max )
-	    lk->all = grealloc(lk->all,(lk->max+=10)*sizeof(struct lkinfo));
+	    lk->all = realloc(lk->all,(lk->max+=10)*sizeof(struct lkinfo));
 
 	if ( before == (OTLookup *) -2 )
 	    FI_SortInsertLookup(into_sf,otl);
@@ -6714,7 +6615,7 @@ static void FI_OTLookupCopyInto(SplineFont *into_sf,SplineFont *from_sf,
 	    break;
 	}
 	lk->all[i].subtable_cnt = lk->all[i].subtable_max = scnt;
-	lk->all[i].subtables = gcalloc(scnt,sizeof(struct lksubinfo));
+	lk->all[i].subtables = calloc(scnt,sizeof(struct lksubinfo));
 	if ( scnt>0 )
 	    for ( sub=to_otl->subtables, scnt=0; sub!=NULL; sub=sub->next, ++scnt )
 		lk->all[i].subtables[scnt].subtable = sub;

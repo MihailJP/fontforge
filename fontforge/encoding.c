@@ -35,6 +35,9 @@
 #include <gfile.h>
 #include "plugins.h"
 #include "encoding.h"
+#include "psfont.h"
+#include "ffglib.h"
+#include <glib/gprintf.h>
 
 Encoding *default_encoding = NULL;
 
@@ -128,11 +131,11 @@ const char *FindUnicharName(void) {
     /* Even worse, both accept UCS-2, but under iconv it means native byte */
     /*  ordering and under libiconv it means big-endian */
     iconv_t test;
-    static char *goodname = NULL;
-    static char *names[] = { "UCS-4-INTERNAL", "UCS-4", "UCS4", "ISO-10646-UCS-4", "UTF-32", NULL };
-    static char *namesle[] = { "UCS-4LE", "UTF-32LE", NULL };
-    static char *namesbe[] = { "UCS-4BE", "UTF-32BE", NULL };
-    char **testnames;
+    static const char *goodname = NULL;
+    static const char *names[] = { "UCS-4-INTERNAL", "UCS-4", "UCS4", "ISO-10646-UCS-4", "UTF-32", NULL };
+    static const char *namesle[] = { "UCS-4LE", "UTF-32LE", NULL };
+    static const char *namesbe[] = { "UCS-4BE", "UTF-32BE", NULL };
+    const char **testnames;
     int i;
     union {
 	short s;
@@ -184,7 +187,7 @@ return( goodname );
 return( goodname );
 }
 
-static int TryEscape( Encoding *enc,char *escape_sequence ) {
+static int TryEscape( Encoding *enc, const char *escape_sequence ) {
     char from[20], ucs[20];
     size_t fromlen, tolen;
     ICONV_CONST char *fpt;
@@ -391,7 +394,7 @@ return( NULL );
     if ( !make_it )
 return( NULL );
 
-    enc = chunkalloc(sizeof(Encoding));
+    enc = XZALLOC(Encoding);
     *enc = temp;
     enc->enc_name = copy(name);
     if ( iconv_name!=name )
@@ -455,7 +458,7 @@ return( 0 );			/* Failure */
     if ( strmatch(name,"unicode4")==0 || strmatch(name,"ucs4")==0 )
 return( 0 );			/* Failure */
 
-    enc = chunkalloc(sizeof(Encoding));
+    enc = XZALLOC(Encoding);
     enc->enc_name = copy(name);
     enc->next = enclist;
     enclist = enc;
@@ -488,17 +491,6 @@ return( NULL );
 return( encfile );
 }
 
-static void EncodingFree(Encoding *item) {
-    int i;
-
-    free(item->enc_name);
-    if ( item->psnames!=NULL ) for ( i=0; i<item->char_cnt; ++i )
-	free(item->psnames[i]);
-    free(item->psnames);
-    free(item->unicode);
-    free(item);
-}
-
 void DeleteEncoding(Encoding *me) {
     FontViewBase *fv;
     Encoding *prev;
@@ -516,7 +508,6 @@ return;
 	for ( prev = enclist; prev!=NULL && prev->next!=me; prev=prev->next );
 	if ( prev!=NULL ) prev->next = me->next;
     }
-    EncodingFree(me);
     if ( default_encoding == me )
 	default_encoding = FindOrMakeEncoding("ISO8859-1");
     if ( default_encoding == NULL )
@@ -553,10 +544,10 @@ return( NULL );
 
     ++max;
     if ( max<256 ) max = 256;
-    item = gcalloc(1,sizeof(Encoding));
+    item = calloc(1,sizeof(Encoding));
     item->only_1byte = item->has_1byte = true;
     item->char_cnt = max;
-    item->unicode = galloc(max*sizeof(int32));
+    item->unicode = malloc(max*sizeof(int32));
     memcpy(item->unicode,encs,max*sizeof(int32));
 return( item );
 }
@@ -576,8 +567,7 @@ char *ParseEncodingFile(char *filename, char *encodingname) {
     FILE *file;
     char *orig = filename;
     Encoding *head, *item, *prev, *next;
-    char buf[300];
-    char *name;
+    char *buf, *name;
     int i,ch;
 
     if ( filename==NULL ) filename = getPfaEditEncodings();
@@ -604,7 +594,7 @@ return( NULL );
     fclose(file);
     if ( head==NULL ) {
 	ff_post_error(_("Bad encoding file format"),_("Bad encoding file format") );
-return( NULL );
+	return( NULL );
     }
 
     for ( i=0, prev=NULL, item=head; item!=NULL; prev = item, item=next, ++i ) {
@@ -612,42 +602,22 @@ return( NULL );
 	if ( item->enc_name==NULL ) {
 	    if ( no_windowing_ui ) {
 		ff_post_error(_("Bad encoding file format"),_("This file contains an unnamed encoding, which cannot be named in a script"));
-return( NULL );
+		return( NULL );
 	    }
 	    if ( item==head && item->next==NULL )
-		strcpy(buf,_("Please name this encoding"));
-	    else {
-# if defined( _NO_SNPRINTF ) || defined( __VMS )
-		if ( i<=3 )
-		    sprintf(buf,
-			    _("Please name the %s encoding in this file"),
-			    i==1 ? _("First") :
-			    i==2 ? _("Second") :
-				    _("Third") );
-		else
-		    sprintf(buf, _("Please name the %dth encoding in this file"),
-			    i );
-# else
-		if ( i<=3 )
-		    snprintf(buf,sizeof(buf),
-			    _("Please name the %s encoding in this file"),
-			    i==1 ? _("_First") : i==2 ? _("Second") : _("Third") );
-		else
-		    snprintf(buf,sizeof(buf),
-			    _("Please name the %dth encoding in this file"),
-			    i );
-# endif
-	    }
-	    name = ff_ask_string(buf,NULL,buf);
-	    if ( name!=NULL ) {
+		buf = strdup(_( "Please name this encoding" ));
+	    else
+		buf = xasprintf(_( "Please name encoding %d in this file" ), i );
+
+	    name = ff_ask_string( buf, NULL, buf );
+
+	    if ( name!=NULL )
 		item->enc_name = copy(name);
-		free(name);
-	    } else {
+            else {
 		if ( prev==NULL )
 		    head = item->next;
 		else
 		    prev->next = item->next;
-		EncodingFree(item);
 	    }
 	}
     }
@@ -758,23 +728,6 @@ int CID2NameUni(struct cidmap *map,int cid, char *buffer, int len) {
     int enc = -1;
     const char *temp;
 
-#if defined( _NO_SNPRINTF ) || defined( __VMS )
-    if ( map==NULL )
-	sprintf(buffer,"cid-%d", cid);
-    else if ( cid<map->namemax && map->name[cid]!=NULL ) {
-	strncpy(buffer,map->name[cid],len);
-	buffer[len-1] = '\0';
-    } else if ( cid==0 || (cid<map->namemax && map->unicode[cid]!=0 )) {
-	if ( map->unicode==NULL || map->namemax==0 )
-	    enc = 0;
-	else
-	    enc = map->unicode[cid];
-	temp = StdGlyphName(buffer,enc,ui_none,(NameList *) -1);
-	if ( temp!=buffer )
-	    strcpy(buffer,temp);
-    } else
-	sprintf(buffer,"%s.%d", map->ordering, cid);
-#else
     if ( map==NULL )
 	snprintf(buffer,len,"cid-%d", cid);
     else if ( cid<map->namemax && map->name[cid]!=NULL ) {
@@ -792,7 +745,6 @@ int CID2NameUni(struct cidmap *map,int cid, char *buffer, int len) {
 	    strcpy(buffer,temp);
     } else
 	snprintf(buffer,len,"%s.%d", map->ordering, cid);
-#endif
 return( enc );
 }
 
@@ -805,7 +757,7 @@ int NameUni2CID(struct cidmap *map, int uni, const char *name) {
     if ( uni!=-1 ) {
 		// Search for a matching code.
 		for ( i=0; i<map->namemax; ++i )
-		    if ( map->unicode[i]==uni )
+		    if ( map->unicode[i]==(uint32)uni )
 				return( i );
 		for ( alts=map->alts; alts!=NULL; alts=alts->next )
 		    if ( alts->uni==uni )
@@ -826,7 +778,7 @@ struct altuni *CIDSetAltUnis(struct cidmap *map,int cid) {
 
     for ( alts=map->alts; alts!=NULL; alts=alts->next ) {
 	if ( alts->cid==cid ) {
-	    alt = chunkalloc(sizeof(struct altuni));
+	    alt = XZALLOC(struct altuni);
 	    alt->next = sofar;
 	    sofar = alt;
 	    alt->unienc = alts->uni;
@@ -840,7 +792,7 @@ int MaxCID(struct cidmap *map) {
 return( map->cidmax );
 }
 
-static char *SearchDirForCidMap(char *dir,char *registry,char *ordering,
+static char *SearchDirForCidMap(const char *dir,char *registry,char *ordering,
 	int supplement,char **maybefile) {
     char maybe[FILENAME_MAX+1];
     struct dirent *ent;
@@ -879,7 +831,7 @@ return( NULL );
 	if ( *end!='.' )
     continue;
 	if ( test>=supplement ) {
-	    ret = galloc(strlen(dir)+1+len+1);
+	    ret = malloc(strlen(dir)+1+len+1);
 	    strcpy(ret,dir);
 	    strcat(ret,"/");
 	    strcat(ret,ent->d_name);
@@ -892,7 +844,7 @@ return( ret );
     }
     closedir(d);
     if ( best>-1 ) {
-	ret = galloc(strlen(dir)+1+strlen(maybe)+1);
+	ret = malloc(strlen(dir)+1+strlen(maybe)+1);
 	strcpy(ret,dir);
 	strcat(ret,"/");
 	strcat(ret,maybe);
@@ -901,25 +853,8 @@ return( ret );
 return( NULL );
 }
 
-#if 0
-static char *SearchNoLibsDirForCidMap(char *dir,char *registry,char *ordering,
-	int supplement,char **maybefile) {
-    char *ret;
-
-    if ( dir==NULL || strstr(dir,"/.libs")==NULL )
-return( NULL );
-
-    dir = copy(dir);
-    *strstr(dir,"/.libs") = '\0';
-
-    ret = SearchDirForCidMap(dir,registry,ordering,supplement,maybefile);
-    free(dir);
-return( ret );
-}
-#endif
-
 static struct cidmap *MakeDummyMap(char *registry,char *ordering,int supplement) {
-    struct cidmap *ret = galloc(sizeof(struct cidmap));
+    struct cidmap *ret = malloc(sizeof(struct cidmap));
 
     ret->registry = copy(registry);
     ret->ordering = copy(ordering);
@@ -934,7 +869,7 @@ return( ret );
 
 struct cidmap *LoadMapFromFile(char *file,char *registry,char *ordering,
 	int supplement) {
-    struct cidmap *ret = galloc(sizeof(struct cidmap));
+    struct cidmap *ret = malloc(sizeof(struct cidmap));
     char *pt = strrchr(file,'.');
     FILE *f;
     int cid1, cid2, uni, cnt, i, ch;
@@ -960,8 +895,8 @@ struct cidmap *LoadMapFromFile(char *file,char *registry,char *ordering,
 	ff_post_error(_("Bad cidmap file"),_("%s is not a cidmap file, please download\nhttp://fontforge.sourceforge.net/cidmaps.tgz"), file );
 	fprintf( stderr, _("%s is not a cidmap file, please download\nhttp://fontforge.sourceforge.net/cidmaps.tgz"), file );
     } else {
-	ret->unicode = gcalloc(ret->namemax+1,sizeof(uint32));
-	ret->name = gcalloc(ret->namemax+1,sizeof(char *));
+	ret->unicode = calloc(ret->namemax+1,sizeof(uint32));
+	ret->name = calloc(ret->namemax+1,sizeof(char *));
 	while ( 1 ) {
 	    cnt=fscanf( f, "%d..%d %x", &cid1, &cid2, (unsigned *) &uni );
 	    if ( cnt<=0 )
@@ -978,7 +913,7 @@ struct cidmap *LoadMapFromFile(char *file,char *registry,char *ordering,
 		    ch = getc(f);
 		    while ( ch==',' ) {
 			if ( fscanf(f,"%x", (unsigned *) &uni )==1 ) {
-			    struct cidaltuni *alt = chunkalloc(sizeof(struct cidaltuni));
+			    struct cidaltuni *alt = XZALLOC(struct cidaltuni);
 			    alt->next = ret->alts;
 			    ret->alts = alt;
 			    alt->uni = uni;
@@ -998,10 +933,11 @@ return( ret );
 
 struct cidmap *FindCidMap(char *registry,char *ordering,int supplement,SplineFont *sf) {
     struct cidmap *map, *maybe=NULL;
-    char *file, *maybefile=NULL;
+    const char *file;
+    char *maybefile=NULL;
     int maybe_sup = -1;
-    char *buts[3], *buts2[3], *buts3[3];
-    char buf[100];
+    const char *buts[3], *buts2[3], *buts3[3];
+    char *buf = NULL;
     int ret;
 
     if ( sf!=NULL && sf->cidmaster ) sf = sf->cidmaster;
@@ -1030,7 +966,7 @@ return( maybe );	/* User has said it's ok to use maybe at this supplement level 
 		--pt;
 	    maybe_sup = strtol(pt,NULL,10);
 	    if ( maybe!=NULL && maybe->supplement >= maybe_sup ) {
-		free(maybefile); maybefile = NULL;
+		maybefile = NULL;
 		maybe_sup = maybe->supplement;
 	    } else
 		maybe = NULL;
@@ -1055,23 +991,19 @@ return( maybe );
 
     if ( file==NULL ) {
 	char *uret;
-#if defined( _NO_SNPRINTF ) || defined( __VMS )
-	sprintf(buf,"%s-%s-*.cidmap", registry, ordering );
-#else
-	snprintf(buf,sizeof(buf),"%s-%s-*.cidmap", registry, ordering );
-#endif
+	buf = xasprintf( "%s-%s-*.cidmap", registry, ordering );
 	if ( maybe==NULL && maybefile==NULL ) {
 	    buts3[0] = _("_Browse"); buts3[1] = _("_Give Up"); buts3[2] = NULL;
 	    ret = ff_ask(_("No cidmap file..."),(const char **)buts3,0,1,_("FontForge was unable to find a cidmap file for this font. It is not essential to have one, but some things will work better if you do. If you have not done so you might want to download the cidmaps from:\n   http://FontForge.sourceforge.net/cidmaps.tgz\nand then gunzip and untar them and move them to:\n  %.80s\n\nWould you like to search your local disk for an appropriate file?"),
 		    getFontForgeShareDir()==NULL?"/usr/share/fontforge":getFontForgeShareDir()
 		    );
 	    if ( ret==1 || no_windowing_ui )
-		buf[0] = '\0';
+		buf = NULL;
 	}
 	uret = NULL;
-	if ( buf[0]!='\0' && !no_windowing_ui ) {
+	if ( ( buf != NULL ) && !no_windowing_ui ) {
 	    if ( sf!=NULL ) sf->loading_cid_map = true;
-	    uret = ff_open_filename(_("Find a cidmap file..."),NULL,buf);
+	    uret = ff_open_filename(_("Find a cidmap file..."), NULL, (char *) buf );
 	    if ( sf!=NULL ) sf->loading_cid_map = false;
 	}
 	if ( uret==NULL ) {
@@ -1093,16 +1025,12 @@ return( maybe );
 		    maybefile = NULL;
 		}
 	    }
-	} else {
+	} else
 	    file = utf82def_copy(uret);
-	    free(uret);
-	}
     }
 
-    free(maybefile);
     if ( file!=NULL ) {
 	map = LoadMapFromFile(file,registry,ordering,supplement);
-	free(file);
 return( map );
     }
 
@@ -1128,7 +1056,6 @@ static void SFApplyOrdering(SplineFont *sf, int glyphcnt) {
 		    sc->layers[ly_fore].splines = new;
 		}
 		refs->layers[0].splines=NULL;
-		RefCharFree(refs);
 		if ( rprev==NULL )
 		    sc->layers[ly_fore].refs = rnext;
 		else
@@ -1138,7 +1065,7 @@ static void SFApplyOrdering(SplineFont *sf, int glyphcnt) {
 	}
     }
 
-    glyphs = gcalloc(glyphcnt+1,sizeof(SplineChar *));
+    glyphs = calloc(glyphcnt+1,sizeof(SplineChar *));
     for ( i=0; i<sf->glyphcnt; ++i ) if ( (sc = sf->glyphs[i])!=NULL ) {
 	if ( sc->orig_pos==-1 )
 	    SplineCharFree(sc);
@@ -1146,7 +1073,6 @@ static void SFApplyOrdering(SplineFont *sf, int glyphcnt) {
 	    glyphs[sc->orig_pos] = sc;
     }
 
-    free(sf->glyphs);
     sf->glyphcnt = sf->glyphmax = glyphcnt;
     sf->glyphs = glyphs;
 }
@@ -1192,23 +1118,9 @@ struct cmap {
     int total;
 };
 
-static void cmapfree(struct cmap *cmap) {
-    free(cmap->registry);
-    free(cmap->ordering);
-    free(cmap->groups[cmt_coderange].ranges);
-    free(cmap->groups[cmt_notdefs].ranges);
-    free(cmap->groups[cmt_cid].ranges);
-    free(cmap->remap);
-    free(cmap);
-}
-
 static struct coderange *ExtendArray(struct coderange *ranges,int *n, int val) {
-    if ( *n == 0 )
-	ranges = gcalloc(val,sizeof(struct coderange));
-    else {
-	ranges = grealloc(ranges,(*n+val)*sizeof(struct coderange));
-	memset(ranges+*n,0,val*sizeof(struct coderange));
-    }
+    ranges = realloc(ranges,(*n+val)*sizeof(struct coderange));
+    memset(ranges+*n,0,val*sizeof(struct coderange));
     *n += val;
 return( ranges );
 }
@@ -1238,7 +1150,7 @@ static struct cmap *ParseCMap(char *filename) {
     if ( file==NULL )
 return( NULL );
 
-    cmap = gcalloc(1,sizeof(struct cmap));
+    cmap = calloc(1,sizeof(struct cmap));
     in = cmt_out;
     while ( fgets(buf2,sizeof(buf2),file)!=NULL ) {
 	for ( pt=buf2; isspace(*pt); ++pt);
@@ -1302,7 +1214,7 @@ static void CompressCMap(struct cmap *cmap) {
     if ( i==cmap->groups[cmt_coderange].n )	/* No need to remap */
 return;
 
-    cmap->remap = gcalloc(cmap->groups[cmt_coderange].n+1,sizeof(struct remap));
+    cmap->remap = calloc(cmap->groups[cmt_coderange].n+1,sizeof(struct remap));
     base = 0;
     for ( i=0; i<cmap->groups[cmt_coderange].n; ++i )
 	if ( cmap->groups[cmt_coderange].ranges[i].last<0xffff ) {
@@ -1362,7 +1274,7 @@ return(NULL);
     new->familyname = copy(cidmaster->familyname);
     new->weight = copy(cidmaster->weight);
     new->copyright = copy(cidmaster->copyright);
-    sprintf(buffer,"%g", cidmaster->cidversion);
+    sprintf(buffer,"%g", (double)cidmaster->cidversion);
     new->version = copy(buffer);
     new->italicangle = cidmaster->italicangle;
     new->upos = cidmaster->upos;
@@ -1407,13 +1319,12 @@ return(NULL);
     for ( fvs=new->fv; fvs!=NULL; fvs=fvs->nextsame ) {
 	fvs->cidmaster = NULL;
 	if ( fvs->sf->glyphcnt!=new->glyphcnt ) {
-	    free(fvs->selected);
-	    fvs->selected = gcalloc(new->glyphcnt,sizeof(char));
+	    fvs->selected = calloc(new->glyphcnt,sizeof(char));
 	    if ( fvs->map->encmax < new->glyphcnt )
-		fvs->map->map = grealloc(fvs->map->map,(fvs->map->encmax = new->glyphcnt)*sizeof(int32));
+		fvs->map->map = realloc(fvs->map->map,(fvs->map->encmax = new->glyphcnt)*sizeof(int32));
 	    fvs->map->enccount = new->glyphcnt;
 	    if ( fvs->map->backmax < new->glyphcnt )
-		fvs->map->backmap = grealloc(fvs->map->backmap,(fvs->map->backmax = new->glyphcnt)*sizeof(int32));
+		fvs->map->backmap = realloc(fvs->map->backmap,(fvs->map->backmax = new->glyphcnt)*sizeof(int32));
 	    for ( j=0; j<new->glyphcnt; ++j )
 		fvs->map->map[j] = fvs->map->backmap[j] = j;
 	}
@@ -1439,7 +1350,7 @@ return;
 	if ( max<cidmaster->subfonts[i]->glyphcnt )
 	    max = cidmaster->subfonts[i]->glyphcnt;
     }
-    glyphs = gcalloc(max,sizeof(SplineChar *));
+    glyphs = calloc(max,sizeof(SplineChar *));
     for ( j=0; j<max; ++j ) {
 	for ( i=0; i<cidmaster->subfontcnt; ++i ) {
 	    if ( j<cidmaster->subfonts[i]->glyphcnt && cidmaster->subfonts[i]->glyphs[j]!=NULL ) {
@@ -1477,7 +1388,6 @@ return( false );
 	    max = cmap->groups[cmt_cid].ranges[i].last;
 	if ( cmap->groups[cmt_cid].ranges[i].last>0x100000 ) {
 	    ff_post_error(_("Encoding Too Large"),_("Encoding Too Large"));
-	    cmapfree(cmap);
 return( false );
 	}
     }
@@ -1488,7 +1398,7 @@ return( false );
 	    curmax = sf->subfonts[k]->glyphcnt;
     }
 
-    glyphs = gcalloc(curmax,sizeof(SplineChar *));
+    glyphs = calloc(curmax,sizeof(SplineChar *));
     for ( i=0; i<curmax; ++i ) {
 	for ( k=0; k<sf->subfontcnt; ++k )
 	    if ( i<sf->subfonts[k]->glyphcnt && sf->subfonts[k]->glyphs[i]!=NULL ) {
@@ -1546,7 +1456,7 @@ return( false );
 		}
 	    }
 	    if ( !j ) {
-		map->map = grealloc(map->map,(map->encmax = map->enccount = max+extras)*sizeof(int32));
+		map->map = realloc(map->map,(map->encmax = map->enccount = max+extras)*sizeof(int32));
 		memset(map->map,-1,map->enccount*sizeof(int32));
 		memset(map->backmap,-1,sf->glyphcnt*sizeof(int32));
 		map->remap = cmap->remap; cmap->remap = NULL;
@@ -1554,7 +1464,6 @@ return( false );
 	    warned = true;
 	}
     }
-    cmapfree(cmap);
     FontViewReformatAll(sf);
 return( true );
 }
@@ -1669,7 +1578,6 @@ return(NULL);
 	}
 	CompressCMap(cmap);
 	SFEncodeToCMap(cidmaster,sf,oldmap,cmap);
-	cmapfree(cmap);
     } else {
 	map = cidmap;
 	if ( map==NULL ) {
@@ -1708,7 +1616,7 @@ return(NULL);
     cidmaster->fv = sf->fv;
     sf->cidmaster = cidmaster;
     cidmaster->subfontcnt = 1;
-    cidmaster->subfonts = gcalloc(2,sizeof(SplineFont *));
+    cidmaster->subfonts = calloc(2,sizeof(SplineFont *));
     cidmaster->subfonts[0] = sf;
     cidmaster->gpos_lookups = sf->gpos_lookups; sf->gpos_lookups = NULL;
     cidmaster->gsub_lookups = sf->gsub_lookups; sf->gsub_lookups = NULL;
@@ -1718,13 +1626,11 @@ return(NULL);
     cidmaster->kerns = sf->kerns; sf->kerns = NULL;
     cidmaster->vkerns = sf->vkerns; sf->vkerns = NULL;
     if ( sf->private==NULL )
-	sf->private = gcalloc(1,sizeof(struct psdict));
+	sf->private = calloc(1,sizeof(struct psdict));
     if ( !PSDictHasEntry(sf->private,"lenIV"))
 	PSDictChangeEntry(sf->private,"lenIV","1");		/* It's 4 by default, in CIDs the convention seems to be 1 */
     for ( fvs=sf->fv; fvs!=NULL; fvs=fvs->nextsame ) {
-	free(fvs->selected);
-	fvs->selected = gcalloc(fvs->sf->glyphcnt,sizeof(char));
-	EncMapFree(fvs->map);
+	fvs->selected = calloc(fvs->sf->glyphcnt,sizeof(char));
 	fvs->map = EncMap1to1(fvs->sf->glyphcnt);
 	FVSetTitle(fvs);
     }
@@ -1764,13 +1670,12 @@ void BDFOrigFixup(BDFFont *bdf,int orig_cnt,SplineFont *sf) {
 return;
     }
 
-    glyphs = gcalloc(orig_cnt,sizeof(BDFChar *));
+    glyphs = calloc(orig_cnt,sizeof(BDFChar *));
     for ( i=0; i<bdf->glyphcnt; ++i ) if ( sf->glyphs[i]!=NULL ) {
 	glyphs[sf->glyphs[i]->orig_pos] = bdf->glyphs[i];
 	if ( bdf->glyphs[i]!=NULL )	/* Not all glyphs exist in a piecemeal font */
 	    bdf->glyphs[i]->orig_pos = sf->glyphs[i]->orig_pos;
     }
-    free(bdf->glyphs);
     bdf->glyphs = glyphs;
     bdf->glyphcnt = bdf->glyphmax = orig_cnt;
     bdf->ticked = true;
@@ -1821,9 +1726,8 @@ return(false);			/* Custom, it's whatever's there */
 	    for ( i=0; i<map->enccount; ++i ) if ( map->map[i]!=-1 )
 		map->map[i] = sf->glyphs[map->map[i]]->orig_pos;
 	    if ( enc_cnt>map->backmax ) {
-		free(map->backmap);
 		map->backmax = enc_cnt;
-		map->backmap = galloc(enc_cnt*sizeof(int32));
+		map->backmap = malloc(enc_cnt*sizeof(int32));
 	    }
 	    memset(map->backmap,-1,enc_cnt*sizeof(int32));
 	    for ( i=0; i<map->enccount; ++i ) if ( map->map[i]!=-1 )
@@ -1837,10 +1741,9 @@ return(false);			/* Custom, it's whatever's there */
 	    BDFOrigFixup(bdf,enc_cnt,sf);
 	for ( fvs=sf->fv; fvs!=NULL ; fvs=fvs->nextsame )
 	    FVBiggerGlyphCache(fvs,enc_cnt);
-	glyphs = gcalloc(enc_cnt,sizeof(SplineChar *));
+	glyphs = calloc(enc_cnt,sizeof(SplineChar *));
 	for ( i=0; i<sf->glyphcnt; ++i ) if ( sf->glyphs[i]!=NULL )
 	    glyphs[sf->glyphs[i]->orig_pos] = sf->glyphs[i];
-	free(sf->glyphs);
 	sf->glyphs = glyphs;
 	sf->glyphcnt = sf->glyphmax = enc_cnt;
 return( true );
@@ -1850,7 +1753,7 @@ return( true );
 
     if ( old->enccount<enc_cnt ) {
 	if ( old->encmax<enc_cnt ) {
-	    old->map = grealloc(old->map,enc_cnt*sizeof(int32));
+	    old->map = realloc(old->map,enc_cnt*sizeof(int32));
 	    old->encmax = enc_cnt;
 	}
 	memset(old->map+old->enccount,-1,(enc_cnt-old->enccount)*sizeof(int32));
@@ -1862,7 +1765,6 @@ return( true );
 	int j = old->map[i];
 	SCBuildDummy(&dummy,sf,old,i);
 	sf->glyphs[j]->unicodeenc = dummy.unicodeenc;
-	free(sf->glyphs[j]->name);
 	sf->glyphs[j]->name = copy(dummy.name);
     }
     /* We just changed the unicode values for most glyphs */
@@ -1911,9 +1813,9 @@ return( NULL );
 	base = 256;
     else if ( enc->char_cnt<=0x10000 )
 	base = 0x10000;
-    encoded = galloc(base*sizeof(int32));
+    encoded = malloc(base*sizeof(int32));
     memset(encoded,-1,base*sizeof(int32));
-    unencoded = galloc(sf->glyphcnt*sizeof(int32));
+    unencoded = malloc(sf->glyphcnt*sizeof(int32));
     unmax = sf->glyphcnt;
 
     for ( i=extras=0; i<sf->glyphcnt; ++i ) if ( (sc=sf->glyphs[i])!=NULL ) {
@@ -1929,18 +1831,18 @@ return( NULL );
 	}
 	if ( !found ) {
 	    if ( sc->unicodeenc!=-1 &&
-		     sc->unicodeenc<unicode4_size &&
+                 (unsigned)sc->unicodeenc<unicode4_size &&
 		     (j = EncFromUni(sc->unicodeenc,enc))!= -1 )
 		encoded[j] = i;
 	    else {
 		/* I don't think extras can surpass unmax now, but it doesn't */
 		/*  hurt to leave the code (it's from when we encoded duplicates see below) */
-		if ( extras>=unmax ) unencoded = grealloc(unencoded,(unmax+=300)*sizeof(int32));
+		if ( extras>=unmax ) unencoded = realloc(unencoded,(unmax+=300)*sizeof(int32));
 		unencoded[extras++] = i;
 	    }
 	    for ( altuni=sc->altuni; altuni!=NULL; altuni=altuni->next ) {
 		if ( altuni->unienc!=-1 &&
-			 altuni->unienc<unicode4_size &&
+                     (uint32)altuni->unienc<unicode4_size &&
 			 altuni->vs==-1 &&
 			 altuni->fid==0 &&
 			 (j = EncFromUni(altuni->unienc,enc))!= -1 )
@@ -1974,26 +1876,22 @@ return( NULL );
 	for ( j=0; j<enc->char_cnt; ++j ) {
 	    if ( encoded[j]!=-1 && enc->psnames[j]!=NULL &&
 		    strcmp(sf->glyphs[encoded[j]]->name,enc->psnames[j])!=0 ) {
-		free(sf->glyphs[encoded[j]]->name);
 		sf->glyphs[encoded[j]]->name = copy(enc->psnames[j]);
 	    }
 	}
     }
 
-    map = chunkalloc(sizeof(EncMap));
+    map = XZALLOC(EncMap);
     map->enccount = map->encmax = base + extras;
-    map->map = galloc(map->enccount*sizeof(int32));
+    map->map = malloc(map->enccount*sizeof(int32));
     memcpy(map->map,encoded,base*sizeof(int32));
     memcpy(map->map+base,unencoded,extras*sizeof(int32));
     map->backmax = sf->glyphcnt;
-    map->backmap = galloc(sf->glyphcnt*sizeof(int32));
+    map->backmap = malloc(sf->glyphcnt*sizeof(int32));
     memset(map->backmap,-1,sf->glyphcnt*sizeof(int32));	/* Just in case there are some unencoded glyphs (duplicates perhaps) */
     for ( i = map->enccount-1; i>=0; --i ) if ( map->map[i]!=-1 )
 	map->backmap[map->map[i]] = i;
     map->enc = enc;
-
-    free(encoded);
-    free(unencoded);
 
 return( map );
 }
@@ -2005,11 +1903,10 @@ EncMap *CompactEncMap(EncMap *map, SplineFont *sf) {
     for ( i=inuse=0; i<map->enccount ; ++i )
 	if ( (gid = map->map[i])!=-1 && SCWorthOutputting(sf->glyphs[gid]))
 	    ++inuse;
-    newmap = galloc(inuse*sizeof(int32));
+    newmap = malloc(inuse*sizeof(int32));
     for ( i=inuse=0; i<map->enccount ; ++i )
 	if ( (gid = map->map[i])!=-1 && SCWorthOutputting(sf->glyphs[gid]))
 	    newmap[inuse++] = gid;
-    free(map->map);
     map->map = newmap;
     map->enccount = inuse;
     map->encmax = inuse;
@@ -2035,7 +1932,6 @@ static void BCProtectUndoes( Undoes *undo,BDFChar *bc ) {
 			undo->u.bmpstate.refs = brnext;
 		    else
 			brprev->next = brnext;
-		    free( brhead );
 		} else
 		    brprev = brhead;
 	    }
@@ -2098,7 +1994,6 @@ return;
 		else
 		    kprev->next = kp->next;
 		kp->next = NULL;
-		KernPairsFree(kp);
 	break;
 	    }
 	}
@@ -2121,7 +2016,6 @@ return;
 			BCPasteInto( dbc,bref->bdfc,bref->xoff,bref->yoff,false,false );
 			if ( brprev == NULL ) dbc->refs = brnext;
 			else brprev->next = brnext;
-			free( bref );
 		    } else
 			brprev = bref;
 		}
@@ -2145,7 +2039,6 @@ return;
 		BCRemoveDependent( bfc,bref );
 	    }
 	    bdf->glyphs[sc->orig_pos] = NULL;
-	    BDFCharFree(bfc);
 	}
     }
 
@@ -2157,7 +2050,7 @@ static int MapAddEncodingSlot(EncMap *map,int gid) {
     int enc;
 
     if ( map->enccount>=map->encmax )
-	map->map = grealloc(map->map,(map->encmax+=10)*sizeof(int32));
+	map->map = realloc(map->map,(map->encmax+=10)*sizeof(int32));
     enc = map->enccount++;
     map->map[enc] = gid;
     map->backmap[gid] = enc;
@@ -2170,7 +2063,7 @@ void FVAddEncodingSlot(FontViewBase *fv,int gid) {
 
     enc = MapAddEncodingSlot(map,gid);
 
-    fv->selected = grealloc(fv->selected,map->enccount);
+    fv->selected = realloc(fv->selected,map->enccount);
     fv->selected[enc] = 0;
     FVAdjustScrollBarRows(fv,enc);
 }
@@ -2185,7 +2078,7 @@ static int MapAddEnc(SplineFont *sf,SplineChar *sc,EncMap *basemap, EncMap *map,
     int any = false, enc;
 
     if ( gid>=map->backmax ) {
-	map->backmap = grealloc(map->backmap,(map->backmax+=10)*sizeof(int32));
+	map->backmap = realloc(map->backmap,(map->backmax+=10)*sizeof(int32));
 	memset(map->backmap+map->backmax-10,-1,10*sizeof(int32));
     }
     if ( map->enc->psnames!=NULL ) {
@@ -2230,11 +2123,11 @@ void SFAddGlyphAndEncode(SplineFont *sf,SplineChar *sc,EncMap *basemap, int base
 
     if ( sf->cidmaster==NULL ) {
 	if ( sf->glyphcnt+1>=sf->glyphmax )
-	    sf->glyphs = grealloc(sf->glyphs,(sf->glyphmax+=10)*sizeof(SplineChar *));
+	    sf->glyphs = realloc(sf->glyphs,(sf->glyphmax+=10)*sizeof(SplineChar *));
 	gid = sf->glyphcnt++;
 	for ( bdf = sf->bitmaps; bdf!=NULL; bdf=bdf->next ) {
 	    if ( sf->glyphcnt+1>=bdf->glyphmax )
-		bdf->glyphs = grealloc(bdf->glyphs,(bdf->glyphmax=sf->glyphmax)*sizeof(BDFChar *));
+		bdf->glyphs = realloc(bdf->glyphs,(bdf->glyphmax=sf->glyphmax)*sizeof(BDFChar *));
 	    if ( sf->glyphcnt>bdf->glyphcnt ) {
 		memset(bdf->glyphs+bdf->glyphcnt,0,(sf->glyphcnt-bdf->glyphcnt)*sizeof(BDFChar *));
 		bdf->glyphcnt = sf->glyphcnt;
@@ -2243,19 +2136,19 @@ void SFAddGlyphAndEncode(SplineFont *sf,SplineChar *sc,EncMap *basemap, int base
 	for ( fv=sf->fv; fv!=NULL; fv = fv->nextsame ) {
 	    EncMap *map = fv->map;
 	    if ( gid>=map->backmax )
-		map->backmap = grealloc(map->backmap,(map->backmax=gid+10)*sizeof(int32));
+		map->backmap = realloc(map->backmap,(map->backmax=gid+10)*sizeof(int32));
 	    map->backmap[gid] = -1;
 	}
     } else {
 	gid = baseenc;
 	if ( baseenc+1>=sf->glyphmax )
-	    sf->glyphs = grealloc(sf->glyphs,(sf->glyphmax = baseenc+10)*sizeof(SplineChar *));
+	    sf->glyphs = realloc(sf->glyphs,(sf->glyphmax = baseenc+10)*sizeof(SplineChar *));
 	if ( baseenc>=sf->glyphcnt ) {
 	    memset(sf->glyphs+sf->glyphcnt,0,(baseenc+1-sf->glyphcnt)*sizeof(SplineChar *));
 	    sf->glyphcnt = baseenc+1;
 	    for ( bdf = sf->cidmaster->bitmaps; bdf!=NULL; bdf=bdf->next ) {
 		if ( baseenc+1>=bdf->glyphmax )
-		    bdf->glyphs = grealloc(bdf->glyphs,(bdf->glyphmax=baseenc+10)*sizeof(BDFChar *));
+		    bdf->glyphs = realloc(bdf->glyphs,(bdf->glyphmax=baseenc+10)*sizeof(BDFChar *));
 		if ( baseenc+1>bdf->glyphcnt ) {
 		    memset(bdf->glyphs+bdf->glyphcnt,0,(baseenc+1-bdf->glyphcnt)*sizeof(BDFChar *));
 		    bdf->glyphcnt = baseenc+1;
@@ -2264,7 +2157,7 @@ void SFAddGlyphAndEncode(SplineFont *sf,SplineChar *sc,EncMap *basemap, int base
 	    for ( fv=sf->fv; fv!=NULL; fv = fv->nextsame ) if ( fv->sf==sf ) {
 		EncMap *map = fv->map;
 		if ( gid>=map->backmax )
-		    map->backmap = grealloc(map->backmap,(map->backmax=gid+10)*sizeof(int32));
+		    map->backmap = realloc(map->backmap,(map->backmax=gid+10)*sizeof(int32));
 		map->backmap[gid] = -1;
 	    }
 	}
@@ -2313,7 +2206,7 @@ void SFMatchGlyphs(SplineFont *sf,SplineFont *target,int addempties) {
     for ( i=0; i<sf->glyphcnt; ++i ) if ( sf->glyphs[i]!=NULL )
 	sf->glyphs[i]->ticked = false;
     if (( cnt = target->glyphcnt )<sf->glyphcnt ) cnt = sf->glyphcnt;
-    glyphs = gcalloc(cnt,sizeof(SplineChar *));
+    glyphs = calloc(cnt,sizeof(SplineChar *));
     for ( i=0; i<target->glyphcnt; ++i ) if ( target->glyphs[i]!=NULL ) {
 	SplineChar *sc = SFGetChar(sf,target->glyphs[i]->unicodeenc,target->glyphs[i]->name );
 	if ( sc==NULL && addempties )
@@ -2327,7 +2220,7 @@ void SFMatchGlyphs(SplineFont *sf,SplineFont *target,int addempties) {
 	if ( sf->glyphs[i]!=NULL && !sf->glyphs[i]->ticked )
 	    ++cnt2;
     if ( target->glyphcnt+cnt2>cnt ) {
-	glyphs = grealloc(glyphs,(target->glyphcnt+cnt2)*sizeof(SplineChar *));
+	glyphs = realloc(glyphs,(target->glyphcnt+cnt2)*sizeof(SplineChar *));
 	memset(glyphs+cnt,0,(target->glyphcnt+cnt2-cnt)*sizeof(SplineChar *));
 	cnt = target->glyphcnt+cnt2;
     }
@@ -2335,17 +2228,15 @@ void SFMatchGlyphs(SplineFont *sf,SplineFont *target,int addempties) {
     for ( i=0; i<sf->glyphcnt; ++i )
 	if ( sf->glyphs[i]!=NULL && !sf->glyphs[i]->ticked )
 	    glyphs[j++] = sf->glyphs[i];
-    free(sf->glyphs);
     sf->glyphs = glyphs;
     sf->glyphcnt = sf->glyphmax = cnt;
     for ( i=0; i<sf->glyphcnt; ++i ) if ( sf->glyphs[i]!=NULL )
 	sf->glyphs[i]->orig_pos = i;
     for ( bdf = sf->bitmaps; bdf!=NULL; bdf = bdf->next ) {
 	BDFChar **glyphs;
-	glyphs = gcalloc(sf->glyphcnt,sizeof(BDFChar *));
+	glyphs = calloc(sf->glyphcnt,sizeof(BDFChar *));
 	for ( i=0; i<bdf->glyphcnt; ++i ) if ( bdf->glyphs[i]!=NULL )
 	    glyphs[bdf->glyphs[i]->sc->orig_pos] = bdf->glyphs[i];
-	free(bdf->glyphs);
 	bdf->glyphs = glyphs;
 	bdf->glyphcnt = bdf->glyphmax = sf->glyphcnt;
     }
@@ -2386,7 +2277,7 @@ return;
 		    for ( ++lasthole ; lasthole<base->glyphcnt && base->glyphs[lasthole]!=NULL; ++lasthole );
 		    index = lasthole;
 		    if ( lasthole>=base->glyphmax )
-			base->glyphs = grealloc(base->glyphs,(base->glyphmax+=20)*sizeof(SplineChar *));
+			base->glyphs = realloc(base->glyphs,(base->glyphmax+=20)*sizeof(SplineChar *));
 		    if ( lasthole>=base->glyphcnt )
 			base->glyphcnt = lasthole+1;
 		}
@@ -2540,7 +2431,7 @@ void SFExpandGlyphCount(SplineFont *sf, int newcnt) {
     if ( old>=newcnt )
 return;
     if ( sf->glyphmax<newcnt ) {
-	sf->glyphs = grealloc(sf->glyphs,newcnt*sizeof(SplineChar *));
+	sf->glyphs = realloc(sf->glyphs,newcnt*sizeof(SplineChar *));
 	sf->glyphmax = newcnt;
     }
     memset(sf->glyphs+sf->glyphcnt,0,(newcnt-sf->glyphcnt)*sizeof(SplineChar *));
@@ -2553,7 +2444,7 @@ return;
 	    /* Don't display any of these guys, so not mapped. */
 	    /*  No change to selection, or to map->map, but change to backmap */
 	    if ( newcnt>fv->map->backmax )
-		fv->map->backmap = grealloc(fv->map->backmap,(fv->map->backmax = newcnt+5)*sizeof(int32));
+		fv->map->backmap = realloc(fv->map->backmap,(fv->map->backmax = newcnt+5)*sizeof(int32));
 	    memset(fv->map->backmap+old,-1,(newcnt-old)*sizeof(int32));
 	}
     }

@@ -274,10 +274,10 @@ static struct resource *PSToResources(FILE *res,FILE *pfbfile) {
 
     fstat(fileno(pfbfile),&statb);
     cnt = 3*(statb.st_size+0x800)/(0x800-2)+1;		/* should be (usually) a vast over estimate */
-    resstarts = gcalloc(cnt+1,sizeof(struct resource));
+    resstarts = calloc(cnt+1,sizeof(struct resource));
 
     cnt = 0;
-    forever {
+    for (;;) {
 	if ( getc(pfbfile)!=0x80 ) {
 	    IError("We made a pfb file, but didn't get one. Hunh?" );
 return( NULL );
@@ -355,7 +355,7 @@ return( offset + bdfc->xmax-bdfc->xmin+1 );
 
 static uint32 BDFToNFNT(FILE *res, BDFFont *bdf, EncMap *map) {
     short widths[258], lbearings[258], locs[258]/*, idealwidths[256]*/;
-    uint8 **rows = galloc(bdf->pixelsize*sizeof(uint8 *));
+    uint8 **rows = malloc(bdf->pixelsize*sizeof(uint8 *));
     int i, k, width, kernMax=1, descentMax=bdf->descent-1, rectMax=1, widMax=3;
     uint32 rlenpos = ftell(res), end, owloc, owpos;
     int gid;
@@ -380,7 +380,7 @@ static uint32 BDFToNFNT(FILE *res, BDFFont *bdf, EncMap *map) {
     if ( descentMax>bdf->descent ) descentMax = bdf->descent;
     ++width;			/* For the "undefined character */
     for ( k=0; k<bdf->pixelsize; ++k )
-	rows[k] = gcalloc((width+7)/8 + 4 , sizeof(uint8));
+	rows[k] = calloc((width+7)/8 + 4 , sizeof(uint8));
     for ( i=width=0; i<256 ; ++i ) {
 	locs[i] = width;
 	if ( i>=map->enccount || (gid=map->map[i])==-1 || gid>=bdf->glyphcnt || bdf->glyphs[gid]==NULL ||
@@ -454,10 +454,6 @@ static uint32 BDFToNFNT(FILE *res, BDFFont *bdf, EncMap *map) {
     putshort(res,(owloc-owpos)/2);
     fseek(res,0,SEEK_END);
 
-    for ( k=0; k<bdf->pixelsize; ++k )
-	free(rows[k]);
-    free(rows);
-
 return(rlenpos);
 }
 
@@ -510,7 +506,7 @@ static struct resource *SFToNFNTs(FILE *res, SplineFont *sf, int32 *sizes,
     if ( sf->cidmaster!=NULL ) sf = sf->cidmaster;
 
     for ( i=0; sizes[i]!=0; ++i );
-    resstarts = gcalloc(i+1,sizeof(struct resource));
+    resstarts = calloc(i+1,sizeof(struct resource));
 
     for ( i=0; sizes[i]!=0; ++i ) {
 	if ( (sizes[i]>>16)!=1 )
@@ -539,12 +535,12 @@ static struct resource *SFsToNFNTs(FILE *res, struct sflist *sfs,int baseresid) 
 	if ( sfi->sizes!=NULL ) {
 	    for ( i=0; sfi->sizes[i]!=0; ++i );
 	    cnt += i;
-	    sfi->ids = gcalloc(i+1,sizeof(int));
-	    sfi->bdfs = gcalloc(i+1,sizeof(BDFFont *));
+	    sfi->ids = calloc(i+1,sizeof(int));
+	    sfi->bdfs = calloc(i+1,sizeof(BDFFont *));
 	}
     }
 
-    resstarts = gcalloc(cnt+1,sizeof(struct resource));
+    resstarts = calloc(cnt+1,sizeof(struct resource));
 
     cnt = 0;
     for ( sfi=sfs; sfi!=NULL; sfi=sfi->next ) {
@@ -579,7 +575,7 @@ static struct resource *BuildDummyNFNTlist(FILE *res, SplineFont *sf,
     if ( sf->cidmaster!=NULL ) sf = sf->cidmaster;
 
     for ( i=0; sizes[i]!=0; ++i );
-    resstarts = gcalloc(i+1,sizeof(struct resource));
+    resstarts = calloc(i+1,sizeof(struct resource));
 
     for ( i=0; sizes[i]!=0; ++i ) {
 	if ( (sizes[i]>>16)!=1 )
@@ -609,12 +605,12 @@ static struct resource *BuildDummyNFNTfamilyList(FILE *res, struct sflist *sfs,
 	if ( sfi->sizes!=NULL ) {
 	    for ( i=0; sfi->sizes[i]!=0; ++i );
 	    cnt += i;
-	    sfi->ids = gcalloc(i+1,sizeof(int));
-	    sfi->bdfs = gcalloc(i+1,sizeof(BDFFont *));
+	    sfi->ids = calloc(i+1,sizeof(int));
+	    sfi->bdfs = calloc(i+1,sizeof(BDFFont *));
 	}
     }
 
-    resstarts = gcalloc(cnt+1,sizeof(struct resource));
+    resstarts = calloc(cnt+1,sizeof(struct resource));
 
     cnt = 0;
     for ( sfi=sfs; sfi!=NULL; sfi=sfi->next ) {
@@ -873,18 +869,7 @@ static uint32 SFToFOND(FILE *res,SplineFont *sf,uint32 id,int dottf,
 	fseek(res,geoffset,SEEK_SET);
 	putlong(res,glyphenc-geoffset+2);
 	fseek(res,glyphenc,SEEK_SET);
-#if 1
 	putshort(res,0);
-#else
-	putshort(res,sf->charcnt>256?128:sf->charcnt-128);
-	for ( i=0x80; i<sf->charcnt && i<256; ++i ) {
-	    SplineChar *sc, dummy;
-	    putc(i,res);
-	    sc = SCBuildDummy(&dummy,sf,i);
-	    putc(strlen(sc->name),res);
-	    fwrite(sc->name,1,strlen(sc->name),res);
-	}
-#endif
     }
 
     end = ftell(res);
@@ -945,7 +930,7 @@ static struct sflistlist *FondSplitter(struct sflist *sfs,int *fondcnt) {
 	break;
 	    MacStyleCode(sfi->sf,&psstyle);
 	}
-	cur = gcalloc(1,sizeof(struct sflistlist));
+	cur = calloc(1,sizeof(struct sflistlist));
 	cur->sfs = sfs;
 	last->next = NULL;
 	for ( last=sfi; last!=NULL; last=last->next )
@@ -974,7 +959,7 @@ static struct sflistlist *FondSplitter(struct sflist *sfs,int *fondcnt) {
 		MacStyleCode(sfi->sf,&psstyle);
 	    }
 	}
-	cur = gcalloc(1,sizeof(struct sflistlist));
+	cur = calloc(1,sizeof(struct sflistlist));
 	test = NULL;
 	if ( start->sf->fondname!=NULL ) {
 	    for ( test = sfsl; test!=NULL; test=test->next )
@@ -1000,19 +985,16 @@ return( sfsl );
 static void SFListListFree(struct sflistlist *sfsl) {
     struct sflist *last = NULL;
     struct sflistlist *sfli, *sflnext;
-    /* free the fond list and restore the sfs list */
+    /* restore the sfs list */
 
     for ( sfli=sfsl; sfli!=NULL; sfli = sflnext ) {
 	sflnext = sfli->next;
 	if ( last!=NULL )
 	    last->next = sfli->sfs;
-	for ( last = sfli->sfs; last->next!=NULL; last = last->next );
-	free(sfli->fondname);
-	free(sfli);
     }
 }
 
-static uint32 SFsToFOND(FILE *res,struct sflist *sfs,uint32 id,int format,int bf) {
+static uint32 SFsToFOND(FILE *res,struct sflist *sfs,uint32 id,int format) {
     uint32 rlenpos = ftell(res), widoffpos, widoffloc, kernloc, styleloc, end;
     int i,j,k,cnt, scnt, kcnt, pscnt, strcnt, fontclass, glyphenc, geoffset;
     int gid;
@@ -1464,12 +1446,9 @@ return( true );
     pt = strrchr(dirname,'/');
     if ( pt!=NULL )
 	pt[1] = '\0';
-    else {
-	free(dirname);
+    else
 	dirname = copy(".");
-    }
     ret=FSPathMakeRef( (uint8 *) dirname,&parentref,NULL);
-    free(dirname);
     if ( ret!=noErr )
 return( false );
 
@@ -1478,16 +1457,14 @@ return( false );
     ((FInfo *) (info.finderInfo))->fdCreator = mb->creator;
     pt = strrchr(fname,'/');
     filename = def2u_copy(pt==NULL?fname:pt+1);
-    { UniChar *ucs2fn = galloc((u_strlen(filename)+1) * sizeof(UniChar));
+    { UniChar *ucs2fn = malloc((u_strlen(filename)+1) * sizeof(UniChar));
       int i;
 	for ( i=0; filename[i]!=0; ++i )
 	    ucs2fn[i] = filename[i];
 	ucs2fn[i] = 0;
 	ret = FSCreateFileUnicode(&parentref,u_strlen(filename), ucs2fn,
 		    kFSCatInfoFinderInfo, &info, &ref, NULL);
-	free(ucs2fn);
     }
-    free(filename);
     if ( ret==dupFNErr ) {
     	/* File already exists, create failed, didn't get an FSRef */
 	ret=FSPathMakeRef( (uint8 *) fname,&ref,NULL);
@@ -1503,11 +1480,10 @@ return( false );
     FSSetForkSize(macfile,fsFromStart,0);/* Truncate it just in case it existed... */
     fseek(res,128,SEEK_SET);	/* Everything after the mac binary header in */
 	/* the temp file is resource fork */
-    buf = galloc(8*1024);
+    buf = malloc(8*1024);
     while ( (len=fread(buf,1,8*1024,res))>0 )
 	FSWriteFork(macfile,fsAtMark,0,len,buf,&whocares);
     FSCloseFork(macfile);
-    free(buf);
 return( true );
 #endif
 }
@@ -1612,10 +1588,9 @@ return( 0 );
     resources[0].res = PSToResources(res,temppfb);
     fclose(temppfb);
     DumpResourceMap(res,resources,format);
-    free( resources[0].res );
 
 #if __Mac
-    header.macfilename = galloc(strlen(filename)+strlen(buffer)+1);
+    header.macfilename = malloc(strlen(filename)+strlen(buffer)+1);
     strcpy(header.macfilename,filename);
     pt = strrchr(header.macfilename,'/');
     if ( pt==NULL ) pt=header.macfilename-1;
@@ -1632,9 +1607,6 @@ return( 0 );
     ret = DumpMacBinaryHeader(res,&header);
     if ( ferror(res) ) ret = 0;
     if ( fclose(res)==-1 ) ret = 0;
-#if __Mac
-    free(header.macfilename);
-#endif
 return( ret );
 }
 
@@ -1694,7 +1666,6 @@ return( 0 );
     rlist[1][0].name = sf->fondname ? sf->fondname : sf->familyname;
     fclose(tempttf);
     DumpResourceMap(res,resources,format);
-    free(dummynfnts);
 
     ret = true;
     if ( format==ff_ttfmacbin ) {
@@ -1723,7 +1694,7 @@ int WriteMacBitmaps(char *filename,SplineFont *sf, int32 *sizes, int is_dfont,
 
     /* The filename we've been given is for the outline font, which might or */
     /*  might not be stuffed inside a bin file */
-    binfilename = galloc(strlen(filename)+strlen(".bmap.dfont")+1);
+    binfilename = malloc(strlen(filename)+strlen(".bmap.dfont")+1);
     strcpy(binfilename,filename);
     pt = strrchr(binfilename,'/');
     if ( pt==NULL ) pt = binfilename; else ++pt;
@@ -1742,10 +1713,7 @@ int WriteMacBitmaps(char *filename,SplineFont *sf, int32 *sizes, int is_dfont,
 	res = tmpfile();
     else
 	res = fopen(binfilename,"wb+");
-    if ( res==NULL ) {
-	free(binfilename);
 return( 0 );
-    }
 
     if ( is_dfont )
 	WriteDummyDFontHeaders(res);
@@ -1774,8 +1742,6 @@ return( 0 );
     }
     if ( ferror(res)) ret = false;
     if ( fclose(res)==-1 ) ret = 0;
-    free(resources[0].res);
-    free(binfilename);
 return( ret );
 }
 
@@ -1794,7 +1760,6 @@ int WriteMacFamily(char *filename,struct sflist *sfs,enum fontformat format,
     struct macbinaryheader header;
     struct sflist *sfi, *sfsub;
     char buffer[80];
-    int freefilename = 0;
     char *pt;
     int id, fondcnt;
     struct sflistlist *sfsl, *sfli;
@@ -1806,16 +1771,15 @@ int WriteMacFamily(char *filename,struct sflist *sfs,enum fontformat format,
 #if !__Mac
 	    strcat(buffer,".bin");
 #endif
-	    tempname = galloc(strlen(filename)+strlen(buffer)+1);
+	    tempname = malloc(strlen(filename)+strlen(buffer)+1);
 	    strcpy(tempname,filename);
 	    pt = strrchr(tempname,'/');
 	    if ( pt==NULL ) pt=tempname-1;
 	    strcpy(pt+1,buffer);
 	    if ( strcmp(tempname,filename)==0 ) {
-		char *tf = galloc(strlen(filename)+20);
+		char *tf = malloc(strlen(filename)+20);
 		strcpy(tf,filename);
 		filename = tf;
-		freefilename = true;
 		pt = strrchr(filename,'.');
 		if ( pt==NULL || pt<strrchr(filename,'/'))
 		    pt = filename+strlen(filename)+1;
@@ -1827,7 +1791,6 @@ int WriteMacFamily(char *filename,struct sflist *sfs,enum fontformat format,
 	    }
 	    if ( WriteMacPSFont(tempname,sfi->sf,format,flags,sfi->map,layer)==0 )
 return( 0 );
-	    free(tempname);
 	}
     } else if ( format!=ff_none || bf==bf_sfnt_dfont ) {
 	for ( sfi=sfs; sfi!=NULL; sfi = sfi->next ) {
@@ -1870,7 +1833,7 @@ return( 0 );
 	    format==ff_otfciddfont || (format==ff_none && bf==bf_sfnt_dfont )) {
 	resources[r].tag = CHR('s','f','n','t');
 	for ( sfi=sfs, i=0; sfi!=NULL; sfi=sfi->next, ++i );
-	resources[r].res = gcalloc(i+1,sizeof(struct resource));
+	resources[r].res = calloc(i+1,sizeof(struct resource));
 	for ( sfi=sfs, i=0; sfi!=NULL; sfi=sfi->next, ++i ) {
 	    resources[r].res[i].pos = TTFToResource(res,sfi->tempttf);
 	    resources[r].res[i].id = sfi->id = id+i;
@@ -1889,11 +1852,11 @@ return( 0 );
     }
 
     sfsl = FondSplitter(sfs,&fondcnt);
-    rlist = gcalloc(fondcnt+1,sizeof(struct resource));
+    rlist = calloc(fondcnt+1,sizeof(struct resource));
     resources[r].tag = CHR('F','O','N','D');
     resources[r++].res = rlist;
     for ( i=0, sfli=sfsl; i<fondcnt && sfli!=NULL; ++i, sfli = sfli->next ) {
-	rlist[i].pos = SFsToFOND(res,sfli->sfs,id,format,bf);
+	rlist[i].pos = SFsToFOND(res,sfli->sfs,id,format);
 	rlist[i].flags = 0x00;	/* I've seen FONDs with resource flags 0, 0x20, 0x60 */
 	rlist[i].id = id+i;
 	rlist[i].name = sfli->fondname;
@@ -1901,8 +1864,6 @@ return( 0 );
     DumpResourceMap(res,resources,format!=ff_none?format:
 	    bf==bf_nfntmacbin?ff_ttfmacbin:ff_ttfdfont);
     SFListListFree(sfsl);
-    for ( i=0; i<r; ++i )
-	free(resources[i].res);
 
     ret = true;
     if ( format==ff_ttfmacbin || format==ff_pfbmacbin ||
@@ -1916,31 +1877,13 @@ return( 0 );
     }
     if ( ferror(res) ) ret = false;
     if ( fclose(res)==-1 ) ret = 0;
-    if ( freefilename )
-	free(filename);
-    for ( sfi=sfs; sfi!=NULL; sfi=sfi->next ) {
-	free( sfi->ids );
-	free( sfi->bdfs );
-    }
 return( ret );
-}
-
-void SfListFree(struct sflist *sfs) {
-    struct sflist *sfi;
-
-    while ( sfs!=NULL ) {
-	sfi = sfs->next;
-	free(sfs->sizes);
-	EncMapFree(sfs->map);
-	chunkfree(sfs,sizeof(struct sflist));
-	sfs = sfi;
-    }
 }
 
 /* ******************************** Reading ********************************* */
 
 static SplineFont *SearchPostScriptResources(FILE *f,long rlistpos,int subcnt,long rdata_pos,
-	long name_list, int flags) {
+	int flags) {
     long here = ftell(f);
     long *offsets, lenpos;
     int rname = -1, tmp;
@@ -1958,8 +1901,8 @@ static SplineFont *SearchPostScriptResources(FILE *f,long rlistpos,int subcnt,lo
     SplineFont *sf;
 
     fseek(f,rlistpos,SEEK_SET);
-    rsrcids = gcalloc(subcnt,sizeof(short));
-    offsets = gcalloc(subcnt,sizeof(long));
+    rsrcids = calloc(subcnt,sizeof(short));
+    offsets = calloc(subcnt,sizeof(long));
     for ( i=0; i<subcnt; ++i ) {
 	rsrcids[i] = getushort(f);
 	tmp = (short) getushort(f);
@@ -1974,7 +1917,6 @@ static SplineFont *SearchPostScriptResources(FILE *f,long rlistpos,int subcnt,lo
     if ( pfb==NULL ) {
 	LogError( _("Can't open temporary file for postscript output\n") );
 	fseek(f,here,SEEK_SET );
-	free(offsets);
 return(NULL);
     }
 
@@ -2023,10 +1965,9 @@ return(NULL);
 	    len = rlen;
 	}
 	if ( rlen>max ) {
-	    free(buffer);
 	    max = rlen;
 	    if ( max<0x800 ) max = 0x800;
-	    buffer=galloc(max);
+	    buffer=malloc(max);
 	    if ( buffer==NULL ) {
 		LogError( _("Out of memory\n") );
 		exit( 1 );
@@ -2035,9 +1976,6 @@ return(NULL);
 	fread(buffer,1,rlen,f);
 	fwrite(buffer,1,rlen,pfb);
     }
-    free(buffer);
-    free(offsets);
-	free(rsrcids);
     putc(0x80,pfb);
     putc(3,pfb);
     fseek(pfb,lenpos,SEEK_SET);
@@ -2052,11 +1990,9 @@ return( (SplineFont *) _NamesReadPostScript(pfb) );	/* This closes the font for 
 
     fd = _ReadPSFont(pfb);
     sf = NULL;
-    if ( fd!=NULL ) {
+    if ( fd!=NULL )
 	sf = SplineFontFromPSFont(fd);
-	PSFontFree(fd);
 	/* There is no FOND in a postscript file, so we can't read any kerning*/
-    }
     fclose(pfb);
 return( sf );
 }
@@ -2065,7 +2001,6 @@ static SplineFont *SearchTtfResources(FILE *f,long rlistpos,int subcnt,long rdat
 	long name_list,char *filename,int flags,enum openflags openflags) {
     long here, start = ftell(f);
     long roff;
-    int rname = -1;
     int ch1, ch2;
     int len, i, rlen, ilen;
     /* The sfnt resource is just a copy of the ttf file */
@@ -2080,7 +2015,7 @@ static SplineFont *SearchTtfResources(FILE *f,long rlistpos,int subcnt,long rdat
 
     fseek(f,rlistpos,SEEK_SET);
     if ( subcnt>1 || (flags&ttf_onlynames) ) {
-	names = gcalloc(subcnt+1,sizeof(char *));
+	names = calloc(subcnt+1,sizeof(char *));
 	for ( i=0; i<subcnt; ++i ) {
 	    /* resource id = */ getushort(f);
 	    /* rname = (short) */ getushort(f);
@@ -2123,24 +2058,19 @@ return( (SplineFont *) names );
 		char *fn = copy(filename);
 		fn[lparen-filename] = '\0';
 		ff_post_error(_("Not in Collection"),_("%s is not in %.100s"),find,fn);
-		free(fn);
 	    }
-	    free(find);
 	} else if ( no_windowing_ui )
 	    which = 0;
 	else
 	    which = ff_choose(_("Pick a font, any font..."),(const char **) names,subcnt,0,_("There are multiple fonts in this file, pick one"));
 	if ( lparen==NULL && which!=-1 )
 	    chosenname = copy(names[which]);
-	for ( i=0; i<subcnt; ++i )
-	    free(names[i]);
-	free(names);
 	fseek(f,rlistpos,SEEK_SET);
     }
 
     for ( i=0; i<subcnt; ++i ) {
 	/* resource id = */ getushort(f);
-	rname = (short) getushort(f);
+	/* rname = */ (short) getushort(f);
 	/* flags = */ getc(f);
 	ch1 = getc(f); ch2 = getc(f);
 	roff = rdata_pos+((ch1<<16)|(ch2<<8)|getc(f));
@@ -2160,7 +2090,6 @@ return( (SplineFont *) names );
 	if ( rlen>16*1024 )
 	    ilen = 16*1024;
 	if ( ilen>max ) {
-	    free(buffer);
 	    max = ilen;
 	    if ( max<0x800 ) max = 0x800;
 	    buffer=malloc(max);
@@ -2178,15 +2107,12 @@ return( (SplineFont *) names );
 	sf = _SFReadTTF(ttf,flags,openflags,NULL,NULL);
 	fclose(ttf);
 	if ( sf!=NULL ) {
-	    free(buffer);
 	    fseek(f,start,SEEK_SET);
 	    if ( sf->chosenname==NULL ) sf->chosenname = chosenname;
 return( sf );
 	}
 	fseek(f,here,SEEK_SET);
     }
-    free(chosenname);
-    free(buffer);
     fseek(f,start,SEEK_SET);
 return( NULL );
 }
@@ -2250,26 +2176,6 @@ struct MacFontRec {
    	/*  to each row. Missing characters have same loc as following */
 };
 
-static void FondListFree(FOND *list) {
-    FOND *next;
-    int i;
-
-    while ( list!=NULL ) {
-	next = list->next;
-	free(list->assoc);
-	for ( i=0; i<list->stylewidthcnt; ++i )
-	    free(list->stylewidths[i].widthtab);
-	free(list->stylewidths);
-	for ( i=0; i<list->stylekerncnt; ++i )
-	    free(list->stylekerns[i].kerns);
-	free(list->stylekerns);
-	for ( i=0; i<48; ++i )
-	    free(list->psnames[i]);
-	free(list);
-	list = next;
-    }
-}
-
 /* There's probably only one fond in the file, but there could be more so be */
 /*  prepared... */
 /* I want the fond: */
@@ -2285,7 +2191,7 @@ static FOND *BuildFondList(FILE *f,long rlistpos,int subcnt,long rdata_pos,
     int rname = -1;
     char name[300];
     int ch1, ch2;
-    int i, j, k, cnt, isfixed;
+    int i, j, k, cnt;
     FOND *head=NULL, *cur;
     long widoff, kernoff, styleoff;
 
@@ -2299,7 +2205,7 @@ static FOND *BuildFondList(FILE *f,long rlistpos,int subcnt,long rdata_pos,
 	/* mbz = */ getlong(f);
 	here = ftell(f);
 
-	cur = gcalloc(1,sizeof(FOND));
+	cur = calloc(1,sizeof(FOND));
 	cur->next = head;
 	head = cur;
 
@@ -2313,7 +2219,7 @@ static FOND *BuildFondList(FILE *f,long rlistpos,int subcnt,long rdata_pos,
 
 	offset += 4;
 	fseek(f,offset,SEEK_SET);
-	isfixed = getushort(f)&0x8000?1:0;
+	/* isfixed = */ getushort(f)&0x8000?1:0;
 	/* family id = */ getushort(f);
 	cur->first = getushort(f);
 	cur->last = getushort(f);
@@ -2330,7 +2236,7 @@ static FOND *BuildFondList(FILE *f,long rlistpos,int subcnt,long rdata_pos,
 	/* internal & undefined, for international scripts = */ getlong(f);
 	/* version = */ getushort(f);
 	cur->assoc_cnt = getushort(f)+1;
-	cur->assoc = gcalloc(cur->assoc_cnt,sizeof(struct assoc));
+	cur->assoc = calloc(cur->assoc_cnt,sizeof(struct assoc));
 	for ( j=0; j<cur->assoc_cnt; ++j ) {
 	    cur->assoc[j].size = getushort(f);
 	    cur->assoc[j].style = getushort(f);
@@ -2340,10 +2246,10 @@ static FOND *BuildFondList(FILE *f,long rlistpos,int subcnt,long rdata_pos,
 	    fseek(f,widoff,SEEK_SET);
 	    cnt = getushort(f)+1;
 	    cur->stylewidthcnt = cnt;
-	    cur->stylewidths = gcalloc(cnt,sizeof(struct stylewidths));
+	    cur->stylewidths = calloc(cnt,sizeof(struct stylewidths));
 	    for ( j=0; j<cnt; ++j ) {
 		cur->stylewidths[j].style = getushort(f);
-		cur->stylewidths[j].widthtab = galloc((cur->last-cur->first+3)*sizeof(short));
+		cur->stylewidths[j].widthtab = malloc((cur->last-cur->first+3)*sizeof(short));
 		for ( k=cur->first; k<=cur->last+2; ++k )
 		    cur->stylewidths[j].widthtab[k] = getushort(f);
 	    }
@@ -2352,11 +2258,11 @@ static FOND *BuildFondList(FILE *f,long rlistpos,int subcnt,long rdata_pos,
 	    fseek(f,kernoff,SEEK_SET);
 	    cnt = getushort(f)+1;
 	    cur->stylekerncnt = cnt;
-	    cur->stylekerns = gcalloc(cnt,sizeof(struct stylekerns));
+	    cur->stylekerns = calloc(cnt,sizeof(struct stylekerns));
 	    for ( j=0; j<cnt; ++j ) {
 		cur->stylekerns[j].style = getushort(f);
 		cur->stylekerns[j].kernpairs = getushort(f);
-		cur->stylekerns[j].kerns = galloc(cur->stylekerns[j].kernpairs*sizeof(struct kerns));
+		cur->stylekerns[j].kerns = malloc(cur->stylekerns[j].kernpairs*sizeof(struct kerns));
 		for ( k=0; k<cur->stylekerns[j].kernpairs; ++k ) {
 		    cur->stylekerns[j].kerns[k].ch1 = getc(f);
 		    cur->stylekerns[j].kerns[k].ch2 = getc(f);
@@ -2375,10 +2281,10 @@ static FOND *BuildFondList(FILE *f,long rlistpos,int subcnt,long rdata_pos,
 	    for ( j=0; j<48; ++j )
 		stringoffsets[j] = getc(f);
 	    strcnt = getushort(f);
-	    strings = galloc(strcnt*sizeof(char *));
+	    strings = malloc(strcnt*sizeof(char *));
 	    for ( j=0; j<strcnt; ++j ) {
 		stringlen = getc(f);
-		strings[j] = galloc(stringlen+2);
+		strings[j] = malloc(stringlen+2);
 		strings[j][0] = stringlen;
 		strings[j][stringlen+1] = '\0';
 		for ( k=0; k<stringlen; ++k )
@@ -2395,7 +2301,7 @@ static FOND *BuildFondList(FILE *f,long rlistpos,int subcnt,long rdata_pos,
 		if ( format!=0 )
 		    for ( k=0; k<strings[format][0]; ++k )
 			stringlen += strings[ strings[format][k+1]-1 ][0];
-		pt = cur->psnames[j] = galloc(stringlen+1);
+		pt = cur->psnames[j] = malloc(stringlen+1);
 		strcpy(pt,strings[ 0 ]+1);
 		pt += strings[ 0 ][0];
 		if ( format!=0 )
@@ -2405,9 +2311,6 @@ static FOND *BuildFondList(FILE *f,long rlistpos,int subcnt,long rdata_pos,
 		    }
 		*pt = '\0';
 	    }
-	    for ( j=0; j<strcnt; ++j )
-		free(strings[j]);
-	    free(strings);
 	}
 	fseek(f,here,SEEK_SET);
     }
@@ -2419,7 +2322,7 @@ static BDFChar *NFNTCvtBitmap(struct MacFontRec *font,int index,SplineFont *sf,i
     BDFChar *bdfc;
     int i,j, bits, bite, bit;
 
-    bdfc = chunkalloc(sizeof(BDFChar));
+    bdfc = XZALLOC(BDFChar);
     memset( bdfc,'\0',sizeof( BDFChar ));
     bdfc->xmin = (font->offsetWidths[index]>>8)+font->kernMax;
     bdfc->xmax = bdfc->xmin + font->locs[index+1]-font->locs[index]-1;
@@ -2430,7 +2333,7 @@ static BDFChar *NFNTCvtBitmap(struct MacFontRec *font,int index,SplineFont *sf,i
     bdfc->width = font->offsetWidths[index]&0xff;
     bdfc->vwidth = font->ascent + font->descent;
     bdfc->bytes_per_line = ((bdfc->xmax-bdfc->xmin)>>3) + 1;
-    bdfc->bitmap = gcalloc(bdfc->bytes_per_line*font->fRectHeight,sizeof(uint8));
+    bdfc->bitmap = calloc(bdfc->bytes_per_line*font->fRectHeight,sizeof(uint8));
     bdfc->orig_pos = gid;
     bdfc->sc = sf->glyphs[gid];
 
@@ -2447,7 +2350,7 @@ static BDFChar *NFNTCvtBitmap(struct MacFontRec *font,int index,SplineFont *sf,i
 return( bdfc );
 }
 
-static void LoadNFNT(FILE *f,long offset, SplineFont *sf, int size) {
+static void LoadNFNT(FILE *f,long offset, SplineFont *sf) {
     long here = ftell(f);
     long baseow;
     long ow;
@@ -2478,9 +2381,9 @@ static void LoadNFNT(FILE *f,long offset, SplineFont *sf, int size) {
     font.leading = getushort(f);
     font.rowWords = getushort(f);
     if ( font.rowWords!=0 ) {
-	font.fontImage = gcalloc(font.rowWords*font.fRectHeight,sizeof(short));
-	font.locs = gcalloc(font.lastChar-font.firstChar+3,sizeof(short));
-	font.offsetWidths = gcalloc(font.lastChar-font.firstChar+3,sizeof(short));
+	font.fontImage = calloc(font.rowWords*font.fRectHeight,sizeof(short));
+	font.locs = calloc(font.lastChar-font.firstChar+3,sizeof(short));
+	font.offsetWidths = calloc(font.lastChar-font.firstChar+3,sizeof(short));
 	for ( i=0; i<font.rowWords*font.fRectHeight; ++i )
 	    font.fontImage[i] = getushort(f);
 	for ( i=0; i<font.lastChar-font.firstChar+3; ++i )
@@ -2494,13 +2397,13 @@ static void LoadNFNT(FILE *f,long offset, SplineFont *sf, int size) {
 return;
 
     /* Now convert the FONT record to one of my BDF structs */
-    bdf = gcalloc(1,sizeof(BDFFont));
+    bdf = calloc(1,sizeof(BDFFont));
     bdf->sf = sf;
     bdf->next = sf->bitmaps;
     sf->bitmaps = bdf;
     bdf->glyphcnt = bdf->glyphmax = sf->glyphcnt;
     bdf->pixelsize = font.ascent+font.descent;
-    bdf->glyphs = gcalloc(sf->glyphcnt,sizeof(BDFChar *));
+    bdf->glyphs = calloc(sf->glyphcnt,sizeof(BDFChar *));
     bdf->ascent = font.ascent;
     bdf->descent = font.descent;
     bdf->res = 72;
@@ -2519,10 +2422,6 @@ return;
 	    sf->glyphs[gid]->widthset = true;
 	}
     }
-
-    free(font.fontImage);
-    free(font.locs);
-    free(font.offsetWidths);
 }
 
 static char *BuildName(char *family,int style) {
@@ -2607,9 +2506,9 @@ return( test );
 	    }
 	}
 	if ( names==NULL ) {
-	    names = gcalloc(cnt+1,sizeof(char *));
-	    fonds = galloc(cnt*sizeof(FOND *));
-	    styles = galloc(cnt*sizeof(int));
+	    names = calloc(cnt+1,sizeof(char *));
+	    fonds = malloc(cnt*sizeof(FOND *));
+	    styles = malloc(cnt*sizeof(int));
 	}
     }
 
@@ -2623,9 +2522,7 @@ return( test );
 	    char *fn = copy(filename);
 	    fn[lparen-filename] = '\0';
 	    ff_post_error(_("Not in Collection"),_("%s is not in %.100s"),find,fn);
-	    free(fn);
 	}
-	free(find);
     } else if ( cnt==1 )
 	which = 0;
     else if ( no_windowing_ui )
@@ -2639,9 +2536,6 @@ return( test );
 	*name = copy(names[which]);
 	*style = styles[which];
     }
-    for ( i=0; i<cnt; ++i )
-	free(names[i]);
-    free(names); free(fonds); free(styles);
     if ( which==-1 )
 return( NULL );
 
@@ -2679,16 +2573,15 @@ return( NULL );
     }
 
     sf = SplineFontBlank(257);
-    free(sf->fontname); sf->fontname = name;
-    free(sf->familyname); sf->familyname = copy(fond->fondname);
+    sf->fontname = name;
+    sf->familyname = copy(fond->fondname);
     sf->fondname = copy(fond->fondname);
-    free(sf->fullname); sf->fullname = copy(name);
-    free(sf->origname); sf->origname = NULL;
-    if ( style & sf_bold ) {
-	free(sf->weight); sf->weight = copy("Bold");
-    }
-    free(sf->copyright); sf->copyright = NULL;
-    free(sf->comments); sf->comments = NULL;
+    sf->fullname = copy(name);
+    sf->origname = NULL;
+    if ( style & sf_bold )
+	sf->weight = copy("Bold");
+    sf->copyright = NULL;
+    sf->comments = NULL;
 
     sf->map = EncMapNew(257,257,FindOrMakeEncoding("mac"));
 
@@ -2721,7 +2614,7 @@ return( NULL );
 	    if ( (find_id!=-1 && res_id==find_id) ||
 		    ( fond->assoc[j].style==style && fond->assoc[j].id==res_id &&
 			fond->assoc[j].size!=0 ) )
-		LoadNFNT(f,roff,sf,fond->assoc[j].size);
+		LoadNFNT(f,roff,sf);
     }
     fseek(f,start,SEEK_SET);
 
@@ -2748,7 +2641,6 @@ return( NULL );
     break;
     if ( i==fond->stylekerncnt ) {
 	LogError(_("No kerning table for %s\n"), name );
-	free(name);
 return( NULL );
     }
     for ( j=0; j<fond->stylekerns[i].kernpairs; ++j ) {
@@ -2762,7 +2654,7 @@ return( NULL );
 	break;
 	if ( kp==NULL ) {
 	    uint32 script;
-	    kp = chunkalloc(sizeof(KernPair));
+	    kp = XZALLOC(KernPair);
 	    kp->sc = sc2;
 	    kp->next = sc1->kerns;
 	    sc1->kerns = kp;
@@ -2781,7 +2673,7 @@ return( into );
 static SplineFont *MightBeTrueType(FILE *binary,int32 pos,int32 dlen,int flags,
 	enum openflags openflags) {
     FILE *temp = tmpfile();
-    char *buffer = galloc(8192);
+    char *buffer = malloc(8192);
     int len;
     SplineFont *sf;
 
@@ -2790,7 +2682,7 @@ static SplineFont *MightBeTrueType(FILE *binary,int32 pos,int32 dlen,int flags,
 	char *temp = TTFGetFontName(binary,pos,pos);
 	if ( temp==NULL )
 return( NULL );
-	ret = galloc(2*sizeof(char *));
+	ret = malloc(2*sizeof(char *));
 	ret[0] = temp;
 	ret[1] = NULL;
 return( (SplineFont *) ret );
@@ -2808,7 +2700,6 @@ return( (SplineFont *) ret );
     rewind(temp);
     sf = _SFReadTTF(temp,flags,openflags,NULL,NULL);
     fclose(temp);
-    free(buffer);
 return( sf );
 }
 
@@ -2867,7 +2758,7 @@ return( NULL );
 	rpos = type_list+getushort(f);
 	sf = NULL;
 	if ( tag==CHR('P','O','S','T') && !(flags&(ttf_onlystrikes|ttf_onlykerns)))		/* No FOND */
-	    sf = SearchPostScriptResources(f,rpos,subcnt,rdata_pos,name_list,flags);
+	    sf = SearchPostScriptResources(f,rpos,subcnt,rdata_pos,flags);
 	else if ( tag==CHR('s','f','n','t') && !(flags&ttf_onlykerns))
 	    sf = SearchTtfResources(f,rpos,subcnt,rdata_pos,name_list,filename,flags,openflags);
 	else if ( tag==CHR('N','F','N','T') ) {
@@ -2890,7 +2781,6 @@ return( NULL );
 	if ( fond_subcnt!=0 )
 	    fondlist = BuildFondList(f,fond_pos,fond_subcnt,rdata_pos,name_list,flags);
 	into = FindFamilyStyleKerns(into,map,fondlist,filename);
-	FondListFree(fondlist);
 return( into );
     }
     /* Ok. If no outline font, try for a bitmap */
@@ -2903,7 +2793,6 @@ return( into );
 	    fondlist = BuildFondList(f,fond_pos,fond_subcnt,rdata_pos,name_list,flags);
 	sf = SearchBitmapResources(f,nfnt_pos,nfnt_subcnt,rdata_pos,name_list,
 		filename,fondlist,flags);
-	FondListFree(fondlist);
 	if ( sf!=NULL )
 return( sf );
     }
@@ -2924,7 +2813,7 @@ static SplineFont *HasResourceFork(char *filename,int flags,enum openflags openf
 	tempfn = copy(filename);
 	tempfn[lparen-filename] = '\0';
     }
-    respath = galloc(strlen(tempfn)+strlen("/..namedfork/rsrc")+1);
+    respath = malloc(strlen(tempfn)+strlen("/..namedfork/rsrc")+1);
     strcpy(respath,tempfn);
     strcat(respath,"/..namedfork/rsrc");
     resfork = fopen(respath,"r");
@@ -2933,9 +2822,6 @@ static SplineFont *HasResourceFork(char *filename,int flags,enum openflags openf
 	strcat(respath,"/rsrc");
 	resfork = fopen(respath,"r");
     }
-    free(respath);
-    if ( tempfn!=filename )
-	free(tempfn);
     if ( resfork==NULL )
 return( NULL );
     ret = IsResourceFork(resfork,0,filename,flags,openflags,into,map);
@@ -3091,7 +2977,6 @@ static SplineFont *IsResourceInFile(char *filename,int flags,enum openflags open
 	temp[lparen-filename] = '\0';
     }
     f = fopen(temp,"rb");
-    if ( temp!=filename ) free(temp);
     if ( f==NULL )
 return( NULL );
     spt = strrchr(filename,'/');

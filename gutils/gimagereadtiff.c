@@ -28,12 +28,6 @@
 
 #include <fontforge-config.h>
 
-#ifdef _NO_LIBTIFF
-
-static int a_file_must_define_something=0;	/* ANSI says so */
-
-#else
-
 #include <tiffio.h>
 
 #define int32 _int32
@@ -84,16 +78,12 @@ GImage *GImageReadTiff(char *filename) {
 		*ipt++ =COLOR_CREATE(
 			TIFFGetR(fpt[j]),TIFFGetG(fpt[j]),TIFFGetB(fpt[j]));
 	}
-	free(raster);
 	return( ret );
     }
 
 errorGImageReadTiff:
     fprintf(stderr,"Bad input file \"%s\"\n",filename );
 errorGImageReadTiffMem:
-    free(raster); free(ret);
     TIFFClose(tif);
     return( NULL );
 }
-
-#endif

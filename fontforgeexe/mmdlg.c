@@ -110,7 +110,7 @@ static int ExecConvertDesignVector(real *designs, int dcnt, char *ndv, char *cdv
     }
     setlocale(LC_NUMERIC,oldloc);
 
-    temp = galloc(len+strlen(ndv)+strlen(cdv)+20);
+    temp = malloc(len+strlen(ndv)+strlen(cdv)+20);
     strcpy(temp,dv);
     /*strcpy(temp+len++," ");*/		/* dv always will end in a space */
 
@@ -131,7 +131,6 @@ static int ExecConvertDesignVector(real *designs, int dcnt, char *ndv, char *cdv
     if ( len>0 && temp[len-1]=='}' ) --len;
 
     cnt = EvaluatePS(temp,stack,MmMax);
-    free(temp);
 return( cnt );
 }
 
@@ -262,9 +261,6 @@ return;
 	    }
 	}
     }
-    for ( j=0; j<2*mm->instance_count; ++j )
-	free( deltas[j]);
-    free(deltas);
 }
 
 static void DistortCvt(struct ttf_table *cvt,MMSet *mm,real *blends) {
@@ -283,9 +279,6 @@ return;
 	}
 	memputshort(cvt->data,2*i,memushort(cvt->data,cvt->len,2*i)+rint(diff));
     }
-    for ( j=0; j<mm->instance_count; ++j )
-	free( deltas[j]);
-    free(deltas);
 }
 
 static void MakeAppleBlend(FontView *fv,MMSet *mm,real *blends,real *normalized) {
@@ -306,10 +299,10 @@ static void MakeAppleBlend(FontView *fv,MMSet *mm,real *blends,real *normalized)
     for ( i=0; i<sf->glyphcnt; ++i ) if ( sf->glyphs[i]!=NULL )
 	ttfFixupRef(sf->glyphs,i);
     for ( tab=base->ttf_tables; tab!=NULL; tab=tab->next ) {
-	cur = chunkalloc(sizeof(struct ttf_table));
+	cur = XZALLOC(struct ttf_table);
 	cur->tag = tab->tag;
 	cur->len = tab->len;
-	cur->data = galloc(tab->len);
+	cur->data = malloc(tab->len);
 	memcpy(cur->data,tab->data,tab->len);
 	if ( cur->tag==CHR('c','v','t',' '))
 	    cvt = cur;
@@ -325,11 +318,10 @@ static void MakeAppleBlend(FontView *fv,MMSet *mm,real *blends,real *normalized)
     /* Apple's Skia has 5 kerning classes (one for the base font and one for */
     /*  some of the instances) and the classes have different glyph classes */
     /* I can't make a kern class out of them. I suppose I could generate a bunch */
-    /*  of kern pairs, but ug. */
+    /*  of kern pairs, but ugh. */
     /* Nor is it clear whether the kerning info is a delta or not */
 
     sf->changed = true;
-    EncMapFree(sf->map);
     sf->map = EncMapFromEncoding(sf,fv->b.map->enc);
     FontViewCreate(sf,false);
 }
@@ -349,7 +341,7 @@ struct mmcb {
 #define CID_Knowns		6005
 
 static GTextInfo *MMCB_KnownValues(MMSet *mm) {
-    GTextInfo *ti = gcalloc(mm->named_instance_count+2,sizeof(GTextInfo));
+    GTextInfo *ti = calloc(mm->named_instance_count+2,sizeof(GTextInfo));
     int i;
 
     ti[0].text = uc_copy(" --- ");
@@ -377,7 +369,6 @@ return( true );
 	    sprintf( buffer, "%.4g", (double) mmcb->mm->named_instances[which].coords[i]);
 	    temp = uc_copy(buffer);
 	    GGadgetSetTitle(GWidgetGetControl(mmcb->gw,1000+i),temp);
-	    free(temp);
 	}
     }
 return( true );
@@ -532,11 +523,10 @@ static int GCDFillupMacWeights(GGadgetCreateData *gcd, GTextInfo *label, int k,
 	an = PickNameFromMacName(mm->axismaps[i].axisnames);
 	if ( an==NULL )
 	    an = copy(mm->axes[i]);
-	axisnames[i] = galloc(strlen(axisrange)+3+strlen(an));
+	axisnames[i] = malloc(strlen(axisrange)+3+strlen(an));
 	strcpy(axisnames[i],an);
 	strcat(axisnames[i],axisrange);
 	sprintf(axisval[i],"%.4g", (double) defcoords[i]);
-	free(an);
     }
     for ( ; i<4; ++i ) {
 	axisnames[i] = _(axistablab[i]);
@@ -705,7 +695,6 @@ return;
 	gcd[k].creator = GGroupCreate;
 
 	GGadgetsCreate(gw,gcd);
-	free(utemp);
     } else {
 	pos.width =GDrawPointsToPixels(NULL,GGadgetScale(270));
 	pos.height = GDrawPointsToPixels(NULL,200);
@@ -769,9 +758,6 @@ return;
 	gcd[k++].creator = GGroupCreate;
 
 	GGadgetsCreate(gw,gcd);
-	for ( i=0; i<4; ++i )
-	    free(axisnames[i]);
-	GTextInfoListFree(gcd[k-4].gd.u.list);
 	GWidgetIndicateFocusGadget(gcd[1].ret);
     }
 
@@ -905,7 +891,6 @@ struct esd {
 };
 
 static void ESD_Close(struct esd *esd) {
-    MacNameListFree(NameGadgetsGetNames(esd->gw));
     esd->done = true;
 }
 
@@ -945,19 +930,16 @@ return( true );
 	pt[-1] = ']';
 	*pt = '\0';
 	style = PickNameFromMacName(mn);
-	name = galloc(((pt-buffer) + strlen(style) + 1)*sizeof(unichar_t));
+	name = malloc(((pt-buffer) + strlen(style) + 1)*sizeof(unichar_t));
 	utf82u_strcpy(name,style);
 	uc_strcat(name,buffer);
-	free(style);
 	if ( esd->index==-1 )
 	    GListAppendLine(esd->list,name,false)->userdata = mn;
 	else {
 	    GTextInfo *ti = GGadgetGetListItem(esd->list,esd->index);
-	    MacNameListFree(ti->userdata);
 	    GListChangeLine(esd->list,esd->index,name)->userdata = mn;
 	}
 	esd->done = true;
-	free(name);
     }
 return( true );
 }
@@ -1066,9 +1048,6 @@ static void EditStyleName(MMW *mmw,int index) {
     gcd[k].creator = GGroupCreate;
 
     GGadgetsCreate(gw,gcd);
-
-    for ( i=0; i<4; ++i )
-	free( axisnames[i]);
 
     GDrawSetVisible(gw,true);
 
@@ -1183,19 +1162,10 @@ static void MMW_Close(MMW *mmw) {
     int32 len;
     GTextInfo **ti = GGadgetGetList(list,&len);
 
-    for ( i=0; i<len; ++i )
-	if ( ti[i]->userdata!=NULL )
-	    MacNameListFree(ti[i]->userdata);
-    for ( i=0; i<4; ++i )
-	MacNameListFree(NameGadgetsGetNames(GTabSetGetSubwindow(
-	    GWidgetGetControl(mmw->subwins[mmw_axes],CID_WhichAxis),i)));
     for ( i=0; i<mmw->lcnt; ++i )
 	MMDetachNew(mmw->loaded[i]);
-    free(mmw->loaded);
     for ( i=0; i<4; ++i )
 	mmw->mm->axismaps[i].axisnames = NULL;
-    MMSetFreeContents(mmw->mm);
-    chunkfree(mmw->mm,sizeof(MMSet));
     mmw->done = true;
 }
 
@@ -1273,7 +1243,7 @@ static int ParseList(GWindow gw,int cid, char *str8, int *err, real start,
 	++cnt;
     if ( !isapple || start==end )
 	defdone = true;
-    list = galloc(cnt*sizeof(real));
+    list = malloc(cnt*sizeof(real));
     if ( start==end )
 	cnt = 0;
     else {
@@ -1291,7 +1261,6 @@ static int ParseList(GWindow gw,int cid, char *str8, int *err, real start,
 	list[cnt++] = val;
 	if ( pt==endpt || ( *endpt!='\0' && *endpt!=' ' )) {
 	    GTabSetSetSel(GWidgetGetControl(gw,tabset_cid),aspect);
-	    free(list);
 	    ff_post_error(_("Bad Axis"),_("Bad Number in %s"), str8);
 	    *err = true;
 return( 0 );
@@ -1304,7 +1273,6 @@ return( 0 );
 	if ( list[i-1]>list[i] ) {
 	    GTabSetSetSel(GWidgetGetControl(gw,tabset_cid),aspect);
 	    ff_post_error(_("Bad Axis"),_("The %s list is not ordered"), str8);
-	    free(list);
 	    *err = true;
 return( 0 );
 	}
@@ -1345,9 +1313,8 @@ static char *_ChooseFonts(char *buffer, SplineFont **sfs, real *positions,
     if ( elsepart==NULL )
 return( copy(buffer));
 
-    ret = galloc(strlen(buffer)+strlen(elsepart)+40);
+    ret = malloc(strlen(buffer)+strlen(elsepart)+40);
     sprintf(ret,"dup %g le {%s} {%s} ifelse", (double) positions[i+1], buffer, elsepart );
-    free(elsepart);
 return( ret );
 }
 
@@ -1372,7 +1339,6 @@ return( uc_copy(""));
     }
     temp = _ChooseFonts(buffer,sfs,positions,0,mmw->instance_count);
     ret = uc_copy(temp);
-    free(temp);
 return( ret );
 }
 
@@ -1404,9 +1370,8 @@ static char *_NormalizeAxis(char *buffer, struct axismap *axis, int i) {
     if ( elsepart==NULL )
 return( copy(buffer));
 
-    ret = galloc(strlen(buffer)+strlen(elsepart)+40);
+    ret = malloc(strlen(buffer)+strlen(elsepart)+40);
     sprintf(ret,"dup %g le {%s} {%s} ifelse", (double) axis->designs[i+1], buffer, elsepart );
-    free(elsepart);
 return( ret );
 }
 
@@ -1417,11 +1382,10 @@ static char *NormalizeAxis(char *header,struct axismap *axis) {
     ret = _NormalizeAxis(buffer,axis,0);
     if ( *header ) {
 	char *temp;
-	temp = galloc(strlen(header)+strlen(ret)+2);
+	temp = malloc(strlen(header)+strlen(ret)+2);
 	strcpy(temp,header);
 	strcat(temp,ret);
 	strcat(temp,"\n");
-	free(ret);
 	ret = temp;
     }
 return( ret );
@@ -1451,15 +1415,14 @@ static void AxisDataCopyFree(struct axismap *into,struct axismap *from,int count
     int i;
 
     for ( i=0; i<4; ++i ) {
-	free(into->blends); free(into->designs);
 	into->blends = NULL; into->designs = NULL;
 	into->points = 0;
     }
     for ( i=0; i<count; ++i ) {
 	into[i].points = from[i].points;
-	into[i].blends = galloc(into[i].points*sizeof(real));
+	into[i].blends = malloc(into[i].points*sizeof(real));
 	memcpy(into[i].blends,from[i].blends,into[i].points*sizeof(real));
-	into[i].designs = galloc(into[i].points*sizeof(real));
+	into[i].designs = malloc(into[i].points*sizeof(real));
 	memcpy(into[i].designs,from[i].designs,into[i].points*sizeof(real));
     }
 }
@@ -1494,7 +1457,7 @@ static void MMW_FuncsValid(MMW *mmw) {
 	    pos = 0;
 	    for ( i=0; i<mmw->axis_count; ++i )
 		pos += strlen(lines[i]);
-	    ut = galloc((pos+20)*sizeof(unichar_t));
+	    ut = malloc((pos+20)*sizeof(unichar_t));
 	    uc_strcpy(ut,"{\n" ); pos = 2;
 	    for ( i=0; i<mmw->axis_count; ++i ) {
 		uc_strcpy(ut+pos,lines[i]);
@@ -1504,13 +1467,12 @@ static void MMW_FuncsValid(MMW *mmw) {
 	}
 	GGadgetSetTitle(GWidgetGetControl(mmw->subwins[mmw_funcs],CID_NDV),
 		ut);
-	free(ut);
 	AxisDataCopyFree(mmw->last_axismaps,mmw->mm->axismaps,mmw->axis_count);
 	mmw->last_axis_count = mmw->axis_count;
     }
     if ( mmw->last_instance_count!=mmw->instance_count ) {
 	if ( standard_cdvs[4]==NULL ) {
-	    standard_cdvs[4] = galloc(strlen(cdv_4axis[0])+strlen(cdv_4axis[1])+
+	    standard_cdvs[4] = malloc(strlen(cdv_4axis[0])+strlen(cdv_4axis[1])+
 		    strlen(cdv_4axis[2])+2);
 	    strcpy(standard_cdvs[4],cdv_4axis[0]);
 	    strcat(standard_cdvs[4],cdv_4axis[1]);
@@ -1532,7 +1494,6 @@ static void MMW_FuncsValid(MMW *mmw) {
 	}
 	GGadgetSetTitle(GWidgetGetControl(mmw->subwins[mmw_funcs],CID_CDV),
 		ut);
-	free(ut);
     }
     mmw->last_instance_count = mmw->instance_count;
 }
@@ -1544,7 +1505,7 @@ static void MMW_WeightsValid(MMW *mmw) {
     real axiscoords[4], weights[2*MmMax];
 
     if ( mmw->lastw_instance_count!=mmw->instance_count ) {
-	temp = galloc(mmw->instance_count*20+1);
+	temp = malloc(mmw->instance_count*20+1);
 	pos = 0;
 	if ( mmw->old!=NULL && mmw->instance_count==mmw->old->instance_count ) {
 	    for ( i=0; i<mmw->instance_count; ++i ) {
@@ -1590,10 +1551,8 @@ static void MMW_WeightsValid(MMW *mmw) {
 	ut = uc_copy(temp);
 	GGadgetSetTitle(GWidgetGetControl(mmw->subwins[mmw_others],CID_NewBlends),
 		ut);
-	free(temp); free(ut);
 
 	GGadgetSetTitle(GWidgetGetControl(mmw->subwins[mmw_others],CID_NewDesign),utc);
-	free(utc);
 	mmw->lastw_instance_count = mmw->instance_count;
     }
 }
@@ -1608,7 +1567,7 @@ static GTextInfo *NamedDesigns(MMW *mmw) {
 return( NULL );
 
     cnt = mmw->old->named_instance_count;
-    ti = gcalloc((cnt+1),sizeof(GTextInfo));
+    ti = calloc((cnt+1),sizeof(GTextInfo));
     for ( i=0; i<mmw->old->named_instance_count; ++i ) {
 	pt = buffer; *pt++='[';
 	for ( j=0; j<mmw->old->axis_count; ++j ) {
@@ -1618,19 +1577,18 @@ return( NULL );
 	pt[-1] = ']';
 	ustyle = PickNameFromMacName(mmw->old->named_instances[i].names);
 	ti[i].bg = ti[i].fg = COLOR_DEFAULT;
-	ti[i].text = galloc((strlen(buffer)+3+strlen(ustyle))*sizeof(unichar_t));
+	ti[i].text = malloc((strlen(buffer)+3+strlen(ustyle))*sizeof(unichar_t));
 	utf82u_strcpy(ti[i].text,ustyle);
 	uc_strcat(ti[i].text," ");
 	uc_strcat(ti[i].text,buffer);
 	ti[i].userdata = MacNameCopy(mmw->old->named_instances[i].names);
-	free(ustyle);
     }
 
 return(ti);
 }
 
 static GTextInfo *TiFromFont(SplineFont *sf) {
-    GTextInfo *ti = gcalloc(1,sizeof(GTextInfo));
+    GTextInfo *ti = calloc(1,sizeof(GTextInfo));
     ti->text = uc_copy(sf->fontname);
     ti->fg = ti->bg = COLOR_DEFAULT;
     ti->userdata = sf;
@@ -1657,7 +1615,7 @@ static GTextInfo **FontList(MMW *mmw, int instance, int *sel) {
     ++cnt;	/* New */
     ++cnt;	/* Browse... */
 
-    ti = galloc((cnt+1)*sizeof(GTextInfo *));
+    ti = malloc((cnt+1)*sizeof(GTextInfo *));
     pos = -1;
     cnt = 0;
     if ( mmw->old!=NULL ) {
@@ -1681,16 +1639,16 @@ static GTextInfo **FontList(MMW *mmw, int instance, int *sel) {
 	ti[cnt++] = TiFromFont( mmw->loaded[i]);
     }
     if ( pos==-1 ) pos=cnt;
-    ti[cnt] = gcalloc(1,sizeof(GTextInfo));
+    ti[cnt] = calloc(1,sizeof(GTextInfo));
     ti[cnt]->text = utf82u_copy(S_("Font|New"));
     ti[cnt]->bg = ti[cnt]->fg = COLOR_DEFAULT;
     ++cnt;
-    ti[cnt] = gcalloc(1,sizeof(GTextInfo));
+    ti[cnt] = calloc(1,sizeof(GTextInfo));
     ti[cnt]->text = utf82u_copy(_("Browse..."));
     ti[cnt]->bg = ti[cnt]->fg = COLOR_DEFAULT;
     ti[cnt]->userdata = (void *) (-1);
     ++cnt;
-    ti[cnt] = gcalloc(1,sizeof(GTextInfo));
+    ti[cnt] = calloc(1,sizeof(GTextInfo));
 
     ti[pos]->selected = true;
     *sel = pos;
@@ -1729,9 +1687,9 @@ static void MMW_ParseNamedStyles(MMSet *setto,MMW *mmw) {
 
     setto->named_instance_count = len;
     if ( len!=0 ) {
-	setto->named_instances = gcalloc(len,sizeof(struct named_instance));
+	setto->named_instances = calloc(len,sizeof(struct named_instance));
 	for ( i=0; i<len; ++i ) {
-	    setto->named_instances[i].coords = gcalloc(setto->axis_count,sizeof(real));
+	    setto->named_instances[i].coords = calloc(setto->axis_count,sizeof(real));
 	    upt = u_strchr(ti[i]->text,'[');
 	    if ( upt!=NULL ) {
 		for ( j=0, ++upt; j<setto->axis_count; ++j ) {
@@ -1771,7 +1729,6 @@ return;
     familyname = cu_copy(_GGadgetGetTitle(GWidgetGetControl(mmw->subwins[mmw_counts],CID_FamilyName)));
     /* They only need specify a family name if there are new fonts */
     if ( *familyname=='\0' ) {
-	free(familyname);
 	for ( i=0; i<mmw->instance_count; ++i )
 	    if ( mmw->mm->instances[i]==NULL )
 	break;
@@ -1845,11 +1802,10 @@ continue;
 
     dlgmm = mmw->mm;
     setto = mmw->old;
-    if ( setto!=NULL ) {
-	MMSetFreeContents(setto);
+    if ( setto!=NULL )
 	memset(setto,0,sizeof(MMSet));
-    } else
-	setto = chunkalloc(sizeof(MMSet));
+    else
+	setto = XZALLOC(MMSet);
     setto->apple = isapple;
     setto->axis_count = mmw->axis_count;
     setto->instance_count = mmw->instance_count;
@@ -1872,18 +1828,16 @@ continue;
     for ( i=0; i<setto->axis_count; ++i )
 	setto->axes[i] = dlgmm->axes[i];
     setto->axismaps = dlgmm->axismaps;
-    setto->defweights = gcalloc(setto->instance_count,sizeof(real));
+    setto->defweights = calloc(setto->instance_count,sizeof(real));
     if ( !isapple )
 	memcpy(setto->defweights,weights,setto->instance_count*sizeof(real));
-    free(dlgmm->defweights);
-    setto->positions = galloc(setto->instance_count*setto->axis_count*sizeof(real));
+    setto->positions = malloc(setto->instance_count*setto->axis_count*sizeof(real));
     for ( i=0; i<setto->instance_count; ++i ) {
 	int k = i<defpos ? i : i+1;
 	memcpy(setto->positions+i*setto->axis_count,dlgmm->positions+k*dlgmm->axis_count,
 		setto->axis_count*sizeof(real));
     }
-    free(dlgmm->positions);
-    setto->instances = gcalloc(setto->instance_count,sizeof(SplineFont *));
+    setto->instances = calloc(setto->instance_count,sizeof(SplineFont *));
     for ( i=0; i<setto->instance_count; ++i ) {
 	if ( dlgmm->instances[i]!=NULL ) {
 	    int k = i<defpos ? i : i+1;
@@ -1901,7 +1855,7 @@ continue;
 	    char buffer[20];
 	    sprintf(buffer,"%g", (double) fbt );
 	    if ( oldprivate==NULL )
-		setto->normal->private = gcalloc(1,sizeof(struct psdict));
+		setto->normal->private = calloc(1,sizeof(struct psdict));
 	    PSDictChangeEntry(setto->normal->private,"ForceBoldThreshold",buffer);
 	}
     }
@@ -1915,20 +1869,13 @@ continue;
 	    setto->instances[i] = MMNewFont(setto,i,familyname);
 	setto->instances[i]->fv = (FontViewBase *) fv;
     }
-    free(dlgmm->instances);
-    chunkfree(dlgmm,sizeof(MMSet));
     if ( origname!=NULL ) {
-	for ( i=0; i<setto->instance_count; ++i ) {
-	    free(setto->instances[i]->origname);
+	for ( i=0; i<setto->instance_count; ++i )
 	    setto->instances[i]->origname = copy(origname);
-	}
-	free(setto->normal->origname);
 	setto->normal->origname = origname;
     } else {
-	for ( i=0; i<setto->instance_count; ++i ) {
-	    free(setto->instances[i]->origname);
+	for ( i=0; i<setto->instance_count; ++i )
 	    setto->instances[i]->origname = copy(setto->normal->origname);
-	}
     }
     if ( !isapple )
 	MMReblend((FontViewBase *) fv,setto);
@@ -1944,24 +1891,16 @@ continue;
 	    bdf = SplineFontPieceMeal(fv->b.sf,ly_fore,sf->display_size<0?-sf->display_size:default_fv_font_size,72,
 		    (fv->antialias?pf_antialias:0)|(fv->bbsized?pf_bbsized:0),
 		    NULL);
-	    BDFFontFree(fv->filled);
 	    fv->filled = bdf;
 	    if ( same )
 		fv->show = bdf;
 	}
     }
-    free(familyname);
 
     /* Multi-Mastered bitmaps don't make much sense */
     /* Well, maybe grey-scaled could be interpolated, but yuck */
-    for ( i=0; i<setto->instance_count; ++i ) {
-	BDFFont *bdf, *bnext;
-	for ( bdf = setto->instances[i]->bitmaps; bdf!=NULL; bdf = bnext ) {
-	    bnext = bdf->next;
-	    BDFFontFree(bdf);
-	}
+    for ( i=0; i<setto->instance_count; ++i )
 	setto->instances[i]->bitmaps = NULL;
-    }
 
     if ( fv==NULL )
 	fv = (FontView *) FontViewCreate(setto->normal,false);
@@ -2028,7 +1967,6 @@ return;
 	}
     } else if ( mmw->state==mmw_axes ) {
 	for ( i=0; i<mmw->axis_count; ++i ) {
-	    free(mmw->mm->axes[i]);
 	    mmw->mm->axes[i] = cu_copy(_GGadgetGetTitle(GWidgetGetControl(mmw->subwins[mmw_axes],CID_AxisType+i*100)));
 	    if ( *mmw->mm->axes[i]=='\0' ) {
 		GTabSetSetSel(GWidgetGetControl(mmw->subwins[mmw_axes],CID_WhichAxis),
@@ -2036,11 +1974,6 @@ return;
 		ff_post_error(_("Bad Axis"),_("Please set the Axis Type field"));
 return;		/* Failure */
 	    }
-	    /* Don't free the current value. If it is non-null then it just */
-	    /*  points into the data structure that the Names gadgets manipulate */
-	    /*  and they will have done any freeing that needs doing. Freeing */
-	    /*  it here would destroy the data they work on */
-	    /*MacNameListFree(mmw->mm->axismaps[i].axisnames);*/
 	    mmw->mm->axismaps[i].axisnames = NULL;
 	    if ( isapple ) {
 		mmw->mm->axismaps[i].axisnames = NameGadgetsGetNames(GTabSetGetSubwindow(
@@ -2080,11 +2013,9 @@ return;		/* Failure */
 			i);
 		if ( !err )
 		    ff_post_error(_("Bad Axis"),_("The number of entries in the design settings must match the number in normalized settings"));
-		free(designs); free(norm);
 return;		/* Failure */
 	    }
 	    mmw->mm->axismaps[i].points = n;
-	    free(mmw->mm->axismaps[i].blends); free(mmw->mm->axismaps[i].designs);
 	    mmw->mm->axismaps[i].blends = norm; mmw->mm->axismaps[i].designs=designs;
 	    mmw->mm->axismaps[i].min = start;
 	    mmw->mm->axismaps[i].def = def;
@@ -2138,7 +2069,6 @@ return;
 		    GTabSetSetSel(GWidgetGetControl(mmw->subwins[mmw_designs],CID_WhichDesign),i);
 		    ff_post_error(_("Bad Multiple Master Font"),_("The set of positions, %.30s, is used more than once"),
 			    temp = GGadgetGetTitle8(GWidgetGetControl(mmw->subwins[mmw_designs],CID_AxisWeights+i*DesignScaleFactor)));
-		    free(temp);
 return;
 		}
 	    }
@@ -2192,7 +2122,6 @@ return;
 	    ff_post_error(_("Bad PostScript function"),_("Bad PostScript function"));
 return;
 	}
-	free(mmw->mm->ndv); free(mmw->mm->cdv);
 	mmw->mm->ndv = cu_copy( _GGadgetGetTitle(GWidgetGetControl(mmw->subwins[mmw_funcs],CID_NDV)));
 	mmw->mm->cdv = cu_copy( _GGadgetGetTitle(GWidgetGetControl(mmw->subwins[mmw_funcs],CID_CDV)));
     }
@@ -2269,12 +2198,9 @@ static int MMW_NamedDelete(GGadget *g, GEvent *e) {
 	GGadget *list = GWidgetGetControl(gw,CID_NamedDesigns);
 	int32 i,len;
 	GTextInfo **ti = GGadgetGetList(list,&len);
-	for ( i=0; i<len; ++i ) {
-	    if ( ti[i]->selected ) {
-		MacNameListFree(ti[i]->userdata);
+	for ( i=0; i<len; ++i )
+	    if ( ti[i]->selected )
 		ti[i]->userdata = NULL;
-	    }
-	}
 	GListDelSelected(list);
 	GGadgetSetEnabled(GWidgetGetControl(gw,CID_NamedDelete),false);
 	GGadgetSetEnabled(GWidgetGetControl(gw,CID_NamedEdit),false);
@@ -2336,15 +2262,12 @@ static int MMW_CheckOptical(GGadget *g, GEvent *e) {
 	ut = uc_copy(top);
 	GGadgetSetTitle(GWidgetGetControl(GGadgetGetWindow(g),
 		GGadgetGetCid(g)-CID_AxisType + CID_AxisEnd), ut);
-	free(ut);
 	ut = uc_copy(bottom);
 	GGadgetSetTitle(GWidgetGetControl(GGadgetGetWindow(g),
 		GGadgetGetCid(g)-CID_AxisType + CID_AxisBegin), ut);
-	free(ut);
 	ut = uc_copy(def);
 	GGadgetSetTitle(GWidgetGetControl(GGadgetGetWindow(g),
 		GGadgetGetCid(g)-CID_AxisType + CID_AxisDefault), ut);
-	free(ut);
     }
 return( true );
 }
@@ -2375,12 +2298,8 @@ return(true);
 return(true);
 	    }
 	    if ( sf->fv==NULL ) {
-		if ( mmw->lcnt>=mmw->lmax ) {
-		    if ( mmw->lmax==0 )
-			mmw->loaded = galloc((mmw->lmax=10)*sizeof(SplineFont *));
-		    else
-			mmw->loaded = grealloc(mmw->loaded,(mmw->lmax+=10)*sizeof(SplineFont *));
-		}
+		if ( mmw->lcnt>=mmw->lmax )
+                    mmw->loaded = realloc(mmw->loaded,(mmw->lmax+=10)*sizeof(SplineFont *));
 		mmw->loaded[mmw->lcnt++] = sf;
 		for ( i=0; i<mmw->instance_count; ++i ) {
 		    GGadget *list = GWidgetGetControl(mmw->subwins[mmw_designs],CID_DesignFonts+i*DesignScaleFactor);
@@ -2392,7 +2311,6 @@ return(true);
 		}
 	    }
 	    GGadgetSetTitle(g,ut = uc_copy(sf->fontname));
-	    free(ut);
 	}
     }
 return( true );
@@ -2446,27 +2364,27 @@ static MMSet *MMCopy(MMSet *orig) {
     /*  retain the proper counts in the mmw structure. This means we don't */
     /*  lose data when they shrink and then restore a value */
 
-    mm = chunkalloc(sizeof(MMSet));
+    mm = XZALLOC(MMSet);
     mm->apple = orig->apple;
     mm->instance_count = AppleMmMax+1;
     mm->axis_count = 4;
     for ( i=0; i<orig->axis_count; ++i )
 	mm->axes[i] = copy(orig->axes[i]);
-    mm->instances = gcalloc(AppleMmMax+1,sizeof(SplineFont *));
+    mm->instances = calloc(AppleMmMax+1,sizeof(SplineFont *));
     memcpy(mm->instances,orig->instances,orig->instance_count*sizeof(SplineFont *));
     if ( mm->apple )
 	mm->instances[orig->instance_count] = orig->normal;
-    mm->positions = gcalloc((AppleMmMax+1)*4,sizeof(real));
+    mm->positions = calloc((AppleMmMax+1)*4,sizeof(real));
     for ( i=0; i<orig->instance_count; ++i )
 	memcpy(mm->positions+i*4,orig->positions+i*orig->axis_count,orig->axis_count*sizeof(real));
-    mm->defweights = gcalloc(AppleMmMax+1,sizeof(real));
+    mm->defweights = calloc(AppleMmMax+1,sizeof(real));
     memcpy(mm->defweights,orig->defweights,orig->instance_count*sizeof(real));
-    mm->axismaps = gcalloc(4,sizeof(struct axismap));
+    mm->axismaps = calloc(4,sizeof(struct axismap));
     for ( i=0; i<orig->axis_count; ++i ) {
 	mm->axismaps[i].points = orig->axismaps[i].points;
-	mm->axismaps[i].blends = galloc(mm->axismaps[i].points*sizeof(real));
+	mm->axismaps[i].blends = malloc(mm->axismaps[i].points*sizeof(real));
 	memcpy(mm->axismaps[i].blends,orig->axismaps[i].blends,mm->axismaps[i].points*sizeof(real));
-	mm->axismaps[i].designs = galloc(mm->axismaps[i].points*sizeof(real));
+	mm->axismaps[i].designs = malloc(mm->axismaps[i].points*sizeof(real));
 	memcpy(mm->axismaps[i].designs,orig->axismaps[i].designs,mm->axismaps[i].points*sizeof(real));
 	mm->axismaps[i].min = orig->axismaps[i].min;
 	mm->axismaps[i].max = orig->axismaps[i].max;
@@ -2510,14 +2428,14 @@ void MMWizard(MMSet *mm) {
 	if ( mm->apple )
 	    ++mmw.instance_count;		/* Normal (default) design is a master in the mac format */
     } else {
-	mmw.mm = chunkalloc(sizeof(MMSet));
+	mmw.mm = XZALLOC(MMSet);
 	mmw.axis_count = 1;
 	mmw.instance_count = 2;
 	mmw.mm->axis_count = 4; mmw.mm->instance_count = AppleMmMax+1;
-	mmw.mm->instances = gcalloc(AppleMmMax+1,sizeof(SplineFont *));
-	mmw.mm->positions = gcalloc((AppleMmMax+1)*4,sizeof(real));
-	mmw.mm->defweights = gcalloc(AppleMmMax+1,sizeof(real));
-	mmw.mm->axismaps = gcalloc(4,sizeof(struct axismap));
+	mmw.mm->instances = calloc(AppleMmMax+1,sizeof(SplineFont *));
+	mmw.mm->positions = calloc((AppleMmMax+1)*4,sizeof(real));
+	mmw.mm->defweights = calloc(AppleMmMax+1,sizeof(real));
+	mmw.mm->axismaps = calloc(4,sizeof(struct axismap));
 	mmw.isnew = true;
     }
 
@@ -2689,7 +2607,6 @@ void MMWizard(MMSet *mm) {
 
     GGadgetsCreate(mmw.subwins[mmw_counts],cntgcd);
     SetMasterToAxis(&mmw,true);
-    free(freeme);
 
     memset(&axisgcd,0,sizeof(axisgcd));
     memset(&axislabel,0,sizeof(axislabel));
@@ -2815,8 +2732,8 @@ void MMWizard(MMSet *mm) {
 		    len2 += strlen(buffer);
 		}
 		if ( l==0 ) {
-		    normalized[i] = galloc(len2+2);
-		    designs[i] = galloc(len1+2);
+		    normalized[i] = malloc(len2+2);
+		    designs[i] = malloc(len1+2);
 		} else {
 		    normalized[i][len2-1] = '\0';
 		    designs[i][len1-1] = '\0';
@@ -2876,11 +2793,6 @@ void MMWizard(MMSet *mm) {
     agcd[0].creator = GTabSetCreate;
 
     GGadgetsCreate(mmw.subwins[mmw_axes],agcd);
-    for ( i=0; i<4; ++i ) {
-	free(axislabel[i][1].text);
-	free(normalized[i]);
-	free(designs[i]);
-    }
 
     memset(&designgcd,0,sizeof(designgcd));
     memset(&designlabel,0,sizeof(designlabel));
@@ -2992,8 +2904,6 @@ void MMWizard(MMSet *mm) {
     ngcd[4].creator = GButtonCreate;
 
     GGadgetsCreate(mmw.subwins[mmw_named],ngcd);
-    if ( ngcd[1].gd.u.list!=NULL )
-	GTextInfoListFree(ngcd[1].gd.u.list);
 
     memset(&ogcd,0,sizeof(ogcd));
     memset(&olabels,0,sizeof(olabels));

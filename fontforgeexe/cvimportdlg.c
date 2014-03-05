@@ -56,11 +56,10 @@ static void ImportPlate(CharView *cv,char *path) {
 
     if ( plate==NULL )
 return;
-    SCImportPlateFile(cv->b.sc,CVLayer((CharViewBase *) cv),plate,false,-1);
+    SCImportPlateFile(cv->b.sc,CVLayer((CharViewBase *) cv),plate,false);
     fclose(plate);
 }
 
-#ifndef _NO_LIBXML
 static void ImportSVG(CharView *cv,char *path) {
     SCImportSVG(cv->b.sc,CVLayer((CharViewBase *) cv),path,NULL,0,false);
 }
@@ -68,7 +67,6 @@ static void ImportSVG(CharView *cv,char *path) {
 static void ImportGlif(CharView *cv,char *path) {
     SCImportGlif(cv->b.sc,CVLayer((CharViewBase *) cv),path,NULL,0,false);
 }
-#endif
 
 static void ImportFig(CharView *cv,char *path) {
     SCImportFig(cv->b.sc,CVLayer((CharViewBase *) cv),path,false);
@@ -109,7 +107,6 @@ return(false);
     base = image->list_len==0?image->u.image:image->u.images[0];
     BCPreserveState(bc);
     BCFlattenFloat(bc);
-    free(bc->bitmap);
     bc->xmin = bc->ymin = 0;
     bc->xmax = base->width-1; bc->ymax = base->height-1;
     if ( !bc->byte_data && base->image_type==it_mono ) {
@@ -124,14 +121,14 @@ return(false);
     } else if ( base->image_type==it_mono /* && byte_data */) {
 	int set = (1<<BDFDepth(bv->bdf))-1;
 	bc->bytes_per_line = base->width;
-	bc->bitmap = gcalloc(base->height,base->width);
+	bc->bitmap = calloc(base->height,base->width);
 	for ( i=0; i<base->height; ++i ) for ( j=0; j<base->width; ++j ) {
 	    if ( !(base->data[i*base->bytes_per_line+(j>>3)]&(0x80>>(j&7))) )
 		bc->bitmap[i*bc->bytes_per_line+j] = set;
 	}
     } else if ( !bc->byte_data && base->image_type==it_true ) {
 	bc->bytes_per_line = (base->width>>3)+1;
-	bc->bitmap = gcalloc(base->height,bc->bytes_per_line);
+	bc->bitmap = calloc(base->height,bc->bytes_per_line);
 	for ( i=0; i<base->height; ++i ) for ( j=0; j<base->width; ++j ) {
 	    int col = ((Color *) (base->data+i*base->bytes_per_line))[j];
 	    col = (3*COLOR_RED(col)+6*COLOR_GREEN(col)+COLOR_BLUE(col));
@@ -141,7 +138,7 @@ return(false);
     } else if ( /* byte_data && */ base->image_type==it_true ) {
 	int div = 255/((1<<BDFDepth(bv->bdf))-1);
 	bc->bytes_per_line = base->width;
-	bc->bitmap = gcalloc(base->height,base->width);
+	bc->bitmap = calloc(base->height,base->width);
 	for ( i=0; i<base->height; ++i ) for ( j=0; j<base->width; ++j ) {
 	    int col = ((Color *) (base->data+i*base->bytes_per_line))[j];
 	    col = 255-(3*COLOR_RED(col)+6*COLOR_GREEN(col)+COLOR_BLUE(col)+5)/10;
@@ -159,7 +156,7 @@ return(false);
 	base->data = NULL;
     } else /* if ( mono && indexed ) */ {
 	bc->bytes_per_line = (base->width>>3)+1;
-	bc->bitmap = gcalloc(base->height,bc->bytes_per_line);
+	bc->bitmap = calloc(base->height,bc->bytes_per_line);
 	for ( i=0; i<base->height; ++i ) for ( j=0; j<base->width; ++j ) {
 	    int col = base->clut->clut[base->data[i*base->bytes_per_line+j]];
 	    col = (3*COLOR_RED(col)+6*COLOR_GREEN(col)+COLOR_BLUE(col));
@@ -167,7 +164,6 @@ return(false);
 		bc->bitmap[i*bc->bytes_per_line+(j>>3)] |= (0x80>>(j&7));
 	}
     }
-    GImageDestroy(image);
     if ( bc->sc!=NULL )
 	bc->sc->widthset = true;
     BCCharChangedUpdate(bc);
@@ -176,32 +172,18 @@ return( true );
 
 
 static unichar_t wildimg[] = { '*', '.', '{',
-#ifndef _NO_LIBUNGIF
 'g','i','f',',',
-#endif
-#ifndef _NO_LIBPNG
 'p','n','g',',',
-#endif
-#ifndef _NO_LIBTIFF
 't','i','f','f',',',
 't','i','f',',',
-#endif
-#ifndef _NO_LIBJPEG
 'j','p','e','g',',',
 'j','p','g',',',
-#endif
 'x','p','m',',', 'x','b','m',',', 'b','m','p', '}', '\0' };
 static unichar_t wildtemplate[] = { '{','u','n','i',',','u',',','c','i','d',',','e','n','c','}','[','0','-','9','a','-','f','A','-','F',']','*', '.', '{',
-#ifndef _NO_LIBUNGIF
 'g','i','f',',',
-#endif
-#ifndef _NO_LIBPNG
 'p','n','g',',',
-#endif
-#ifndef _NO_LIBTIFF
 't','i','f','f',',',
 't','i','f',',',
-#endif
 'x','p','m',',', 'x','b','m',',', 'b','m','p', '}', '\0' };
 /* Hmm. Mac seems to use the extension 'art' for eps files sometimes */
 static unichar_t wildepstemplate[] = { '{','u','n','i',',','u',',','c','i','d',',','e','n','c','}','[','0','-','9','a','-','f','A','-','F',']','*', '.', '{', 'p','s',',', 'e','p','s',',','a','r','t','}',  0 };
@@ -223,10 +205,8 @@ static unichar_t wildmac[] = { '*', '{', 'b', 'i', 'n', ',', 'h', 'q', 'x', ',',
 static unichar_t wildwin[] = { '*', '{', 'f', 'o', 'n', ',', 'f', 'n', 't', '}',  '\0' };
 static unichar_t wildpalm[] = { '*', 'p', 'd', 'b',  '\0' };
 static unichar_t *wildchr[] = { wildimg, wildps, wildpdf,
-#ifndef _NO_LIBXML
 wildsvg,
 wildglif,
-#endif
 wildplate,
 wildfig };
 static unichar_t *wildfnt[] = { wildbdf, wildttf, wildpk, wildpcf, wildmac,
@@ -234,12 +214,8 @@ wildwin, wildpalm,
 wildimg, wildtemplate, wildps, wildepstemplate,
 wildpdf, wildpdftemplate,
 wildplate, wildplatetemplate,
-#ifndef _NO_LIBXML
 wildsvg, wildsvgtemplate,
 wildglif, wildgliftemplate,
-#else
-NULL, NULL, NULL, NULL,
-#endif
 wildfig
 };
 
@@ -321,19 +297,6 @@ return( oldflags );
     gcd[k++].creator = GCheckBoxCreate;
     hvarray[1][0] = &gcd[k-1]; hvarray[1][1] = NULL;
 
-#if 0
-    rm_k = k;
-    label[k].text = (unichar_t *) _("Cleanup Self Intersect");
-    label[k].text_is_1byte = true;
-    gcd[k].gd.label = &label[k];
-    gcd[k].gd.pos.x = gcd[k-1].gd.pos.x; gcd[k].gd.pos.y = gcd[k-1].gd.pos.y+15;
-    gcd[k].gd.flags = gg_enabled | gg_visible | gg_utf8_popup |
-	    (oldflags&sf_removeoverlap?gg_cb_on:0);
-    gcd[k].gd.popup_msg = (unichar_t *) _("When FontForge detects that an expanded stroke will self-intersect,\nthen setting this option will cause it to try to make things nice\nby removing the intersections");
-    gcd[k++].creator = GCheckBoxCreate;
-    hvarray[2][0] = &gcd[k-1]; hvarray[2][1] = NULL;
-#endif
-
     he_k = k;
     label[k].text = (unichar_t *) _("Handle Erasers");
     label[k].text_is_1byte = true;
@@ -381,10 +344,6 @@ return( oldflags );
     oldflags = 0;
     if ( GGadgetIsChecked(gcd[cd_k].ret) )
 	oldflags |= sf_correctdir;
-#if 0
-    if ( GGadgetIsChecked(gcd[rm_k].ret) )
-	oldflags |= sf_removeoverlap;
-#endif
     if ( GGadgetIsChecked(gcd[he_k].ret) )
 	oldflags |= sf_handle_eraser;
     GDrawDestroyWindow(gw);
@@ -409,10 +368,8 @@ static GTextInfo formats[] = {
     { (unichar_t *) N_("Image"), NULL, 0, 0, (void *) fv_image, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("EPS"), NULL, 0, 0, (void *) fv_eps, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("PDF page graphics"), NULL, 0, 0, (void *) fv_pdf, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
-#ifndef _NO_LIBXML
     { (unichar_t *) N_("SVG"), NULL, 0, 0, (void *) fv_svg, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("Glif"), NULL, 0, 0, (void *) fv_glif, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
-#endif
     { (unichar_t *) N_("Raph's plate files"), NULL, 0, 0, (void *) fv_plate, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("XFig"), NULL, 0, 0, (void *) fv_fig, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     GTEXTINFO_EMPTY
@@ -431,12 +388,10 @@ static GTextInfo fvformats[] = {
     { (unichar_t *) N_("EPS"), NULL, 0, 0, (void *) fv_eps, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("EPS Template"), NULL, 0, 0, (void *) fv_epstemplate, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("PDF page graphics"), NULL, 0, 0, (void *) fv_pdf, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
-#ifndef _NO_LIBXML
     { (unichar_t *) N_("SVG"), NULL, 0, 0, (void *) fv_svg, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("SVG Template"), NULL, 0, 0, (void *) fv_svgtemplate, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("Glif"), NULL, 0, 0, (void *) fv_glif, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("Glif Template"), NULL, 0, 0, (void *) fv_gliftemplate, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
-#endif
     GTEXTINFO_EMPTY
 };
 
@@ -457,7 +412,6 @@ return( true );
 	    flast_format = pos;
 	else
 	    last_format = pos;
-	free(ret);
 	if ( d->fv!=NULL ) {
 	    int toback = GGadgetIsChecked(d->background);
 	    if ( toback && strchr(temp,';')!=NULL && format<3 )
@@ -512,21 +466,16 @@ return( true );
 		ImportPDF(d->cv,temp);
 	    else if ( format==fv_plate )
 		ImportPlate(d->cv,temp);
-#ifndef _NO_LIBXML
 	    else if ( format==fv_svg )
 		ImportSVG(d->cv,temp);
 	    else if ( format==fv_glif )
 		ImportGlif(d->cv,temp);
-#endif
 	    else if ( format==fv_fig )
 		ImportFig(d->cv,temp);
-#ifndef _NO_PYTHON
 	    else if ( format>=fv_pythonbase )
 		PyFF_SCImport(d->cv->b.sc,format-fv_pythonbase,temp,
 			CVLayer((CharViewBase *) d->cv), false);
-#endif
 	}
-	free(temp);
 	GDrawSetCursor(GGadgetGetWindow(g),ct_pointer);
     }
 return( true );
@@ -547,21 +496,18 @@ static int GFD_Format(GGadget *g, GEvent *e) {
 	int format = (intpt) (GGadgetGetListItemSelected(d->format)->userdata);
 	if ( format<fv_pythonbase )
 	    GFileChooserSetFilterText(d->gfc,wildfnt[format]);
-#ifndef _NO_PYTHON
 	else {
 	    char *text;
 	    char *ae = py_ie[format-fv_pythonbase].all_extensions;
 	    unichar_t *utext;
-	    text = galloc(strlen(ae)+10);
+	    text = malloc(strlen(ae)+10);
 	    if ( strchr(ae,','))
 		sprintf( text, "*.{%s}", ae );
 	    else
 		sprintf( text, "*.%s", ae );
 	    utext = utf82u_copy(text);
 	    GFileChooserSetFilterText(d->gfc,utext);
-	    free(text); free(utext);
 	}
-#endif
 	GFileChooserRefreshList(d->gfc);
 	if ( d->fv!=NULL ) {
 	    if ( format==fv_bdf || format==fv_ttf || format==fv_pcf ||
@@ -628,7 +574,6 @@ static void _Import(CharView *cv,BitmapView *bv,FontView *fv) {
 	done = true;
     }
     base = cur_formats = fv==NULL?formats:fvformats;
-#ifndef _NO_PYTHON
     if ( py_ie!=NULL ) {
 	int cnt, extras;
 	for ( cnt=0; base[cnt].text!=NULL; ++cnt );
@@ -636,7 +581,7 @@ static void _Import(CharView *cv,BitmapView *bv,FontView *fv) {
 	    if ( py_ie[i].import!=NULL )
 		++extras;
 	if ( extras!=0 ) {
-	    cur_formats = gcalloc(extras+cnt+1,sizeof(GTextInfo));
+	    cur_formats = calloc(extras+cnt+1,sizeof(GTextInfo));
 	    for ( cnt=0; base[cnt].text!=NULL; ++cnt ) {
 		cur_formats[cnt] = base[cnt];
 		cur_formats[cnt].text = (unichar_t *) copy( (char *) base[cnt].text );
@@ -651,7 +596,6 @@ static void _Import(CharView *cv,BitmapView *bv,FontView *fv) {
 	    }
 	}
     }
-#endif
     if ( !hasspiro()) {
 	for ( i=0; cur_formats[i].text!=NULL; ++i )
 	    if ( ((intpt) cur_formats[i].userdata)==fv_plate ||
@@ -783,10 +727,6 @@ static void _Import(CharView *cv,BitmapView *bv,FontView *fv) {
     GFileChooserSetFilterText(gcd[0].ret,fv!=NULL?wildfnt[format]:wildchr[format]);
     GFileChooserRefreshList(gcd[0].ret);
     GHVBoxFitWindow(boxes[0].ret);
-#if 0
-    GFileChooserGetChildren(gcd[0].ret,&pulldown,&files,&tf);
-    GWidgetIndicateFocusGadget(tf);
-#endif
 
     memset(&d,'\0',sizeof(d));
     d.cv = cv;
@@ -796,9 +736,6 @@ static void _Import(CharView *cv,BitmapView *bv,FontView *fv) {
     d.format = gcd[5].ret;
     if ( fv!=NULL )
 	d.background = gcd[6].ret;
-
-    if ( cur_formats!=formats && cur_formats!=fvformats )
-	GTextInfoListFree(cur_formats);
 
     GWidgetHidePalettes();
     GDrawSetVisible(gw,true);

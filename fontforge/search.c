@@ -311,9 +311,6 @@ return( false );
 return( false );
 	    if ( s->tryrotate && s->endpoints && np_sp->next == NULL ) {
 		int xsign = (flip&1)?-1:1, ysign=(flip&2)?-1:1;
-		SplinePoint *sc_prevsp;
-		/* if ( sc_sp->prev==NULL )*/	/* Already checked this above */
-		sc_prevsp = sc_sp->prev->from;
 		if ( !p_sp->noprevcp ) {
 		    rot = atan2(xsign*(sc_sp->me.y-sc_sp->prevcp.y),ysign*(sc_sp->me.x-sc_sp->prevcp.x)) -
 			  atan2(        p_sp->me.y- p_sp->prevcp.y,         p_sp->me.x- p_sp->prevcp.x);
@@ -734,7 +731,7 @@ static void AdjustAll(SplinePoint *change,BasePoint *rel,
 }
 
 static SplinePoint *RplInsertSP(SplinePoint *after,SplinePoint *nrpl,SplinePoint *rpl,SearchData *s, BasePoint *fudge) {
-    SplinePoint *new = chunkalloc(sizeof(SplinePoint));
+    SplinePoint *new = XZALLOC(SplinePoint);
     real transform[6];
 
     SVBuildTrans(s,transform);
@@ -763,7 +760,7 @@ static SplinePoint *RplInsertSP(SplinePoint *after,SplinePoint *nrpl,SplinePoint
 return( new );
 }
 
-static void FudgeFigure(SplineChar *sc,SearchData *s,SplineSet *path,BasePoint *fudge) {
+static void FudgeFigure(SearchData *s,SplineSet *path,BasePoint *fudge) {
     SplinePoint *search, *searchrel, *found, *foundrel;
     real xoff, yoff;
 
@@ -809,9 +806,9 @@ static void DoReplaceIncomplete(SplineChar *sc,SearchData *s) {
     }
 
     /* Total "fudge" amount should be spread evenly over each point */
-    FudgeFigure(sc,s,path,&fudge);
+    FudgeFigure(s,path,&fudge);
     if ( s->pointcnt!=s->rpointcnt )
-	MinimumDistancesFree(sc->md); sc->md = NULL;
+	sc->md = NULL;
 
     sc_p = s->matched_sp; p_p = path->first, r_p = rpath->first;
     if ( s->endpoints ) {
@@ -854,16 +851,12 @@ return;		/* done */
 	    /*  Need to remove some points */
 	    nsc_p = sc_p->next->to;
 	    if ( nsc_p->next==NULL ) {
-		SplinePointFree(nsc_p);
-		SplineFree(sc_p->next);
 		sc_p->next = NULL;
 		s->matched_spl->last = sc_p;
 		s->last_sp = s->last_sp==NULL ? NULL : sc_p;
 return;
 	    } else {
 		nsc_p = nsc_p->next->to;
-		SplinePointFree(sc_p->next->to);
-		SplineFree(sc_p->next);
 		sc_p->next = nsc_p->prev;
 		nsc_p->prev->from = sc_p;
 		SplineRefigure(nsc_p->prev);
@@ -973,7 +966,6 @@ static void DoReplaceFull(SplineChar *sc,SearchData *s) {
 	subtrans[5] = transform[4]*r->transform[1] + transform[5]*r->transform[3] +
 		r->transform[5];
 	new = RefCharCreate();
-	free(new->layers);
 	*new = *r;
 	memcpy(new->transform,subtrans,sizeof(subtrans));
 	new->layers = NULL;
@@ -1018,7 +1010,6 @@ void SVResetPaths(SearchData *sv) {
 
     if ( sv->sc_srch.changed_since_autosave ) {
 	sv->path = sv->sc_srch.layers[ly_fore].splines;
-	SplinePointListsFree(sv->revpath);
 	sv->revpath = SplinePointListCopy(sv->path);
 	for ( spl=sv->revpath; spl!=NULL; spl=spl->next )
 	    spl = SplineSetReverse(spl);
@@ -1026,7 +1017,6 @@ void SVResetPaths(SearchData *sv) {
     }
     if ( sv->sc_rpl.changed_since_autosave ) {
 	sv->replacepath = sv->sc_rpl.layers[ly_fore].splines;
-	SplinePointListsFree(sv->revreplace);
 	sv->revreplace = SplinePointListCopy(sv->replacepath);
 	for ( spl=sv->revreplace; spl!=NULL; spl=spl->next )
 	    spl = SplineSetReverse(spl);
@@ -1163,9 +1153,6 @@ return;
 	UndoesFree(sv->sc_srch.layers[i].undoes);
     for ( i=0; i<sv->sc_rpl.layer_cnt; ++i )
 	UndoesFree(sv->sc_rpl.layers[i].undoes);
-    free(sv->sc_srch.layers);
-    free(sv->sc_rpl.layers);
-    SplinePointListsFree(sv->revpath);
 }
 
 SearchData *SDFillup(SearchData *sv, FontViewBase *fv) {
@@ -1173,8 +1160,8 @@ SearchData *SDFillup(SearchData *sv, FontViewBase *fv) {
     sv->sc_srch.orig_pos = 0; sv->sc_srch.unicodeenc = -1; sv->sc_srch.name = "Search";
     sv->sc_rpl.orig_pos = 1; sv->sc_rpl.unicodeenc = -1; sv->sc_rpl.name = "Replace";
     sv->sc_srch.layer_cnt = sv->sc_rpl.layer_cnt = 2;
-    sv->sc_srch.layers = gcalloc(2,sizeof(Layer));
-    sv->sc_rpl.layers = gcalloc(2,sizeof(Layer));
+    sv->sc_srch.layers = calloc(2,sizeof(Layer));
+    sv->sc_rpl.layers = calloc(2,sizeof(Layer));
     LayerDefault(&sv->sc_srch.layers[0]);
     LayerDefault(&sv->sc_srch.layers[1]);
     LayerDefault(&sv->sc_rpl.layers[0]);
@@ -1214,8 +1201,6 @@ static void SDCopyToSC(SplineChar *checksc,SplineChar *into,enum fvcopy_type ful
     RefChar *ref;
 
     for ( i=0; i<into->layer_cnt; ++i ) {
-	SplinePointListsFree(into->layers[i].splines);
-	RefCharsFree(into->layers[i].refs);
 	into->layers[i].splines = NULL;
 	into->layers[i].refs = NULL;
     }
@@ -1242,15 +1227,15 @@ void FVBReplaceOutlineWithReference( FontViewBase *fv, double fudge ) {
     int i, j, selcnt = 0, gid;
     SplineChar *checksc;
 
-    sv = SDFillup( gcalloc(1,sizeof(SearchData)), fv);
+    sv = SDFillup( calloc(1,sizeof(SearchData)), fv);
     sv->fudge_percent = .001;
     sv->fudge = fudge;
     sv->replaceall = true;
     sv->replacewithref = true;
 
-    selected = galloc(fv->map->enccount);
+    selected = malloc(fv->map->enccount);
     memcpy(selected,fv->selected,fv->map->enccount);
-    changed = gcalloc(fv->map->enccount,1);
+    changed = calloc(fv->map->enccount,1);
 
     selcnt = 0;
     for ( i=0; i<fv->map->enccount; ++i ) if ( selected[i] && (gid=fv->map->map[i])!=-1 &&
@@ -1280,11 +1265,7 @@ void FVBReplaceOutlineWithReference( FontViewBase *fv, double fudge ) {
     ff_progress_end_indicator();
 
     SDDestroy(sv);
-    free(sv);
-
-    free(selected);
     memcpy(fv->selected,changed,fv->map->enccount);
-    free(changed);
 }
 
 /* This will free both the find and rpl contours */
@@ -1292,7 +1273,7 @@ int FVReplaceAll( FontViewBase *fv, SplineSet *find, SplineSet *rpl, double fudg
     SearchData *sv;
     int ret;
 
-    sv = SDFillup( gcalloc(1,sizeof(SearchData)), fv);
+    sv = SDFillup( calloc(1,sizeof(SearchData)), fv);
     sv->fudge_percent = .001;
     sv->fudge = fudge;
     sv->replaceall = true;
@@ -1310,7 +1291,6 @@ int FVReplaceAll( FontViewBase *fv, SplineSet *find, SplineSet *rpl, double fudg
     ret = _DoFindAll(sv);
 
     SDDestroy(sv);
-    free(sv);
 return( ret );
 }
 
@@ -1318,7 +1298,7 @@ return( ret );
 SearchData *SDFromContour( FontViewBase *fv, SplineSet *find, double fudge, int flags ) {
     SearchData *sv;
 
-    sv = SDFillup( gcalloc(1,sizeof(SearchData)), fv);
+    sv = SDFillup( calloc(1,sizeof(SearchData)), fv);
     sv->fudge_percent = .001;
     sv->fudge = fudge;
 
@@ -1375,8 +1355,8 @@ static SplineChar *RC_MakeNewGlyph(FontViewBase *fv,SplineChar *base, int index,
     int enc;
     SplineChar *ret;
 
-    namebuf = galloc(strlen(base->name)+20);
-    forever {
+    namebuf = malloc(strlen(base->name)+20);
+    for (;;) {
 	sprintf(namebuf, "%s.ref%d", base->name, index++ );
 	if ( SFGetChar(sf,-1,namebuf)==NULL )
     break;
@@ -1386,11 +1366,10 @@ static SplineChar *RC_MakeNewGlyph(FontViewBase *fv,SplineChar *base, int index,
     if ( enc==-1 )
 	enc = fv->map->enccount;
     ret = SFMakeChar(sf,fv->map,enc);
-    free(ret->name);
     ret->name = namebuf;
     SFHashGlyph(sf,ret);
 
-    ret->comment = galloc( strlen(reason)+strlen(ret->name)+strlen(morereason) + 2 );
+    ret->comment = malloc( strlen(reason)+strlen(ret->name)+strlen(morereason) + 2 );
     sprintf( ret->comment, reason, base->name, morereason );
     ret->color = 0xff8080;
 return( ret );
@@ -1400,7 +1379,6 @@ static void AddRef(SplineChar *sc,SplineChar *rsc, int layer) {
     RefChar *r;
 
     r = RefCharCreate();
-    free(r->layers);
     r->layers = NULL;
     r->layer_cnt = 0;
     r->sc = rsc;
@@ -1422,14 +1400,11 @@ static struct splinecharlist *DListRemove(struct splinecharlist *dependents,Spli
 return( NULL );
     else if ( dependents->sc==this_sc ) {
 	dlist = dependents->next;
-	chunkfree(dependents,sizeof(*dependents));
 return( dlist );
     } else {
 	for ( pd=dependents, dlist = pd->next; dlist!=NULL && dlist->sc!=this_sc; pd=dlist, dlist = pd->next );
-	if ( dlist!=NULL ) {
+	if ( dlist!=NULL )
 	    pd->next = dlist->next;
-	    chunkfree(dlist,sizeof(*dlist));
-	}
 return( dependents );
     }
 }

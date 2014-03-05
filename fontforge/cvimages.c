@@ -44,7 +44,7 @@ void SCAppendEntityLayers(SplineChar *sc, Entity *ent) {
 return;
     EntityDefaultStrokeFill(ent);
 
-    sc->layers = grealloc(sc->layers,(sc->layer_cnt+cnt)*sizeof(Layer));
+    sc->layers = realloc(sc->layers,(sc->layer_cnt+cnt)*sizeof(Layer));
     for ( pos = sc->layer_cnt, e=ent; e!=NULL ; e=enext, ++pos ) {
 	enext = e->next;
 	LayerDefault(&sc->layers[pos]);
@@ -69,11 +69,11 @@ return;
 		    4*sizeof(real));
 	    sc->layers[pos].splines = e->u.splines.splines;
 	} else if ( e->type == et_image ) {
-	    ImageList *ilist = chunkalloc(sizeof(ImageList));
+	    ImageList *ilist = XZALLOC(ImageList);
 	    struct _GImage *base = e->u.image.image->list_len==0?
 		    e->u.image.image->u.image:e->u.image.image->u.images[0];
 	    sc->layers[pos].images = ilist;
-	    sc->layers[pos].dofill = base->image_type==it_mono && base->trans!=-1;
+	    sc->layers[pos].dofill = base->image_type==it_mono && base->trans!=(Color)-1;
 	    sc->layers[pos].fill_brush.col = e->u.image.col==0xffffffff ?
 		    COLOR_INHERITED : e->u.image.col;
 	    ilist->image = e->u.image.image;
@@ -93,7 +93,6 @@ return;
 	    ss->next = sc->layers[pos].splines;
 	    sc->layers[pos].splines = e->clippath;
 	}
-	free(e);
     }
     sc->layer_cnt += cnt;
     SCMoreLayers(sc,old);
@@ -125,10 +124,8 @@ return;
 	    SCPreserveLayer(sc,layer,false);
 	    head = &sc->layers[layer].splines;
 	}
-	if ( doclear ) {
-	    SplinePointListsFree(*head);
+	if ( doclear )
 	    *head = NULL;
-	}
 	espl->next = *head;
 	*head = spl;
     }
@@ -170,10 +167,8 @@ return;
 	    SCPreserveLayer(sc,layer,false);
 	    head = &sc->layers[layer].splines;
 	}
-	if ( doclear ) {
-	    SplinePointListsFree(*head);
+	if ( doclear )
 	    *head = NULL;
-	}
 	espl->next = *head;
 	*head = spl;
     }
@@ -189,7 +184,7 @@ return;
     fclose(pdf);
 }
 
-void SCImportPlateFile(SplineChar *sc,int layer,FILE *plate,int doclear,int flags) {
+void SCImportPlateFile(SplineChar *sc,int layer,FILE *plate,int doclear) {
     SplineSet **ly_head, *head, *cur, *last;
     spiro_cp *spiros=NULL;
     int cnt=0, max=0, ch;
@@ -219,7 +214,7 @@ return;
 return;
 	}
 	if ( cnt>=max )
-	    spiros = grealloc(spiros,(max+=30)*sizeof(spiro_cp));
+	    spiros = realloc(spiros,(max+=30)*sizeof(spiro_cp));
 	spiros[cnt].x = spiros[cnt].y = 0;
 	spiros[cnt].ty = ch;
 	if ( ch=='z' ) {
@@ -247,7 +242,7 @@ return;
     if ( cnt!=0 ) {
 	/* This happens when we've got an open contour */
 	if ( cnt>=max )
-	    spiros = grealloc(spiros,(max+=30)*sizeof(spiro_cp));
+	    spiros = realloc(spiros,(max+=30)*sizeof(spiro_cp));
 	spiros[cnt].x = spiros[cnt].y = 0;
 	spiros[cnt].ty = 'z';
 	spiros[0].ty = '{';		/* Open contour mark */
@@ -263,7 +258,6 @@ return;
 	} else
 	    head = last = cur;
     }
-    free(spiros);
 
     /* Raph's plate files seem to have the base line at 800, and glyphs grow */
     /*  downwards */ /* At least for Inconsola */
@@ -284,16 +278,13 @@ return;
 	SCPreserveLayer(sc,layer,false);
 	ly_head = &sc->layers[layer].splines;
     }
-    if ( doclear ) {
-	SplinePointListsFree(*ly_head);
+    if ( doclear )
 	*ly_head = NULL;
-    }
     last->next = *ly_head;
     *ly_head = head;
     SCCharChangedUpdate(sc,layer);
 }
 
-#ifndef _NO_LIBXML
 void SCImportSVG(SplineChar *sc,int layer,char *path,char *memory, int memlen, int doclear) {
     SplinePointList *spl, *espl, **head;
 
@@ -318,10 +309,8 @@ return;
 	    SCPreserveLayer(sc,layer,false);
 	    head = &sc->layers[layer].splines;
 	}
-	if ( doclear ) {
-	    SplinePointListsFree(*head);
+	if ( doclear )
 	    *head = NULL;
-	}
 	espl->next = *head;
 	*head = spl;
     }
@@ -348,21 +337,18 @@ return;
 	SCPreserveLayer(sc,layer,false);
 	head = &sc->layers[layer].splines;
     }
-    if ( doclear ) {
-	SplinePointListsFree(*head);
+    if ( doclear )
 	*head = NULL;
-    }
     espl->next = *head;
     *head = spl;
 
     SCCharChangedUpdate(sc,layer);
 }
-#endif
 
 /**************************** Fig File Import *********************************/
 
 static BasePoint *slurppoints(FILE *fig,SplineFont *sf,int cnt ) {
-    BasePoint *bps = galloc((cnt+1)*sizeof(BasePoint));	/* spline code may want to add another point */
+    BasePoint *bps = malloc((cnt+1)*sizeof(BasePoint));	/* spline code may want to add another point */
     int x, y, i, ch;
     real scale = sf->ascent/(8.5*1200.0);
     real ascent = 11*1200*sf->ascent/(sf->ascent+sf->descent);
@@ -376,7 +362,7 @@ static BasePoint *slurppoints(FILE *fig,SplineFont *sf,int cnt ) {
 return( bps );
 }
 
-static SplineSet *slurpcolor(FILE *fig,SplineChar *sc, SplineSet *sofar) {
+static SplineSet *slurpcolor(FILE *fig,SplineSet *sofar) {
     int ch;
     while ((ch=getc(fig))!='\n' && ch!=EOF);
 return( sofar );
@@ -400,8 +386,8 @@ static SplinePoint *ArcSpline(SplinePoint *sp,float sa,SplinePoint *ep,float ea,
 
     ss = sin(sa); sc = cos(sa); es = sin(ea); ec = cos(ea);
     if ( ep==NULL )
-	ep = SplinePointCreate(cx+r*ec, cy+r*es);
-    len = ((ea-sa)/(3.1415926535897932/2)) * r * .552;
+	ep = SplinePointCreate((double)(cx+r)*ec, (double)(cy+r)*es);
+    len = ((double)(ea-sa)/(3.1415926535897932/2)) * (double)r * .552;
 
     sp->nextcp.x = sp->me.x - len*ss; sp->nextcp.y = sp->me.y + len*sc;
     ep->prevcp.x = ep->me.x + len*es; ep->prevcp.y = ep->me.y - len*ec;
@@ -429,34 +415,34 @@ static SplineSet * slurparc(FILE *fig,SplineChar *sc, SplineSet *sofar) {
 	while ((ch=getc(fig))!='\n' && ch!=EOF);
     if ( ba )
 	while ((ch=getc(fig))!='\n' && ch!=EOF);
-    sx = _sx*scale; sy = (ascent-_sy)*scale; ex = _ex*scale; ey=(ascent-_ey)*scale; cx*=scale; cy=(ascent-cy)*scale;
+    sx = _sx*scale; sy = (ascent-_sy)*scale; ex = _ex*scale; ey=(ascent-_ey)*scale; cx=(double)cx*scale; cy=(ascent-(double)cy)*scale;
     r = sqrt( (sx-cx)*(sx-cx) + (sy-cy)*(sy-cy) );
     sa = atan2(sy-cy,sx-cx);
     ea = atan2(ey-cy,ex-cx);
 
-    spl = chunkalloc(sizeof(SplinePointList));
+    spl = XZALLOC(SplinePointList);
     spl->next = sofar;
     spl->first = sp = SplinePointCreate(sx,sy);
     spl->last = ep = SplinePointCreate(ex,ey);
 
     if ( dir==0 ) {	/* clockwise */
-	if ( ea>sa ) ea -= 2*3.1415926535897932;
-	ma=ceil(sa/(3.1415926535897932/2)-1)*(3.1415926535897932/2);
-	if ( RealNearish( sa,ma )) ma -= (3.1415926535897932/2);
+	if ( ea>sa ) ea = (double)ea - 2*3.1415926535897932;
+	ma=ceil((double)sa/(3.1415926535897932/2)-1)*(3.1415926535897932/2);
+	if ( RealNearish( sa,ma )) ma = (double)ma - (3.1415926535897932/2);
 	while ( ma > ea ) {
 	    sp = ArcSpline(sp,sa,NULL,ma,cx,cy,r);
 	    sa = ma;
-	    ma -= (3.1415926535897932/2);
+	    ma = (double)ma - (3.1415926535897932/2);
 	}
 	sp = ArcSpline(sp,sa,ep,ea,cx,cy,r);
     } else {		/* counterclockwise */
-	if ( ea<sa ) ea += 2*3.1415926535897932;
-	ma=floor(sa/(3.1415926535897932/2)+1)*(3.1415926535897932/2);
-	if ( RealNearish( sa,ma )) ma += (3.1415926535897932/2);
+	if ( ea<sa ) ea = (double)ea + 2*3.1415926535897932;
+	ma=floor((double)sa/(3.1415926535897932/2)+1)*(3.1415926535897932/2);
+	if ( RealNearish( sa,ma )) ma = (double)ma + (3.1415926535897932/2);
 	while ( ma < ea ) {
 	    sp = ArcSpline(sp,sa,NULL,ma,cx,cy,r);
 	    sa = ma;
-	    ma += (3.1415926535897932/2);
+	    ma = (double)ma + (3.1415926535897932/2);
 	}
 	sp = ArcSpline(sp,sa,ep,ea,cx,cy,r);
     }
@@ -482,24 +468,24 @@ static SplineSet * slurpelipse(FILE *fig,SplineChar *sc, SplineSet *sofar) {
     dcx = cx*scale; dcy = (ascent-cy)*scale;
     drx = rx*scale; dry = ry*scale;
 
-    spl = chunkalloc(sizeof(SplinePointList));
+    spl = XZALLOC(SplinePointList);
     spl->next = sofar;
-    spl->first = sp = chunkalloc(sizeof(SplinePoint));
+    spl->first = sp = XZALLOC(SplinePoint);
     sp->me.x = dcx; sp->me.y = dcy+dry;
 	sp->nextcp.x = sp->me.x + .552*drx; sp->nextcp.y = sp->me.y;
 	sp->prevcp.x = sp->me.x - .552*drx; sp->prevcp.y = sp->me.y;
-    spl->last = sp = chunkalloc(sizeof(SplinePoint));
+    spl->last = sp = XZALLOC(SplinePoint);
     sp->me.x = dcx+drx; sp->me.y = dcy;
 	sp->nextcp.x = sp->me.x; sp->nextcp.y = sp->me.y - .552*dry;
 	sp->prevcp.x = sp->me.x; sp->prevcp.y = sp->me.y + .552*dry;
     SplineMake3(spl->first,sp);
-    sp = chunkalloc(sizeof(SplinePoint));
+    sp = XZALLOC(SplinePoint);
     sp->me.x = dcx; sp->me.y = dcy-dry;
 	sp->nextcp.x = sp->me.x - .552*drx; sp->nextcp.y = sp->me.y;
 	sp->prevcp.x = sp->me.x + .552*drx; sp->prevcp.y = sp->me.y;
     SplineMake3(spl->last,sp);
     spl->last = sp;
-    sp = chunkalloc(sizeof(SplinePoint));
+    sp = XZALLOC(SplinePoint);
     sp->me.x = dcx-drx; sp->me.y = dcy;
 	sp->nextcp.x = sp->me.x; sp->nextcp.y = sp->me.y + .552*dry;
 	sp->prevcp.x = sp->me.x; sp->prevcp.y = sp->me.y - .552*dry;
@@ -533,7 +519,7 @@ static SplineSet * slurppolyline(FILE *fig,SplineChar *sc, SplineSet *sofar) {
     else {
 	if ( sub!=1 && bps[cnt-1].x==bps[0].x && bps[cnt-1].y==bps[0].y )
 	    --cnt;
-	spl = chunkalloc(sizeof(SplinePointList));
+	spl = XZALLOC(SplinePointList);
 	if ( cnt==4 && sub==4/*arc-box*/ && radius!=0 ) {
 	    SplineFont *sf = sc->parent;
 	    real scale = sf->ascent/(8.5*80.0), r = radius*scale;	/* radii are scaled differently */
@@ -576,7 +562,7 @@ static SplineSet * slurppolyline(FILE *fig,SplineChar *sc, SplineSet *sofar) {
 	    SplineMake3(spl->last,sp); spl->last = sp;
 	} else {
 	    for ( i=0; i<cnt; ++i ) {
-		sp = chunkalloc(sizeof(SplinePoint));
+		sp = XZALLOC(SplinePoint);
 		sp->me = sp->nextcp = sp->prevcp = bps[i];
 		sp->nonextcp = sp->noprevcp = true;
 		sp->pointtype = pt_corner;
@@ -594,7 +580,6 @@ static SplineSet * slurppolyline(FILE *fig,SplineChar *sc, SplineSet *sofar) {
 	spl->next = sc->layers[ly_fore].splines;
 	spl->next = sofar;
     }
-    free(bps);
 return( spl );
 }
 
@@ -626,62 +611,55 @@ return( q*u * (1 + u * (2 - u * u * (u+2))) );
 static void xsplineeval(BasePoint *ret,real t, struct xspline *xs) {
     /* By choosing t to range between [0,n-1] we set delta in the article to 1*/
     /*  and may therefore ignore it */
-#if 0
-    if ( t>=0 && t<=xs->n-1 ) {
-#endif
 
-	/* For any value of t there are four possible points that might be */
-	/*  influencing things. These are cp[k], cp[k+1], cp[k+2], cp[k+3] */
-	/*  where k+1<=t<k+2 */
-	int k = floor(t-1);
-	int k0, k1, k2, k3;
-	/* now we need to find the points near us (on the + side of cp[k] & */
-	/*  cp[k-1] and the - side of cp[k+2] & cp[k+3]) where the blending */
-	/*  function becomes 0. This depends on the tension values */
-	/* For negative tension values it doesn't happen, the curve itself */
-	/*  is changed */
-	real Tk0 = k+1 + (xs->s[k+1]>0?xs->s[k+1]:0);
-	real Tk1 = k+2 + (xs->s[k+2]>0?xs->s[k+2]:0);
-	real Tk2 = k+1 - (xs->s[k+1]>0?xs->s[k+1]:0);
-	real Tk3 = k+2 - (xs->s[k+2]>0?xs->s[k+2]:0);
-	/* Now each blending function has a "p" value that describes its shape*/
-	real p0 = 2*(k-Tk0)*(k-Tk0);
-	real p1 = 2*(k+1-Tk1)*(k+1-Tk1);
-	real p2 = 2*(k+2-Tk2)*(k+2-Tk2);
-	real p3 = 2*(k+3-Tk3)*(k+3-Tk3);
-	/* and each negative tension blending function has a "q" value */
-	real q0 = xs->s[k+1]<0?-xs->s[k+1]/2:0;
-	real q1 = xs->s[k+2]<0?-xs->s[k+2]/2:0;
-	real q2 = q0;
-	real q3 = q1;
-	/* the function f for positive s is the same as g if q==0 */
-	real A0, A1, A2, A3;
-	if ( t<=Tk0 )
-	    A0 = g( (t-Tk0)/(k-Tk0), q0, p0);
-	else if ( q0>0 )
-	    A0 = h( (t-Tk0)/(k-Tk0), q0 );
-	else
-	    A0 = 0;
-	A1 = g( (t-Tk1)/(k+1-Tk1), q1, p1);
-	A2 = g( (t-Tk2)/(k+2-Tk2), q2, p2);
-	if ( t>=Tk3 )
-	    A3 = g( (t-Tk3)/(k+3-Tk3), q3, p3);
-	else if ( q3>0 )
-	    A3 = h( (t-Tk3)/(k+3-Tk3), q3 );
-	else
-	    A3 = 0;
-	k0 = k; k1=k+1; k2=k+2; k3=k+3;
-	if ( k<0 ) { k0=xs->n-2; if ( !xs->closed ) A0 = 0; }
-	if ( k3>=xs->n ) { k3 -= xs->n; if ( !xs->closed ) A3 = 0; }
-	if ( k2>=xs->n ) { k2 -= xs->n; if ( !xs->closed ) A2 = 0; }
-	ret->x = A0*xs->cp[k0].x + A1*xs->cp[k1].x + A2*xs->cp[k2].x + A3*xs->cp[k3].x;
-	ret->y = A0*xs->cp[k0].y + A1*xs->cp[k1].y + A2*xs->cp[k2].y + A3*xs->cp[k3].y;
-	ret->x /= (A0+A1+A2+A3);
-	ret->y /= (A0+A1+A2+A3);
-#if 0
-    } else
-	ret->x = ret->y = 0;
-#endif
+    /* For any value of t there are four possible points that might be */
+    /*  influencing things. These are cp[k], cp[k+1], cp[k+2], cp[k+3] */
+    /*  where k+1<=t<k+2 */
+    int k = floor(t-1);
+    int k0, k1, k2, k3;
+    /* now we need to find the points near us (on the + side of cp[k] & */
+    /*  cp[k-1] and the - side of cp[k+2] & cp[k+3]) where the blending */
+    /*  function becomes 0. This depends on the tension values */
+    /* For negative tension values it doesn't happen, the curve itself */
+    /*  is changed */
+    real Tk0 = k+1 + (xs->s[k+1]>0?xs->s[k+1]:0);
+    real Tk1 = k+2 + (xs->s[k+2]>0?xs->s[k+2]:0);
+    real Tk2 = k+1 - (xs->s[k+1]>0?xs->s[k+1]:0);
+    real Tk3 = k+2 - (xs->s[k+2]>0?xs->s[k+2]:0);
+    /* Now each blending function has a "p" value that describes its shape*/
+    real p0 = 2*(k-Tk0)*(k-Tk0);
+    real p1 = 2*(k+1-Tk1)*(k+1-Tk1);
+    real p2 = 2*(k+2-Tk2)*(k+2-Tk2);
+    real p3 = 2*(k+3-Tk3)*(k+3-Tk3);
+    /* and each negative tension blending function has a "q" value */
+    real q0 = xs->s[k+1]<0?-xs->s[k+1]/2:0;
+    real q1 = xs->s[k+2]<0?-xs->s[k+2]/2:0;
+    real q2 = q0;
+    real q3 = q1;
+    /* the function f for positive s is the same as g if q==0 */
+    real A0, A1, A2, A3;
+    if ( t<=Tk0 )
+        A0 = g( (t-Tk0)/(k-Tk0), q0, p0);
+    else if ( q0>0 )
+        A0 = h( (t-Tk0)/(k-Tk0), q0 );
+    else
+        A0 = 0;
+    A1 = g( (t-Tk1)/(k+1-Tk1), q1, p1);
+    A2 = g( (t-Tk2)/(k+2-Tk2), q2, p2);
+    if ( t>=Tk3 )
+        A3 = g( (t-Tk3)/(k+3-Tk3), q3, p3);
+    else if ( q3>0 )
+        A3 = h( (t-Tk3)/(k+3-Tk3), q3 );
+    else
+        A3 = 0;
+    k0 = k; k1=k+1; k2=k+2; k3=k+3;
+    if ( k<0 ) { k0=xs->n-2; if ( !xs->closed ) A0 = 0; }
+    if ( k3>=xs->n ) { k3 -= xs->n; if ( !xs->closed ) A3 = 0; }
+    if ( k2>=xs->n ) { k2 -= xs->n; if ( !xs->closed ) A2 = 0; }
+    ret->x = A0*xs->cp[k0].x + A1*xs->cp[k1].x + A2*xs->cp[k2].x + A3*xs->cp[k3].x;
+    ret->y = A0*xs->cp[k0].y + A1*xs->cp[k1].y + A2*xs->cp[k2].y + A3*xs->cp[k3].y;
+    ret->x /= (A0+A1+A2+A3);
+    ret->y /= (A0+A1+A2+A3);
 }
 
 static void AdjustTs(TPoint *mids,SplinePoint *from, SplinePoint *to) {
@@ -705,20 +683,20 @@ static void AdjustTs(TPoint *mids,SplinePoint *from, SplinePoint *to) {
 }
 
 static SplineSet *ApproximateXSpline(struct xspline *xs,int order2) {
-    int i, j;
+    size_t i, j;
     real t;
     TPoint mids[7];
-    SplineSet *spl = chunkalloc(sizeof(SplineSet));
+    SplineSet *spl = XZALLOC(SplineSet);
     SplinePoint *sp;
 
-    spl->first = spl->last = chunkalloc(sizeof(SplinePoint));
+    spl->first = spl->last = XZALLOC(SplinePoint);
     xsplineeval(&spl->first->me,0,xs);
     spl->first->pointtype = ( xs->s[0]==0 )?pt_corner:pt_curve;
-    for ( i=0; i<xs->n-1; ++i ) {
-	if ( i==xs->n-2 && xs->closed )
+    for ( i=0; i<(size_t)(xs->n-1); ++i ) {
+	if ( i==(size_t)(xs->n-2) && xs->closed )
 	    sp = spl->first;
 	else {
-	    sp = chunkalloc(sizeof(SplinePoint));
+	    sp = XZALLOC(SplinePoint);
 	    sp->pointtype = ( xs->s[i+1]==0 )?pt_corner:pt_curve;
 	    xsplineeval(&sp->me,i+1,xs);
 	}
@@ -757,14 +735,10 @@ static SplineSet * slurpspline(FILE *fig,SplineChar *sc, SplineSet *sofar) {
 	while ((ch=getc(fig))!='\n' && ch!=EOF);
     xs.n = cnt;
     xs.cp = slurppoints(fig,sc->parent,cnt);
-    xs.s = galloc((cnt+1)*sizeof(real));
+    xs.s = malloc((cnt+1)*sizeof(real));
     xs.closed = (sub&1);
     for ( i=0; i<cnt; ++i )
-#ifdef FONTFORGE_CONFIG_USE_DOUBLE
 	fscanf(fig,"%lf",&xs.s[i]);
-#else
-	fscanf(fig,"%f",&xs.s[i]);
-#endif
     /* the spec says that the last point of a closed path will duplicate the */
     /* first, but it doesn't seem to */
     if ( xs.closed && ( !RealNear(xs.cp[cnt-1].x,xs.cp[0].x) ||
@@ -774,10 +748,6 @@ static SplineSet * slurpspline(FILE *fig,SplineChar *sc, SplineSet *sofar) {
 	xs.s[cnt-1] = xs.s[0];
     }
     spl = ApproximateXSpline(&xs,sc->layers[ly_fore].order2);
-
-    free(xs.cp);
-    free(xs.s);
-
     spl->next = sofar;
 return( spl );
 }
@@ -795,7 +765,7 @@ return(sofar);
 	    sofar = slurpcompound(fig,sc,sofar);
 	  break;
 	  case 0:
-	    sofar = slurpcolor(fig,sc,sofar);
+	    sofar = slurpcolor(fig,sofar);
 	  break;
 	  case 1:
 	    sofar = slurpelipse(fig,sc,sofar);
@@ -846,10 +816,8 @@ return;
 	    SCPreserveLayer(sc,layer,false);
 	    head = &sc->layers[layer].splines;
 	}
-	if ( doclear ) {
-	    SplinePointListsFree(*head);
+	if ( doclear )
 	    *head = NULL;
-	}
 	if ( sc->layers[ly_fore].order2 )
 	    spl = SplineSetsConvertOrder(spl,true);
 	for ( espl=spl; espl->next!=NULL; espl=espl->next );
@@ -879,7 +847,6 @@ GImage *ImageAlterClut(GImage *image) {
 	    nbase->clut = base->clut;
 	    base->clut = NULL;
 	    nbase->trans = base->trans;
-	    GImageDestroy(image);
 	    image = new;
 	    base = nbase;
 	} else
@@ -888,7 +855,7 @@ return( image );
 
     clut = base->clut;
     if ( clut==NULL ) {
-	clut=base->clut = gcalloc(1,sizeof(GClut));
+	clut=base->clut = calloc(1,sizeof(GClut));
 	clut->clut_len = 2;
 	clut->clut[0] = 0x808080;
 	if ( !no_windowing_ui )
@@ -897,7 +864,7 @@ return( image );
 	    clut->clut[1] = 0xb0b0b0;
 	clut->trans_index = 1;
 	base->trans = 1;
-    } else if ( base->trans!=-1 ) {
+    } else if ( base->trans!=(Color)-1 ) {
 	clut->clut[!base->trans] = 0x808080;
     } else if ( clut->clut[0]<clut->clut[1] ) {
 	clut->clut[0] = 0x808080;
@@ -916,7 +883,7 @@ void SCInsertImage(SplineChar *sc,GImage *image,real scale,real yoff,real xoff,
     ImageList *im;
 
     SCPreserveLayer(sc,layer,false);
-    im = galloc(sizeof(ImageList));
+    im = malloc(sizeof(ImageList));
     im->image = image;
     im->xoff = xoff;
     im->yoff = yoff;
@@ -937,10 +904,8 @@ void SCAddScaleImage(SplineChar *sc,GImage *image,int doclear, int layer) {
 
     image = ImageAlterClut(image);
     scale = (sc->parent->ascent+sc->parent->descent)/(real) GImageGetHeight(image);
-    if ( doclear ) {
-	ImageListsFree(sc->layers[layer].images);
+    if ( doclear )
 	sc->layers[layer].images = NULL;
-    }
     SCInsertImage(sc,image,scale,sc->parent->ascent,0,layer);
 }
 
@@ -965,25 +930,21 @@ return(false);
 	    }
 	    ++tot;
 	    SCAddScaleImage(sc,image,true,toback?ly_back:ly_fore);
-#ifndef _NO_LIBXML
 	} else if ( format==fv_svg ) {
 	    SCImportSVG(sc,toback?ly_back:fv->active_layer,start,NULL,0,flags&sf_clearbeforeinput);
 	    ++tot;
 	} else if ( format==fv_glif ) {
 	    SCImportGlif(sc,toback?ly_back:fv->active_layer,start,NULL,0,flags&sf_clearbeforeinput);
 	    ++tot;
-#endif
 	} else if ( format==fv_eps ) {
 	    SCImportPS(sc,toback?ly_back:fv->active_layer,start,flags&sf_clearbeforeinput,flags&~sf_clearbeforeinput);
 	    ++tot;
 	} else if ( format==fv_pdf ) {
 	    SCImportPDF(sc,toback?ly_back:fv->active_layer,start,flags&sf_clearbeforeinput,flags&~sf_clearbeforeinput);
 	    ++tot;
-#ifndef _NO_PYTHON
 	} else if ( format>=fv_pythonbase ) {
 	    PyFF_SCImport(sc,format-fv_pythonbase,start, toback?ly_back:fv->active_layer,flags&sf_clearbeforeinput);
 	    ++tot;
-#endif
 	}
 	if ( endpath==NULL )
     break;
@@ -1000,7 +961,8 @@ int FVImportImageTemplate(FontViewBase *fv,char *path,int format,int toback, int
     GImage *image;
     struct _GImage *base;
     int tot;
-    char *ext, *name, *dirname, *pt, *end;
+    char *ext, *name, *pt, *end;
+    const char *dirname;
     int i, val;
     int isu=false, ise=false, isc=false;
     DIR *dir;
@@ -1073,19 +1035,16 @@ return( false );
 	    base = image->list_len==0?image->u.image:image->u.images[0];
 	    if ( base->image_type!=it_mono ) {
 		ff_post_error(_("Bad image file"),_("Bad image file, not a bitmap: %.100s"),start);
-		GImageDestroy(image);
     continue;
 	    }
 	    ++tot;
 	    SCAddScaleImage(sc,image,true,toback?ly_back:ly_fore);
-#ifndef _NO_LIBXML
 	} else if ( format==fv_svgtemplate ) {
 	    SCImportSVG(sc,toback?ly_back:fv->active_layer,start,NULL,0,flags&sf_clearbeforeinput);
 	    ++tot;
 	} else if ( format==fv_gliftemplate ) {
 	    SCImportGlif(sc,toback?ly_back:fv->active_layer,start,NULL,0,flags&sf_clearbeforeinput);
 	    ++tot;
-#endif
 	} else if ( format==fv_pdftemplate ) {
 	    SCImportPDF(sc,toback?ly_back:fv->active_layer,start,flags&sf_clearbeforeinput,flags&~sf_clearbeforeinput);
 	    ++tot;

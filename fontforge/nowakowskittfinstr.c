@@ -283,10 +283,10 @@ int TTF__getcvtval(SplineFont *sf,int val) {
     struct ttf_table *cvt_tab = SFFindTable(sf,CHR('c','v','t',' '));
 
     if ( cvt_tab==NULL ) {
-        cvt_tab = chunkalloc(sizeof(struct ttf_table));
+        cvt_tab = XZALLOC(struct ttf_table);
         cvt_tab->tag = CHR('c','v','t',' ');
         cvt_tab->maxlen = 200;
-        cvt_tab->data = galloc(100*sizeof(short));
+        cvt_tab->data = malloc(100*sizeof(short));
         cvt_tab->next = sf->ttf_tables;
         sf->ttf_tables = cvt_tab;
     }
@@ -298,7 +298,7 @@ return( i );
     if ( (int)sizeof(uint16)*i>=cvt_tab->maxlen ) {
         if ( cvt_tab->maxlen==0 ) cvt_tab->maxlen = cvt_tab->len;
         cvt_tab->maxlen += 200;
-        cvt_tab->data = grealloc(cvt_tab->data,cvt_tab->maxlen);
+        cvt_tab->data = realloc(cvt_tab->data,cvt_tab->maxlen);
     }
     memputshort(cvt_tab->data,sizeof(uint16)*i,val);
     cvt_tab->len += sizeof(uint16);
@@ -418,10 +418,10 @@ return NULL;
 
         if ( d>=-32768 && d<=32767 ) {
             if (*rescnt) {
-                results = grealloc(results, sizeof(real)*(++(*rescnt)));
+                results = realloc(results, sizeof(real)*(++(*rescnt)));
                 results[*rescnt-1] = d;
             }
-            else (results = gcalloc(*rescnt=1, sizeof(real)))[0] = d;
+            else (results = calloc(*rescnt=1, sizeof(real)))[0] = d;
         }
 
         str = end;
@@ -430,7 +430,7 @@ return NULL;
 return results;
 }
 
-static real *GetNParsePSArray(SplineFont *sf, char *name, int *rescnt) {
+static real *GetNParsePSArray(SplineFont *sf, const char *name, int *rescnt) {
 return ParsePSArray(PSDictHasEntry(sf->private, name), rescnt);
 }
 
@@ -480,8 +480,8 @@ static void GICImportBlues(GlobalInstrCt *gic) {
              (PSDictHasEntry(gic->sf->private, "FamilyBlues") != NULL) ||
              (PSDictHasEntry(gic->sf->private, "FamilyOtherBlues") != NULL);
 
-    char *PrimaryBlues = HasPSBlues ? "BlueValues" : "FamilyBlues";
-    char *OtherBlues = HasPSBlues ? "OtherBlues" : "FamilyOtherBlues";
+    const char *PrimaryBlues = HasPSBlues ? "BlueValues" : "FamilyBlues";
+    const char *OtherBlues = HasPSBlues ? "OtherBlues" : "FamilyOtherBlues";
 
     if (HasPSBlues || HasPSFamilyBlues){
         values = GetNParsePSArray(gic->sf, PrimaryBlues, &cnt);
@@ -502,8 +502,6 @@ static void GICImportBlues(GlobalInstrCt *gic) {
 		gic->blues[i].base = values[2*i];
 		gic->blues[i].overshoot = values[2*i+1];
 	    }
-
-	    free(values);
 	}
 
         values = GetNParsePSArray(gic->sf, OtherBlues, &cnt);
@@ -520,7 +518,6 @@ static void GICImportBlues(GlobalInstrCt *gic) {
 		gic->blues[i+bluecnt].overshoot = values[2*i];
 	    }
 
-	    free(values);
 	    bluecnt += cnt;
 	}
 
@@ -552,8 +549,6 @@ static void GICImportBlues(GlobalInstrCt *gic) {
 					   values[2*i], values[2*i+1]))
 			    gic->blues[j].family_base = values[2*i];
 		}
-
-		free(values);
 	    }
 
             values = GetNParsePSArray(gic->sf, "FamilyOtherBlues", &cnt);
@@ -572,8 +567,6 @@ static void GICImportBlues(GlobalInstrCt *gic) {
 					   values[2*i], values[2*i+1]))
 			    gic->blues[j].family_base = values[2*i+1];
 		}
-
-		free(values);
 	    }
 	}
     }
@@ -621,31 +614,26 @@ static int SortStems(const void *a, const void *b) {
 static void GICImportStems(int xdir, GlobalInstrCt *gic) {
     int i, cnt, next;
     real *values;
-    char *s_StdW = xdir?"StdVW":"StdHW";
-    char *s_StemSnap = xdir?"StemSnapV":"StemSnapH";
+    const char *s_StdW = xdir?"StdVW":"StdHW";
+    const char *s_StemSnap = xdir?"StemSnapV":"StemSnapH";
     StdStem *stdw = xdir?&(gic->stdvw):&(gic->stdhw);
     StdStem **stemsnap = xdir?&(gic->stemsnapv):&(gic->stemsnaph);
     int *stemsnapcnt = xdir?&(gic->stemsnapvcnt):&(gic->stemsnaphcnt);
 
-    if ((values = GetNParsePSArray(gic->sf, s_StdW, &cnt)) != NULL) {
+    if ((values = GetNParsePSArray(gic->sf, s_StdW, &cnt)) != NULL)
         stdw->width = *values;
-        free(values);
-    }
 
     if ((values = GetNParsePSArray(gic->sf, s_StemSnap, &cnt)) != NULL) {
-        *stemsnap = (StdStem *)gcalloc(cnt, sizeof(StdStem));
+        *stemsnap = (StdStem *)calloc(cnt, sizeof(StdStem));
 
         for (next=i=0; i<cnt; i++)
 	    if (values[i] != gic->stdhw.width)
 	        (*stemsnap)[next++].width = values[i];
 
-	if (!next) {
-	    free(*stemsnap);
+	if (!next)
 	    *stemsnap = NULL;
-	}
 
 	*stemsnapcnt = next;
-        free(values);
 
         /* I assume ascending order here and in normalize_stems(). */
         qsort(*stemsnap, *stemsnapcnt, sizeof(StdStem), SortStems);
@@ -658,10 +646,8 @@ static void GICImportStems(int xdir, GlobalInstrCt *gic) {
 	stdw->width = (*stemsnap)[i].width;
 	memmove((*stemsnap)+i, (*stemsnap)+i+1, cnt-i-1);
 
-	if (--(*stemsnapcnt) == 0) {
-	    free(*stemsnap);
+	if (--(*stemsnapcnt) == 0)
 	    *stemsnap = NULL;
-	}
     }
 }
 
@@ -683,7 +669,7 @@ static void init_cvt(GlobalInstrCt *gic) {
     cvtsize += gic->stemsnapvcnt;
     cvtsize += gic->bluecnt * 2; /* possible family blues */
 
-    cvt = gcalloc(cvtsize, cvtsize * sizeof(int16));
+    cvt = calloc(cvtsize, cvtsize * sizeof(int16));
     cvtindex = 0;
 
     /* Assign cvt indices */
@@ -718,7 +704,7 @@ static void init_cvt(GlobalInstrCt *gic) {
     }
 
     cvtsize = cvtindex;
-    cvt = grealloc(cvt, cvtsize * sizeof(int16));
+    cvt = realloc(cvt, cvtsize * sizeof(int16));
 
     /* Try to implant the new cvt table */
     gic->cvt_done = 0;
@@ -726,7 +712,7 @@ static void init_cvt(GlobalInstrCt *gic) {
     tab = SFFindTable(gic->sf, CHR('c','v','t',' '));
 
     if ( tab==NULL ) {
-	tab = chunkalloc(sizeof(struct ttf_table));
+	tab = XZALLOC(struct ttf_table);
 	tab->next = gic->sf->ttf_tables;
 	gic->sf->ttf_tables = tab;
 	tab->tag = CHR('c','v','t',' ');
@@ -741,8 +727,6 @@ static void init_cvt(GlobalInstrCt *gic) {
         if (tab->len >= cvtsize * (int)sizeof(int16) &&
 	    memcmp(cvt, tab->data, cvtsize * sizeof(int16)) == 0)
 	        gic->cvt_done = 1;
-
-        free(cvt);
 
 	if (!gic->cvt_done) {
 	    ff_post_error(_("Can't insert 'cvt'"),
@@ -796,14 +780,14 @@ static void init_maxp(GlobalInstrCt *gic) {
     uint16 zones, twpts, store, fdefs, stack;
 
     if ( tab==NULL ) {
-        tab = chunkalloc(sizeof(struct ttf_table));
+        tab = XZALLOC(struct ttf_table);
         tab->next = gic->sf->ttf_tables;
         gic->sf->ttf_tables = tab;
         tab->tag = CHR('m','a','x','p');
     }
 
     if ( tab->len<32 ) {
-        tab->data = grealloc(tab->data,32);
+        tab->data = realloc(tab->data,32);
         memset(tab->data+tab->len,0,32-tab->len);
         tab->len = tab->maxlen = 32;
     }
@@ -1607,7 +1591,7 @@ static void init_fpgm(GlobalInstrCt *gic) {
 
     if ( tab==NULL ) {
         /* We have to create such table. */
-        tab = chunkalloc(sizeof(struct ttf_table));
+        tab = XZALLOC(struct ttf_table);
         tab->next = gic->sf->ttf_tables;
         gic->sf->ttf_tables = tab;
         tab->tag = CHR('f','p','g','m');
@@ -1620,7 +1604,7 @@ static void init_fpgm(GlobalInstrCt *gic) {
     {
         /* We can safely update font program. */
         tab->len = tab->maxlen = sizeof(new_fpgm);
-        tab->data = grealloc(tab->data, sizeof(new_fpgm));
+        tab->data = realloc(tab->data, sizeof(new_fpgm));
         memmove(tab->data, new_fpgm, sizeof(new_fpgm));
         gic->fpgm_done = 1;
     }
@@ -1895,7 +1879,7 @@ static void init_prep(GlobalInstrCt *gic) {
     if (gic->fpgm_done)
         prepmaxlen += 3;
 
-    new_prep = gcalloc(prepmaxlen, sizeof(uint8));
+    new_prep = calloc(prepmaxlen, sizeof(uint8));
     memmove(new_prep, new_prep_preamble, preplen*sizeof(uint8));
     prep_head = new_prep + preplen;
 
@@ -1925,7 +1909,7 @@ static void init_prep(GlobalInstrCt *gic) {
 
     if ( tab==NULL ) {
         /* We have to create such table. */
-        tab = chunkalloc(sizeof(struct ttf_table));
+        tab = XZALLOC(struct ttf_table);
         tab->next = gic->sf->ttf_tables;
         gic->sf->ttf_tables = tab;
         tab->tag = CHR('p','r','e','p');
@@ -1937,7 +1921,7 @@ static void init_prep(GlobalInstrCt *gic) {
     {
         /* We can safely update cvt program. */
         tab->len = tab->maxlen = preplen;
-        tab->data = grealloc(tab->data, preplen);
+        tab->data = realloc(tab->data, preplen);
         memmove(tab->data, new_prep, preplen);
         gic->prep_done = 1;
     }
@@ -1957,8 +1941,6 @@ static void init_prep(GlobalInstrCt *gic) {
                   "'s own."
             ));
     }
-
-    free(new_prep);
 }
 
 /*
@@ -2015,11 +1997,9 @@ void FreeGlobalInstrCt(GlobalInstrCt *gic) {
 
     gic->bluecnt = 0;
     gic->stdhw.width = -1;
-    if (gic->stemsnaphcnt != 0) free(gic->stemsnaph);
     gic->stemsnaphcnt = 0;
     gic->stemsnaph = NULL;
     gic->stdvw.width = -1;
-    if (gic->stemsnapvcnt != 0) free(gic->stemsnapv);
     gic->stemsnapvcnt = 0;
     gic->stemsnapv = NULL;
 }
@@ -2275,7 +2255,7 @@ static void RunOnPoints(InstrCt *ct, int contour_direction,
     uint8 *done;
     int c, p;
 
-    done = (uint8 *)gcalloc(ct->ptcnt, sizeof(uint8));
+    done = (uint8 *)calloc(ct->ptcnt, sizeof(uint8));
 
     for ( c=0; ss!=NULL; ss=ss->next, ++c ) {
         ct->cdir = ct->clockwise[c];
@@ -2320,8 +2300,6 @@ static void RunOnPoints(InstrCt *ct, int contour_direction,
             if ( sp==ss->first ) break;
         }
     }
-
-    free(done);
 }
 
 /******************************************************************************
@@ -2412,8 +2390,8 @@ static void search_edge(int p, SplinePoint *sp, InstrCt *ct) {
         if ((p!=-1) && !((ct->touched[p] | ct->affected[p]) & touchflag)) {
             ct->edge.othercnt++;
 
-            if (ct->edge.othercnt==1) ct->edge.others=(int *)gcalloc(1, sizeof(int));
-            else ct->edge.others=(int *)grealloc(ct->edge.others, ct->edge.othercnt*sizeof(int));
+            if (ct->edge.othercnt==1) ct->edge.others=(int *)calloc(1, sizeof(int));
+            else ct->edge.others=(int *)realloc(ct->edge.others, ct->edge.othercnt*sizeof(int));
 
             ct->edge.others[ct->edge.othercnt-1] = p;
         }
@@ -2500,7 +2478,7 @@ static void assign_points_to_edge(InstrCt *ct, StemData *stem, int is_l, int *re
                 pd->next_is_l[nextidx] : pd->prev_is_l[previdx];
             if (test_l == is_l && !dint_inner &&
                 !(ct->touched[pd->ttfindex] & flag) && !(ct->affected[pd->ttfindex] & flag)) {
-                ct->edge.others = (int *)grealloc(
+                ct->edge.others = (int *)realloc(
                     ct->edge.others, (ct->edge.othercnt+1)*sizeof(int));
                 ct->edge.others[ct->edge.othercnt++] = pd->ttfindex;
                 if ( *refidx == -1 ) *refidx = pd->ttfindex;
@@ -2655,7 +2633,7 @@ return;
 
     /* add edge.refpt to edge.others */
     ct->edge.othercnt = ++othercnt;
-    ct->edge.others = others = (int *)grealloc(others, othercnt*sizeof(int));
+    ct->edge.others = others = (int *)realloc(others, othercnt*sizeof(int));
     others[othercnt-1]=refpt;
 
     next = 0;
@@ -2685,10 +2663,8 @@ return;
 	if (!(ct->affected[others[i]] & touchflag) && (others[i] != refpt))
 	    others[next++] = others[i];
 
-    if ((ct->edge.othercnt = next) == 0) {
-	free(others);
+    if ((ct->edge.othercnt = next) == 0)
 	ct->edge.others = NULL;
-    }
     else /* purely for aesthetic reasons - could be safely removed. */
 	qsort(others, ct->edge.othercnt, sizeof(int), sortbynum);
 }
@@ -2710,7 +2686,7 @@ static void optimize_blue(InstrCt *ct) {
     if (othercnt == 0)
 return;
 
-    tosnap = (uint8 *)gcalloc(ct->ptcnt, sizeof(uint8));
+    tosnap = (uint8 *)calloc(ct->ptcnt, sizeof(uint8));
 
     for(i=0; i<ct->edge.othercnt; i++)
     {
@@ -2744,8 +2720,6 @@ return;
 
 	if (!(affected[others[i]] & touchflag)) tosnap[others[i]] = 1;
     }
-
-    free(tosnap);
 
     /* remove optimized-out points from list to be instructed. */
     for(i=0; i<ct->edge.othercnt; i++)
@@ -2783,8 +2757,8 @@ static void optimize_strongpts_step1(InstrCt *ct) {
     if (othercnt == 0)
 return;
 
-    tocull = (uint8 *)gcalloc(ct->ptcnt, sizeof(uint8));
-    tocheck = (uint8 *)gcalloc(ct->ptcnt, sizeof(uint8));
+    tocull = (uint8 *)calloc(ct->ptcnt, sizeof(uint8));
+    tocheck = (uint8 *)calloc(ct->ptcnt, sizeof(uint8));
     for(i=0; i<ct->edge.othercnt; i++) tocheck[ct->edge.others[i]] = 1;
 
     /* for each point of "edge" (would be better called "zone") */
@@ -2827,9 +2801,6 @@ return;
 	    for(j=i; j<ct->edge.othercnt; j++) others[j] = others[j+1];
 	    i--;
 	}
-
-    free(tocull);
-    free(tocheck);
 }
 
 static void optimize_strongpts_step2(InstrCt *ct) {
@@ -2848,9 +2819,9 @@ static void optimize_strongpts_step2(InstrCt *ct) {
     if (othercnt == 0)
 return;
 
-    toinstr = (uint8 *)gcalloc(ct->ptcnt, sizeof(uint8));
-    tocull = (uint8 *)gcalloc(ct->ptcnt, sizeof(uint8));
-    tocheck = (uint8 *)gcalloc(ct->ptcnt, sizeof(uint8));
+    toinstr = (uint8 *)calloc(ct->ptcnt, sizeof(uint8));
+    tocull = (uint8 *)calloc(ct->ptcnt, sizeof(uint8));
+    tocheck = (uint8 *)calloc(ct->ptcnt, sizeof(uint8));
     for(i=0; i<ct->edge.othercnt; i++) tocheck[ct->edge.others[i]] = 1;
 
     /* two passes... */
@@ -2937,10 +2908,6 @@ return;
 	    for(j=i; j<ct->edge.othercnt; j++) others[j] = others[j+1];
 	    i--;
 	}
-
-    free(tocheck);
-    free(toinstr);
-    free(tocull);
 }
 
 /* Finish instructing the edge. Try to hint only those points on edge that are
@@ -2957,7 +2924,6 @@ return;
     for(i=0; i<ct->edge.othercnt; i++)
 	ct->touched[ct->edge.others[i]] |= (ct->xdir?tf_x:tf_y);
 
-    free(ct->edge.others);
     ct->edge.others=NULL;
     ct->edge.othercnt = 0;
 }
@@ -3634,7 +3600,6 @@ return;
 	    update_blue_pts(queue[i], ct);
 
 	    if (ct->edge.others != NULL) {
-		free(ct->edge.others);
 		ct->edge.others = NULL;
 		ct->edge.othercnt = 0;
 	    }
@@ -3806,8 +3771,8 @@ static void HStemGeninst(InstrCt *ct) {
 
     if ( ct->gd->hbundle == NULL )
         return;
-    rpts1 = gcalloc(ct->gd->hbundle->cnt, sizeof(int));
-    rpts2 = gcalloc(ct->gd->hbundle->cnt, sizeof(int));
+    rpts1 = calloc(ct->gd->hbundle->cnt, sizeof(int));
+    rpts2 = calloc(ct->gd->hbundle->cnt, sizeof(int));
 
     /* Interpolating between blues is splitted to two stages: first
      * we determine which stems can be interpolated and which cannot
@@ -3980,8 +3945,6 @@ static void HStemGeninst(InstrCt *ct) {
             instruct_dependent(ct, stem);
 	}
     }
-    free(rpts1);
-    free(rpts2);
 }
 
 /*
@@ -4834,8 +4797,8 @@ static uint8 *TouchDStemPoints( InstrCt *ct,BasePoint *fv ) {
     ptcnt = ct->gd->pcnt;
     diagpts = ct->diagpts;
 
-    tobefixedy = gcalloc( ptcnt,sizeof( int ));
-    tobefixedx = gcalloc( ptcnt,sizeof( int ));
+    tobefixedy = calloc( ptcnt,sizeof( int ));
+    tobefixedx = calloc( ptcnt,sizeof( int ));
 
     /* Ensure that the projection vector is no longer set to a diagonal line */
     if ( fv->x == 1 && fv->y == 0 )
@@ -4879,8 +4842,6 @@ static uint8 *TouchDStemPoints( InstrCt *ct,BasePoint *fv ) {
 
     if ( numx == 0 && numy == 0 ) *instrs++ = SVTCA_x;
 
-    free( tobefixedy );
-    free( tobefixedx );
 return( instrs );
 }
 
@@ -5040,10 +5001,8 @@ return;
                     ct->touched[ct->edge.others[j]] |= touchflag;
             }
 
-            if (ct->edge.othercnt) {
-                free(ct->edge.others);
+            if (ct->edge.othercnt)
                 ct->edge.othercnt = 0;
-            }
         }
     }
 }
@@ -5089,7 +5048,7 @@ static uint8 *dogeninstructions(InstrCt *ct) {
     if ( ct->sc->md!=NULL ) max += ct->ptcnt*12;
     max += ct->ptcnt*6;			/* in case there are any rounds */
     max += ct->ptcnt*6;			/* paranoia */
-    ct->instrs = ct->pt = galloc(max);
+    ct->instrs = ct->pt = malloc(max);
 
     /* Initially no stem hints are done */
     if ( ct->gd->hbundle!=NULL ) {
@@ -5108,8 +5067,8 @@ static uint8 *dogeninstructions(InstrCt *ct) {
     if ( instruct_diagonal_stems ) {
         /* Prepare info about diagonal stems to be used during edge optimization. */
         /* These contents need to be explicitly freed after hinting diagonals. */
-        ct->diagstems = gcalloc(ct->gd->stemcnt, sizeof(StemData *));
-        ct->diagpts = gcalloc(ct->ptcnt, sizeof(struct diagpointinfo));
+        ct->diagstems = calloc(ct->gd->stemcnt, sizeof(StemData *));
+        ct->diagpts = calloc(ct->ptcnt, sizeof(struct diagpointinfo));
         InitDStemData(ct);
     }
 
@@ -5154,15 +5113,11 @@ static uint8 *dogeninstructions(InstrCt *ct) {
 	"When processing TTF instructions (hinting) of %s", ct->sc->name
     );
 
-    if ( instruct_diagonal_stems ) {
-        free(ct->diagstems);
-        free(ct->diagpts);
-    }
     GlyphDataFree( ct->gd );
 
     ct->sc->ttf_instrs_len = (ct->pt)-(ct->instrs);
     ct->sc->instructions_out_of_date = false;
-return ct->sc->ttf_instrs = grealloc(ct->instrs,(ct->pt)-(ct->instrs));
+return ct->sc->ttf_instrs = realloc(ct->instrs,(ct->pt)-(ct->instrs));
 }
 
 void NowakowskiSCAutoInstr(GlobalInstrCt *gic, SplineChar *sc) {
@@ -5201,7 +5156,6 @@ return;
     }
 
     if ( sc->ttf_instrs ) {
-	free(sc->ttf_instrs);
 	sc->ttf_instrs = NULL;
 	sc->ttf_instrs_len = 0;
     }
@@ -5231,11 +5185,11 @@ return;
     for ( ss=sc->layers[gic->layer].splines; ss!=NULL; ss=ss->next, ++contourcnt );
     cnt = SSTtfNumberPoints(sc->layers[gic->layer].splines);
 
-    contourends = galloc((contourcnt+1)*sizeof(int));
-    clockwise = gcalloc(contourcnt,1);
-    bp = galloc(cnt*sizeof(BasePoint));
-    touched = gcalloc(cnt,1);
-    affected = gcalloc(cnt,1);
+    contourends = malloc((contourcnt+1)*sizeof(int));
+    clockwise = calloc(contourcnt,1);
+    bp = malloc(cnt*sizeof(BasePoint));
+    touched = calloc(cnt,1);
+    affected = calloc(cnt,1);
 
     contourcnt = cnt = 0;
     for ( ss=sc->layers[gic->layer].splines; ss!=NULL; ss=ss->next ) {
@@ -5268,12 +5222,6 @@ return;
     ct.rp0 = 0;
 
     dogeninstructions(&ct);
-
-    free(touched);
-    free(affected);
-    free(bp);
-    free(contourends);
-    free(clockwise);
 
     SCMarkInstrDlgAsChanged(sc);
     SCHintsChanged(sc);

@@ -127,16 +127,12 @@ extern unichar_t *utf82u_copy(const char *utf8buf);
 extern char *u2utf8_strcpy(char *utf8buf,const unichar_t *ubuf);
 extern char *u2utf8_copy(const unichar_t *ubuf);
 extern char *u2utf8_copyn(const unichar_t *ubuf,int len);
-extern unichar_t *encoding2u_strncpy(unichar_t *uto, const char *from, int n, enum encoding cs);
-extern char *u2encoding_strncpy(char *to, const unichar_t *ufrom, int n, enum encoding cs);
-extern unichar_t *def2u_strncpy(unichar_t *uto, const char *from, int n);
-extern char *u2def_strncpy(char *to, const unichar_t *ufrom, int n);
+extern unichar_t *encoding2u_strncpy(unichar_t *uto, const char *from, size_t n, enum encoding cs);
+extern char *u2encoding_strncpy(char *to, const unichar_t *ufrom, size_t n, enum encoding cs);
+extern unichar_t *def2u_strncpy(unichar_t *uto, const char *from, size_t n);
+extern char *u2def_strncpy(char *to, const unichar_t *ufrom, size_t n);
 extern unichar_t *def2u_copy(const char *from);
 extern char *u2def_copy(const unichar_t *ufrom);
-
-extern int u_sprintf(unichar_t *str, const unichar_t *format, ... );
-extern int u_snprintf(unichar_t *str, int len, const unichar_t *format, ... );
-extern int u_vsnprintf(unichar_t *str, int len, const unichar_t *format, va_list ap );
 
 extern int uAllAscii(const unichar_t *str);
 extern int AllAscii(const char *);
@@ -183,28 +179,8 @@ int endswith(const char *haystack,const char *needle);
 extern int u_endswith(const unichar_t *haystack,const unichar_t *needle);
 
 /**
- * Return a pointer to the last occurance of ch in 's' or null if it
- * doesn't appear. Very much like the strrchr() call.
+ * In the string 's' replace all occurrences of 'orig' with 'replacement'.
  */
-extern char* str_rfind( char* s, char ch );
-
-/**
- * In the string 's' replace all occurances of 'orig' with 'replacement'.
- * If you set free_s to true then the string 's' will be freed by this function.
- * Normally you want to set free_s to 0 to avoid that. The case you will want to
- * use free_s to 1 is chaining many calls like:
- *
- * char* s = copy( input );
- * s = str_replace_all( s, "foo", "bar", 1 );
- * s = str_replace_all( s, "baz", "gah", 1 );
- * // use s
- * free(s);
- * // no leaks in the above.
- *
- * Note that 's' is first copied before the first call to replace_all in the above
- * so it can be freed without concern. This also allows the ordering of replace_all
- * in the above to be changed without having to worry about the free_s flag.
- */
-extern char* str_replace_all( char* s, char* orig, char* replacement, int free_s );
+extern char* str_replace_all( char* s, char* orig, char* replacement );
 
 #endif

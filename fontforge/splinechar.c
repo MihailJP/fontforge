@@ -418,14 +418,12 @@ return( true );
 void SCClearLayer(SplineChar *sc,int layer) {
     RefChar *refs, *next;
 
-    SplinePointListsFree(sc->layers[layer].splines);
     sc->layers[layer].splines = NULL;
     for ( refs=sc->layers[layer].refs; refs!=NULL; refs = next ) {
 	next = refs->next;
 	SCRemoveDependent(sc,refs,layer);
     }
     sc->layers[layer].refs = NULL;
-    ImageListsFree(sc->layers[layer].images);
     sc->layers[layer].images = NULL;
 }
 
@@ -449,13 +447,11 @@ return;
 	sc->widthset = false;
 	if ( sc->parent!=NULL && sc->width!=0 )
 	    sc->vwidth = sc->width = sc->parent->ascent + sc->parent->descent;	//	    sc->width = sc->parent->ascent+sc->parent->descent;	//  20130714: vwidthもリセット。
-	AnchorPointsFree(sc->anchor);
 	sc->anchor = NULL;
-	StemInfosFree(sc->hstem); sc->hstem = NULL;
-	StemInfosFree(sc->vstem); sc->vstem = NULL;
-	DStemInfosFree(sc->dstem); sc->dstem = NULL;
-	MinimumDistancesFree(sc->md); sc->md = NULL;
-	free(sc->ttf_instrs);
+	sc->hstem = NULL;
+	sc->vstem = NULL;
+	sc->dstem = NULL;
+	sc->md = NULL;
 	sc->ttf_instrs = NULL;
 	sc->ttf_instrs_len = 0;
 	SCOutOfDateBackground(sc);
@@ -476,9 +472,7 @@ return;
     SCPreserveLayer(sc,layer,2);
     if ( copymetadata ) {
 	sc->unicodeenc = -1;
-	free(sc->name);
 	sc->name = copy(".notdef");
-	PSTFree(sc->possub);
 	sc->possub = NULL;
     }
     SCClearContents(sc,layer);
@@ -507,15 +501,10 @@ void SCCopyLayerToLayer(SplineChar *sc, int from, int to,int doclear) {
 	SCClearLayer(sc,to);
 
     fore = SplinePointListCopy(sc->layers[from].splines);
-    if ( !sc->layers[from].order2 && sc->layers[to].order2 ) {
-	temp = SplineSetsTTFApprox(fore);
-	SplinePointListsFree(fore);
-	fore = temp;
-    } else if ( sc->layers[from].order2 && !sc->layers[to].order2 ) {
-	temp = SplineSetsPSApprox(fore);
-	SplinePointListsFree(fore);
-	fore = temp;
-    }
+    if ( !sc->layers[from].order2 && sc->layers[to].order2 )
+	fore = SplineSetsTTFApprox(fore);
+    else if ( sc->layers[from].order2 && !sc->layers[to].order2 )
+	fore = SplineSetsPSApprox(fore);
     if ( fore!=NULL ) {
 	for ( temp=fore; temp->next!=NULL; temp = temp->next );
 	temp->next = sc->layers[to].splines;
@@ -792,10 +781,7 @@ static void SplineSetsChangeCoord(SplineSet *spl,real old, real new,int isy,
 		    changed = true;
 		}
 	    }
-#if 0	/* will be done in Round2Int */
-	    if ( change )
-		SSRegenerateFromSpiros(spl);
-#endif
+	/* SSRegenerateFromSpiros will be done in Round2Int */
 	} else {
 	    for ( sp=spl->first; ; ) {
 		if ( isy ) {
@@ -914,7 +900,6 @@ return;
 	else
 	    prev->next = altuni->next;
 	altuni->next = NULL;
-	AltUniFree(altuni);
     }
 }
 
@@ -926,7 +911,7 @@ void AltUniAdd(SplineChar *sc,int uni) {
 						    altuni->vs!=-1 ||
 			                            altuni->fid); altuni=altuni->next );
 	if ( altuni==NULL ) {
-	    altuni = chunkalloc(sizeof(struct altuni));
+	    altuni = XZALLOC(struct altuni);
 	    altuni->next = sc->altuni;
 	    sc->altuni = altuni;
 	    altuni->unienc = uni;
@@ -940,7 +925,7 @@ void AltUniAdd_DontCheckDups(SplineChar *sc,int uni) {
     struct altuni *altuni;
 
     if ( sc!=NULL && uni!=-1 && uni!=sc->unicodeenc ) {
-	altuni = chunkalloc(sizeof(struct altuni));
+	altuni = XZALLOC(struct altuni);
 	altuni->next = sc->altuni;
 	sc->altuni = altuni;
 	altuni->unienc = uni;
@@ -962,7 +947,7 @@ void SCOrderAP(SplineChar *sc) {
     if ( !out )
 return;
 
-    array = galloc(cnt*sizeof(AnchorPoint *));
+    array = malloc(cnt*sizeof(AnchorPoint *));
     for ( i=0, ap=sc->anchor; ap!=NULL; ++i, ap=ap->next )
 	array[i] = ap;
     for ( i=0; i<cnt-1; ++i ) {
@@ -978,7 +963,6 @@ return;
     for ( i=0; i<cnt-1; ++i )
 	array[i]->next = array[i+1];
     array[cnt-1]->next = NULL;
-    free( array );
 }
 
 void UnlinkThisReference(FontViewBase *fv,SplineChar *sc,int layer) {
@@ -1026,7 +1010,7 @@ return( true );
 return( false );
 }
 
-int SCSetMetaData(SplineChar *sc,char *name,int unienc,const char *comment) {
+int SCSetMetaData(SplineChar *sc,const char *name,int unienc,const char *comment) {
     SplineFont *sf = sc->parent;
     int i, mv=0;
     int isnotdef, samename=false, sameuni=false;
@@ -1053,7 +1037,6 @@ return( false );
 		if ( !MultipleNames()) {
 return( false );
 		}
-		free(sf->glyphs[i]->name);
 		sf->glyphs[i]->namechanged = true;
 		if ( strncmp(sc->name,"uni",3)==0 && sf->glyphs[i]->unicodeenc!=-1) {
 		    char buffer[12];
@@ -1088,7 +1071,6 @@ return( false );
     if ( sc->name==NULL || strcmp(name,sc->name)!=0 ) {
 	if ( sc->name!=NULL )
 	    SFGlyphRenameFixup(sf,sc->name,name,false);
-	free(sc->name);
 	sc->name = copy(name);
 	sc->namechanged = true;
 	GlyphHashFree(sf);
@@ -1109,7 +1091,7 @@ return( false );
 	    }
 	}
     }
-    free(sc->comment); sc->comment = NULL;
+    sc->comment = NULL;
     if ( comment!=NULL && *comment!='\0' )
 	sc->comment = copy(comment);
 
@@ -1137,7 +1119,6 @@ void RevertedGlyphReferenceFixup(SplineChar *sc, SplineFont *sf) {
 		    sc->layers[layer].refs = next;
 		else
 		    prev->next = next;
-		RefCharFree(refs);
 	    }
 	}
     }
@@ -1169,7 +1150,6 @@ void RevertedGlyphReferenceFixup(SplineChar *sc, SplineFont *sf) {
 		    sc->vkerns = knext;
 		else
 		    sc->kerns = knext;
-		chunkfree(kp,sizeof(KernPair));
 	    }
 	}
     }
@@ -1820,9 +1800,6 @@ int SFValidate(SplineFont *sf, int layer, int force) {
     int any = 0;
     SplineChar *sc;
     int cnt=0;
-#if 0		/* See comment below, leave code in just in case I'm wrong again */
-    struct ttf_table *tab;
-#endif
 
     if ( sf->cidmaster )
 	sf = sf->cidmaster;
@@ -1862,25 +1839,6 @@ return( -1 );
     } while ( k<sf->subfontcnt );
     ff_progress_end_indicator();
 
-#if 0
-    /* Ah... I no longer believe that the maxp instr_len entry refers to */
-    /* prep/fpgm. The footnote I thought was relevant I see actually */
-    /* refers to something else. Oops. */
-    if ( (tab = SFFindTable(sf,CHR('m','a','x','p')))!=NULL && tab->len>=32 ) {
-	/* If we have a maxp table then do some truetype checks */
-	/* these are only errors for fontlint, we'll fix them up when we */
-	/*  generate the font -- but fontlint needs to know this stuff */
-	int instr_len_max = memushort(tab->data,tab->len,13*sizeof(uint16));
-	if ( (tab = SFFindTable(sf,CHR('p','r','e','p')))!=NULL ) {
-	    if ( tab->len > instr_len_max )
-		any |= vs_maxp_prepfpgmtoolong;
-	}
-	if ( (tab = SFFindTable(sf,CHR('f','p','g','m')))!=NULL ) {
-	    if ( tab->len > instr_len_max )
-		any |= vs_maxp_prepfpgmtoolong;
-	}
-    }
-#endif
     /* a lot of asian ttf files have a bad postscript fontname stored in the */
     /*  name table */
 return( any&~vs_known );
@@ -1938,7 +1896,7 @@ static SplineSet *UnitCircle(int clockwise) {
     SplinePoint *sps[5];
     int i;
 
-    spl = chunkalloc(sizeof(SplineSet));
+    spl = XZALLOC(SplineSet);
     for ( i=0; i<4; ++i )
 	sps[i] = CirclePoint(i&3);
     sps[4] = sps[0];
@@ -1995,11 +1953,9 @@ return(false);
 	end->next = NULL;
 	while ( s!=NULL ) {
 	    end = s->to;
-	    SplineFree(s);
 	    if ( end==spl->first )
 	break;
 	    s = end->next;
-	    SplinePointFree(end);
 	}
     }
 return( true );
@@ -2073,10 +2029,9 @@ static int EllipseClockwise(SplinePoint *sp1,SplinePoint *sp2,BasePoint *slope1,
     e2->prevcp.x = e2->me.x - len*slope2->x;
     e2->prevcp.y = e2->me.y - len*slope2->y;
     SplineMake3(e1,e2);
-    ss = chunkalloc(sizeof(SplineSet));
+    ss = XZALLOC(SplineSet);
     ss->first = ss->last = e1;
     ret = SplinePointListIsClockwise(ss);
-    SplinePointListFree(ss);
 return( ret );
 }
 
@@ -2101,11 +2056,8 @@ static int BuildEllipse(int clockwise,bigreal r1,bigreal r2, bigreal theta,
 	/*  and may prove useful if we need to do more debugging. Invoked by */
 	/*  holding down the <Alt> modifier when selecting the menu item */
 	ss = SplinePointListCopy(spl);
-    if ( !CutCircle(spl,&sp1->me,true) || !CutCircle(spl,&sp2->me,false) ) {
-	SplinePointListFree(spl);
-	SplinePointListFree(ss);
+    if ( !CutCircle(spl,&sp1->me,true) || !CutCircle(spl,&sp2->me,false) )
 return( false );
-    }
     if ( ellipse_to_back && ss!=NULL ) {
 	SCPreserveBackground(cv->sc);
 	if ( cv->sc->layers[ly_back].order2 )
@@ -2117,10 +2069,8 @@ return( false );
 	spl = SplineSetsConvertOrder(spl,true);
     if ( !changed )
 	CVPreserveState(cv);
-    if ( sp1->next!=NULL ) {
-	chunkfree(sp1->next,sizeof(Spline));
+    if ( sp1->next!=NULL )
 	sp1->next = sp2->prev = NULL;
-    }
     sp1->nextcp = spl->first->nextcp;
     sp1->nonextcp = spl->first->nonextcp;
     sp1->next = spl->first->next;
@@ -2131,10 +2081,7 @@ return( false );
     sp2->prev = spl->last->prev;
     sp2->prev->to = sp2;
     SplineRefigure(sp1->next); SplineRefigure(sp2->prev);
-    SplinePointFree(spl->first);
-    SplinePointFree(spl->last);
     spl->first = spl->last = NULL;
-    SplinePointListFree(spl);
 return( true );
 }
 
@@ -2453,7 +2400,6 @@ void _CVMenuMakeLine(CharViewBase *cv,int do_arc,int ellipse_to_back) {
 		    spl->next = spl2->next;
 		else
 		    cv->layerheads[cv->drawmode]->splines = spl2->next;
-		chunkfree(spl2,sizeof(*spl2));
 		changed = true;
 	      break;
 	      case -1:
@@ -2466,7 +2412,6 @@ void _CVMenuMakeLine(CharViewBase *cv,int do_arc,int ellipse_to_back) {
 		    spl->next = spl1->next;
 		else
 		    cv->layerheads[cv->drawmode]->splines = spl1->next;
-		chunkfree(spl1,sizeof(*spl1));
 		changed = true;
 	      break;
 	    }
@@ -2514,7 +2459,7 @@ void SCClearInstrsOrMark(SplineChar *sc, int layer, int complain) {
     had_ap = had_dep = had_instrs = 0;
     if ( instrs!=NULL ) {
 	if ( clear_tt_instructions_when_needed ) {
-	    free(sc->ttf_instrs); sc->ttf_instrs = NULL;
+	    sc->ttf_instrs = NULL;
 	    sc->ttf_instrs_len = 0;
 	    SCMarkInstrDlgAsChanged(sc);
 	    had_instrs = 1;
@@ -2527,7 +2472,7 @@ void SCClearInstrsOrMark(SplineChar *sc, int layer, int complain) {
 	RefChar *ref;
 	if ( dep->sc->ttf_instrs_len!=0 ) {
 	    if ( clear_tt_instructions_when_needed ) {
-		free(dep->sc->ttf_instrs); dep->sc->ttf_instrs = NULL;
+		dep->sc->ttf_instrs = NULL;
 		dep->sc->ttf_instrs_len = 0;
 		SCMarkInstrDlgAsChanged(dep->sc);
 		had_instrs = 1;
@@ -2538,9 +2483,6 @@ void SCClearInstrsOrMark(SplineChar *sc, int layer, int complain) {
 	}
 	for ( ref=dep->sc->layers[layer].refs; ref!=NULL && ref->sc!=sc; ref=ref->next );
 	for ( ; ref!=NULL ; ref=ref->next ) {
-#if 0
-	    ref->point_match = false;
-#endif
 	    if ( ref->point_match ) {
 		ref->point_match_out_of_date = true;
 		had_dep = true;
@@ -2756,7 +2698,6 @@ void FF_SetCVInterface(struct cv_interface *cvi) {
 
 void SCRemoveKern(SplineChar* sc) {
     if ( sc->kerns!=NULL ) {
-	KernPairsFree(sc->kerns);
 	sc->kerns = NULL;
 	sc->parent->changed = true;
 	if( sc->parent->fv->cidmaster!=NULL )
@@ -2766,7 +2707,6 @@ void SCRemoveKern(SplineChar* sc) {
 
 void SCRemoveVKern(SplineChar* sc) {
     if ( sc->vkerns!=NULL ) {
-	KernPairsFree(sc->vkerns);
 	sc->vkerns = NULL;
 	sc->parent->changed = true;
 	if( sc->parent->fv->cidmaster!=NULL )

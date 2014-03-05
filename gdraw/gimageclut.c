@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 #include "gdrawP.h"
 #include "colorP.h"
 #include "charset.h"
@@ -66,16 +68,6 @@ struct colcnt {
     int32 cnt;
 };
 
-static void RevColListFree(struct revcol *rc) {
-    struct revcol *next;
-
-    while ( rc!=NULL ) {
-	next = rc->next;
-	free(rc);
-	rc = next;
-    }
-}
-
 static int cccomp(const void *_c1, const void *_c2) {
     register const struct colcnt *c1 = _c1, *c2 = _c2;
 
@@ -99,17 +91,6 @@ static int cicntcomp(const void *_c1, const void *_c2) {
 
 return( c2->cnt-c1->cnt );
 }
-
-#if 0
-static int queuelength( struct clutinf *ci) {
-    int cnt = 0;
-    while ( ci!=NULL ) {
-	++cnt;
-	ci = ci->next;
-    }
-return( cnt );
-}
-#endif
 
 /* we have cnt different colors, the colors and their histogram is given in */
 /*  clutinf. We want to fit that into clutmax colors */
@@ -470,7 +451,7 @@ GClut *GImageFindCLUT(GImage *image,GClut *clut,int clutmax) {
     char grey_clut[256];
 
     if ( clut==NULL )
-	clut = galloc(sizeof(GClut));
+	clut = malloc(sizeof(GClut));
     if ( clutmax<2 || clut==NULL )
 return( 0 );
 
@@ -506,7 +487,7 @@ return( PickGreyClut(clut,clutmax,grey_clut,cnt));
 	cnt = image->u.image->clut->clut_len;
 
     memset(&transinf,'\0',sizeof(transinf));
-    clutinf = gcalloc(cnt,sizeof(struct clutinf));
+    clutinf = calloc(cnt,sizeof(struct clutinf));
     
     cnt = gimage_count8(image, clutinf, 0, &transinf);
     if ( cnt+(transinf.cnt!=0)<clutmax ) {
@@ -682,7 +663,7 @@ return( old );
 	}
     }
     if ( best!=old ) {
-	if ( old==NULL ) old = gcalloc(1,sizeof(struct revcol));
+	if ( old==NULL ) old = calloc(1,sizeof(struct revcol));
 	*old = *best;
 	old->next = NULL;
 	++old->dist;
@@ -691,7 +672,7 @@ return( old );
 }
 
 static struct revcol *addrevcol(struct revcol *copy,struct revcol *old, int dist) {
-    struct revcol *rc = galloc(sizeof(struct revcol));
+    struct revcol *rc = malloc(sizeof(struct revcol));
 
     *rc = *copy;
     rc->next = old;
@@ -706,7 +687,7 @@ static RevCMap *_GClutReverse(int side_cnt,int range,struct revcol *basecol,
     struct revcol *test;
     int changed, dmax, anynulls;
 
-    rev = gcalloc(1,sizeof(RevCMap));
+    rev = calloc(1,sizeof(RevCMap));
 
     rev->side_cnt = side_cnt;
     rev->range = range;
@@ -732,7 +713,7 @@ static RevCMap *_GClutReverse(int side_cnt,int range,struct revcol *basecol,
 	rev->div_shift = div_tables[side_cnt][1];
     }
 
-    rev->cube = gcalloc(side_cnt*side_cnt*side_cnt,sizeof(struct revitem));
+    rev->cube = calloc(side_cnt*side_cnt*side_cnt,sizeof(struct revitem));
     for ( test = cols; test!=NULL; test = test->next ) {
 	int pos, dist;
 	int r,g,b;
@@ -836,9 +817,9 @@ RevCMap *GClutReverse(GClut *clut,int side_cnt) {
 
     if ( GImageGreyClut(clut) ) {
 	GCol *greys; int changed;
-	ret = gcalloc(1,sizeof(RevCMap));
+	ret = calloc(1,sizeof(RevCMap));
 	ret->is_grey = 1;
-	greys = ret->greys = galloc(256*sizeof(GCol));
+	greys = ret->greys = malloc(256*sizeof(GCol));
 	for ( i=0; i<256; ++i ) greys[i].pixel = 0x1000;
 	for ( i=0; i<clut->clut_len; ++i ) {
 	    int g = clut->clut[i]&0xff;
@@ -861,7 +842,7 @@ return( ret );
     }
 
     for ( i=0; i<clut->clut_len; ++i ) {
-	struct revcol *rc = galloc(sizeof(struct revcol));
+	struct revcol *rc = malloc(sizeof(struct revcol));
 	rc->red = COLOR_RED(clut->clut[i]);
 	rc->green = COLOR_GREEN(clut->clut[i]);
 	rc->blue = COLOR_BLUE(clut->clut[i]);
@@ -871,26 +852,15 @@ return( ret );
 	base = rc;
     }
     memset(&basecol,'\0',sizeof(basecol));
-    ret = _GClutReverse(side_cnt,256,&basecol,base,base);
-    while ( base!=NULL ) {
-	struct revcol *rc = base->next;
-	gfree(base);
-	base = rc;
-    }
-return( ret );
+return _GClutReverse(side_cnt,256,&basecol,base,base);
 }
 
 void GClut_RevCMapFree(RevCMap *rev) {
     int i;
 
-    for ( i=0; i<rev->side_cnt*rev->side_cnt*rev->side_cnt; ++i ) {
+    for ( i=0; i<rev->side_cnt*rev->side_cnt*rev->side_cnt; ++i )
 	if ( rev->cube[i].sub!=NULL )
 	    GClut_RevCMapFree(rev->cube[i].sub);
-	RevColListFree(rev->cube[i].cols[0]);
-	RevColListFree(rev->cube[i].cols[1]);
-    }
-    free(rev->cube);
-    free(rev);
 }
 
 int GImageSameClut(GClut *clut,GClut *nclut) {

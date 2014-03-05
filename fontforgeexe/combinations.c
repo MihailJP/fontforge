@@ -66,7 +66,7 @@ void SFShowLigatures(SplineFont *sf,SplineChar *searchfor) {
 			if ( pst->type==pst_ligature &&
 				(searchfor==NULL || PSTContains(pst->u.lig.components,searchfor->name))) {
 		    if ( choices!=NULL ) {
-			line = pt = galloc((strlen(sc->name)+13+3*strlen(pst->u.lig.components)));
+			line = pt = malloc((strlen(sc->name)+13+3*strlen(pst->u.lig.components)));
 			strcpy(pt,sc->name);
 			pt += strlen(pt);
 			if ( sc->unicodeenc!=-1 && sc->unicodeenc<0x10000 ) {
@@ -104,8 +104,8 @@ void SFShowLigatures(SplineFont *sf,SplineChar *searchfor) {
 	}
 	if ( choices!=NULL )
     break;
-	choices = galloc((cnt+2)*sizeof(unichar_t *));
-	where = galloc((cnt+1)*sizeof(int));
+	choices = malloc((cnt+2)*sizeof(unichar_t *));
+	where = malloc((cnt+1)*sizeof(int));
 	if ( cnt==0 ) {
 	    choices[0] = copy("<No Ligatures>");
 	    where[0] = -1;
@@ -117,10 +117,6 @@ void SFShowLigatures(SplineFont *sf,SplineChar *searchfor) {
     i = gwwv_choose(_("Ligatures"),(const char **) choices,cnt,0,_("Select a ligature to view"));
     if ( i!=-1 && where[i]!=-1 )
 	CharViewCreate(sf->glyphs[where[i]],(FontView *) sf->fv,-1);
-    free(where);
-    for ( i=0; i<cnt; ++i )
-	free(choices[i]);
-    free(choices);
 }
 
 struct kerns {
@@ -271,7 +267,7 @@ static void KPBuildKernList(KPData *kpd) {
 	break;
 	    if ( cnt==0 )
 return;
-	    kpd->kerns = galloc((cnt+1)*sizeof(struct kerns));
+	    kpd->kerns = malloc((cnt+1)*sizeof(struct kerns));
 	    kpd->kcnt = cnt;
 	}
     } else {
@@ -294,7 +290,7 @@ return;
 	break;
 	    if ( cnt==0 )
 return;
-	    kpd->kerns = galloc((cnt+1)*sizeof(struct kerns));
+	    kpd->kerns = malloc((cnt+1)*sizeof(struct kerns));
 	    kpd->kcnt = cnt;
 	}
     }
@@ -364,7 +360,7 @@ static void KPBuildAnchorList(KPData *kpd) {
 	break;
 	    if ( cnt==0 )
 return;
-	    kpd->kerns = galloc((cnt+1)*sizeof(struct kerns));
+	    kpd->kerns = malloc((cnt+1)*sizeof(struct kerns));
 	    kpd->kcnt = cnt;
 	}
     } else {
@@ -400,7 +396,7 @@ return;
 	break;
 	    if ( cnt==0 )
 return;
-	    kpd->kerns = galloc((cnt+1)*sizeof(struct kerns));
+	    kpd->kerns = malloc((cnt+1)*sizeof(struct kerns));
 	    kpd->kcnt = cnt;
 	}
     }
@@ -745,7 +741,6 @@ static int KP_ChangeSize(GGadget *g, GEvent *e) {
 	if ( newsize==kpd->bdf->pixelsize )
 return( true );
 	temp = SplineFontPieceMeal(kpd->sf,kpd->layer,newsize,72,true,NULL);
-	BDFFontFree(kpd->bdf);
 	kpd->bdf = temp;
 	KP_Resize(kpd);
 	KPV_Resize(kpd);
@@ -1248,6 +1243,5 @@ return;
     GDrawSetVisible(kpd.gw,true);
     while ( !kpd.done )
 	GDrawProcessOneEvent(NULL);
-    free( kpd.kerns );
     GDrawDestroyWindow(gw);
 }

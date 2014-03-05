@@ -133,13 +133,6 @@ const char CantSaveFile[] = "Can't open or write to output file %s\n";	/* exit(2
 const char NoMoreMemory[] = "Can't access more memory.\n";		/* exit(3) */
 const char LineLengthBg[] = "Error with %s. Found line too long: %s\n";	/* exit(4) */
 
-static void FreeNamesMemorySpace() {
-    long index;
-    for ( index=0; index<MAXC ; ++index ) {
-	if ( names[index]!=NULL ) free( names[index] );
-    }
-}
-
 static void FigureAlternates(long index, char *apt, int normative) {
     int alt, i;
     char *end;
@@ -220,7 +213,6 @@ static void readin(void) {
 	    fprintf( stderr, "\n%s\n",buffer );
 
 	    fclose(fp);
-	    FreeNamesMemorySpace();
 	    exit(4);
 	}
 	if ( *buffer=='#' )
@@ -358,14 +350,12 @@ static void readin(void) {
 
     if ((fp = fopen("LineBreak.txt","r"))==NULL ) {
 	fprintf( stderr, CantReadFile, "LineBreak.txt" );
-	FreeNamesMemorySpace();
 	exit(1);
     }
     while ( fgets(buffer,sizeof(buffer)-1,fp)!=NULL ) {
 	if (strlen(buffer)>=299) {	/* previous version was linelength of 300 chars, jul2012 */
 	    fprintf( stderr, LineLengthBg,"LineBreak.txt",buffer );
 	    fclose(fp);
-	    FreeNamesMemorySpace();
 	    exit(4);
 	}
 	if ( *buffer=='#' )
@@ -407,22 +397,12 @@ static void readin(void) {
 	    pt = pt1;
 	    for ( ; index<=indexend; ++index )
 		flags[index] |= flg;
-#if 0
-	    if ( strstr(pt," First>")!=NULL )
-		wasfirst = index;
-	    else if ( strstr(pt," Last>")!=NULL ) {
-		for ( ; wasfirst<index; ++wasfirst ) {
-		    flags[wasfirst] = flg;
-		}
-	    }
-#endif
 	}
     }
     fclose(fp);
 
     if ((fp = fopen("PropList.txt","r"))==NULL ) {
 	fprintf( stderr, CantReadFile, "PropList.txt" );
-	FreeNamesMemorySpace();
 	exit(1);
     }
     while ( fgets(buffer,sizeof(buffer)-1,fp)!=NULL ) {
@@ -430,7 +410,6 @@ static void readin(void) {
 	if (strlen(buffer)>=299) {	/* previous version was linelength of 300 chars, jul2012 */
 	    fprintf( stderr, LineLengthBg,"PropList.txt",buffer );
 	    fclose(fp);
-	    FreeNamesMemorySpace();
 	    exit(4);
 	}
 	if ( true || strncmp(buffer,"Property dump for:", strlen("Property dump for:"))==0 ) {
@@ -476,7 +455,6 @@ static void readin(void) {
 
     if ((fp = fopen("NamesList.txt","r"))==NULL ) {
 	fprintf( stderr, CantReadFile, "NamesList.txt" );
-	FreeNamesMemorySpace();
 	exit(1);
     }
     while ( fgets(buffer,sizeof(buffer)-1,fp)!=NULL ) {
@@ -484,7 +462,6 @@ static void readin(void) {
 	if (strlen(buffer)>=511) {
 	    fprintf( stderr, LineLengthBg,"NamesList.txt",buffer );
 	    fclose(fp);
-	    FreeNamesMemorySpace();
 	    exit(4);
 	}
 	if ( (index = strtol(buffer,NULL,16))!=0 ) {
@@ -521,7 +498,6 @@ return;
 	if (strlen(buffer)>=299) {
 	    fprintf( stderr, LineLengthBg,corp,buffer );
 	    fclose(fp);
-	    FreeNamesMemorySpace();
 	    exit(4);
 	}
 	if ( *buffer=='#' )
@@ -544,7 +520,6 @@ return;
 	    if ((names[index]= malloc(strlen(buf2)+strlen(prefix)+4)) == NULL) {
 		fprintf( stderr, NoMoreMemory );
 		fclose(fp);
-		FreeNamesMemorySpace();
 		exit(3);
 	    }
 	    strcpy(names[index],prefix); strcat(names[index],buf2);
@@ -613,7 +588,6 @@ static void dumparabicdata(FILE *header) {
     data = fopen( "ArabicForms.c","w");
     if ( data==NULL || data==NULL ) {
 	fprintf( stderr, CantSaveFile, "ArabicForms.c" );
-	FreeNamesMemorySpace();
 	exit(2);
     }
 
@@ -650,7 +624,6 @@ static void dump() {
 	fprintf( stderr, CantSaveFile, "(utype.[ch])" );
 	if ( header ) fclose( header );
 	if ( data   ) fclose( data );
-	FreeNamesMemorySpace();
 	exit(2);
     }
 
@@ -915,56 +888,6 @@ static void dump() {
 
     fclose( data );
 
-#if 0
-    data = fopen( "uninames.c", "w");
-    if ( data==NULL ) {
-	fprintf( stderr, CantSaveFile, "uninames.c" );
-	FreeNamesMemorySpace();
-	exit( 1 );
-    }
-
-    fprintf( data, "#include <stdio.h>\n" );
-    fprintf( data, "#include <utype.h>\n" );
-    fprintf( data, GeneratedFileMessage );
-    for ( i=0; i<MAXC; ++i ) if ( names[i]!=NULL && *names[i]!='<' ) {
-	fprintf( data, "static const unsigned short _%04x[] = { ", i );
-	for ( j=0; names[i][j]!='\0'; ++j )
-	    fprintf( data, "'%c', ", names[i][j]);
-	fprintf( data, "0 };\n" );
-    }
-    for ( i=0; i<MAXC; i+=256 ) { int any=0;
-	for ( j=0; j<256 && !any; ++j )
-	    if ( names[i+j]!=NULL && *names[i+j]!='<' ) any = 1;
-	if ( any ) {
-	    fprintf( data, "static const unsigned short * const __%04x[] = {\n", i );
-	    for ( j=0; j<256; ++j )
-		if ( names[i+j]!=NULL && *names[i+j]!='<' )
-		    fprintf( data, "\t_%04x%s\n", i+j, j==255?"":"," );
-		else
-		    fprintf( data, "\tNULL%s\n", j==255?"":"," );
-	    fprintf(data, "};\n" );
-	}
-    }
-    fprintf( data, "static const unsigned short *const __NULLALL[] = {\n" );
-    for ( j=0; j<255; ++j ) fprintf( data, "\tNULL,\n" );
-    fprintf( data, "\tNULL\n};\n" );
-    fprintf( data, "\nunsigned const short *const*const UnicodeCharacterNames[] = {\n" );
-    for ( i=0; i<MAXC; i+=256 ) { int any=0;
-	for ( j=0; j<256 && !any; ++j )
-	    if ( names[i+j]!=NULL && *names[i+j]!='<' ) any = 1;
-	if ( any )
-	    fprintf( data, "\t__%04x%s\n", i, i==0xff00?"":"," );
-	else
-	    fprintf( data, "\t__NULLALL%s\n", i==0xff00?"":"," );
-    }
-    fprintf( data, "};\n" );
-    fclose( data );
-
-    fprintf( header, "\nextern const unsigned short *const *const UnicodeCharacterNames[];\n" );
-    fprintf( header, "\t/* An array of 256 arrays of 256 strings of 2byte unicode chars */\n" );
-    fprintf( header, "\t/* containing the names of all non-algorithmically named unicode chars */\n" );
-#endif
-
     dumparabicdata(header);
     fprintf( header, "\n#define _SOFT_HYPHEN\t0xad\n" );
     fprintf( header, "\n#define _DOUBLE_S\t0xdf\n" );
@@ -1030,15 +953,6 @@ return;
     }
     fprintf(file, "0};\n" );
     fclose(file);
-
-#if 0	/* moved to dump.c to make build process easier */
-	/* Now only one thing touches chardata. Even though it's our entry */
-	/*  best if done elsewhere */
-    file = fopen("chardata.h","a");
-    fprintf( file, GeneratedFileMessage );
-    fprintf( file,"\nextern const unichar_t *const * const unicode_alternates[];\n" );
-    fclose(file);
-#endif
 }
 
 static void visualalts(void) {
@@ -1634,148 +1548,6 @@ static void visualalts(void) {
 
 
 static void cheat(void) {
-#if 0
-	    /* Adobe's private use symbols (some) */
-    alts[0xf6de][0] = '-';		/* 3/4 em dash */
-
-    alts[0xf66d][0] = 0xf761; alts[0xf66d][1] = 0x306;	/* A breve */
-    alts[0xf66e][0] = 0xf761; alts[0xf66e][1] = 0x304;	/* A macron */
-    alts[0xf66f][0] = 0xf761; alts[0xf66f][1] = 0x328;	/* A ogonek */
-    alts[0xf670][0] = 0xf7e6; alts[0xf670][1] = 0x301;	/* AE acute */
-    alts[0xf671][0] = 0xf763; alts[0xf671][1] = 0x301;
-    alts[0xf672][0] = 0xf763; alts[0xf672][1] = 0x30c;	/* C caron */
-    alts[0xf673][0] = 0xf763; alts[0xf673][1] = 0x302;	/* C circumflex */
-    alts[0xf674][0] = 0xf763; alts[0xf674][1] = 0x307;	/* C dot above */
-    alts[0xf675][0] = 0xf764; alts[0xf675][1] = 0x30c;	/* D caron */
-    alts[0xf677][0] = 0xf765; alts[0xf677][1] = 0x306;	/* E breve */
-    alts[0xf678][0] = 0xf765; alts[0xf678][1] = 0x30c;
-    alts[0xf679][0] = 0xf765; alts[0xf679][1] = 0x307;
-    alts[0xf67a][0] = 0xf765; alts[0xf67a][1] = 0x304;
-    alts[0xf67c][0] = 0xf765; alts[0xf67c][1] = 0x328;
-    alts[0xf67d][0] = 0xf767; alts[0xf67d][1] = 0x306;	/* G breve */
-    alts[0xf67e][0] = 0xf767; alts[0xf67e][1] = 0x302;
-    alts[0xf67f][0] = 0xf767; alts[0xf67f][1] = 0x326;	/* G comma below */
-    alts[0xf680][0] = 0xf767; alts[0xf680][1] = 0x307;
-    alts[0xf682][0] = 0xf768; alts[0xf682][1] = 0x302;	/* H circum */
-    alts[0xf683][0] = 0xf769; alts[0xf683][1] = 0x306;	/* I breve */
-    alts[0xf684][0] = 0xf769; alts[0xf684][1] = 0xf76a;	/* I J */
-    alts[0xf685][0] = 0xf769; alts[0xf685][1] = 0x304;
-    alts[0xf686][0] = 0xf769; alts[0xf686][1] = 0x328;
-    alts[0xf687][0] = 0xf769; alts[0xf687][1] = 0x303;	/* I tilde */
-    alts[0xf688][0] = 0xf76a; alts[0xf688][1] = 0x302;	/* J circum */
-    alts[0xf689][0] = 0xf76b; alts[0xf689][1] = 0x326;	/* K comma below */
-    alts[0xf68a][0] = 0xf76c; alts[0xf68a][1] = 0x301;	/* L accute */
-    alts[0xf68b][0] = 0xf76c; alts[0xf68b][1] = 0x30c;
-    alts[0xf68c][0] = 0xf76c; alts[0xf68c][1] = 0x326;
-    alts[0xf68d][0] = 0xf76c; alts[0xf68d][1] = 0xB7;	/* L middle dot */
-    alts[0xf68e][0] = 0xf76e; alts[0xf68e][1] = 0x301;	/* N accute */
-    alts[0xf68f][0] = 0xf76e; alts[0xf68f][1] = 0x30c;
-    alts[0xf690][0] = 0xf76e; alts[0xf690][1] = 0x326;
-    alts[0xf691][0] = 0xf76f; alts[0xf691][1] = 0x306;	/* O breve */
-    alts[0xf692][0] = 0xf76f; alts[0xf692][1] = 0x30b;	/* O double accute */
-    alts[0xf693][0] = 0xf76f; alts[0xf693][1] = 0x304;
-    alts[0xf694][0] = 0xf7f8; alts[0xf694][1] = 0x301;
-    alts[0xf695][0] = 0xf772; alts[0xf695][1] = 0x301;	/* R acute */
-    alts[0xf696][0] = 0xf772; alts[0xf696][1] = 0x30c;
-    alts[0xf697][0] = 0xf772; alts[0xf697][1] = 0x326;
-    alts[0xf698][0] = 0xf773; alts[0xf698][1] = 0x301;	/* S acute */
-    alts[0xf699][0] = 0xf773; alts[0xf699][1] = 0x327;	/* S cedilla */
-    alts[0xf69a][0] = 0xf773; alts[0xf69a][1] = 0x302;
-    alts[0xf69b][0] = 0xf773; alts[0xf69b][1] = 0x326;
-    alts[0xf69d][0] = 0xf774; alts[0xf69d][1] = 0x30c;	/* T caron */
-    alts[0xf69e][0] = 0xf774; alts[0xf69e][1] = 0x326;
-    alts[0xf69f][0] = 0xf775; alts[0xf69f][1] = 0x306;	/* U breve */
-    alts[0xf6a0][0] = 0xf775; alts[0xf6a0][1] = 0x30b;
-    alts[0xf6a1][0] = 0xf775; alts[0xf6a1][1] = 0x304;
-    alts[0xf6a2][0] = 0xf775; alts[0xf6a2][1] = 0x328;
-    alts[0xf6a3][0] = 0xf775; alts[0xf6a3][1] = 0x30a;	/* U ring */
-    alts[0xf6a4][0] = 0xf775; alts[0xf6a4][1] = 0x303;
-    alts[0xf6a5][0] = 0xf777; alts[0xf6a5][1] = 0x301;	/* W accute */
-    alts[0xf6a6][0] = 0xf777; alts[0xf6a6][1] = 0x302;
-    alts[0xf6a7][0] = 0xf777; alts[0xf6a7][1] = 0x308;
-    alts[0xf6a8][0] = 0xf777; alts[0xf6a8][1] = 0x300;
-    alts[0xf6a9][0] = 0xf779; alts[0xf6a9][1] = 0x302;
-    alts[0xf6aa][0] = 0xf779; alts[0xf6aa][1] = 0x300;
-    alts[0xf6ab][0] = 0xf77a; alts[0xf6ab][1] = 0x301;
-    alts[0xf6ac][0] = 0xf77a; alts[0xf6ac][1] = 0x307;
-    alts[0xf6ad][0] = 0xf769; alts[0xf6ad][1] = 0x307;
-
-    alts[0xf6be][0] = 'j';
-    alts[0xf6bf][0] = 'L'; alts[0xf6bf][1] = 'L';
-    alts[0xf6c0][0] = 'l'; alts[0xf6c0][1] = 'l';
-    alts[0xf6c3][0] = 0x313;
-    alts[0xf6c9][0] = 0x2ca;
-    alts[0xf6ca][0] = 0x2c7;
-    alts[0xf6cb][0] = 0xa8;
-    alts[0xf6cc][0] = 0xa8; alts[0xf6cc][1] = 0x2ca;
-    alts[0xf6cd][0] = 0xa8; alts[0xf6cd][1] = 0x2cb;
-    alts[0xf6ce][0] = 0x2cb;
-    alts[0xf6cf][0] = 0x2dd;
-    alts[0xf6d0][0] = 0x2c9;
-    alts[0xf6d1][0] = 0x2d8;
-    alts[0xf6d3][0] = 0x30f;
-    alts[0xf6d4][0] = 0x2d8;
-    alts[0xf6d6][0] = 0x30f;
-    alts[0xf6d7][0] = 0xa8; alts[0xf6d7][1] = 0x2ca;
-    alts[0xf6d8][0] = 0xa8; alts[0xf6d8][1] = 0x2cb;
-    alts[0xf6d9][0] = 0xa9;
-    alts[0xf6da][0] = 0xae;
-    alts[0xf6db][0] = 0x2122;
-    alts[0xf6de][0] = '-';
-
-    alts[0xf6f4][0] = 0x2d8;
-    alts[0xf6f5][0] = 0x2c7;
-    alts[0xf6f6][0] = 0x2c6;
-    alts[0xf6f7][0] = 0x2d9;
-    alts[0xf6f8][0] = 0x2dd;
-    alts[0xf6fa][0] = 0xf76f; alts[0xf6fa][1] = 0xf765;
-    alts[0xf6fb][0] = 0xf76f; alts[0xf6fb][1] = 0x328;
-    alts[0xf6fc][0] = 0xf772; alts[0xf6fc][1] = 0x30a;
-    alts[0xf6fd][0] = 0xf773; alts[0xf6fd][1] = 0x30c;
-    alts[0xf6fe][0] = 0xf774; alts[0xf6fe][1] = 0x303;
-    alts[0xf6ff][0] = 0xf77a; alts[0xf6ff][1] = 0x30c;
-    alts[0xf760][0] = '`';
-    alts[0xf7a8][0] = 0xa8;
-    alts[0xf7af][0] = 0xaf;
-    alts[0xf7b4][0] = 0xb4;
-    alts[0xf7b8][0] = 0xb8;
-    alts[0xf7e0][0] = 0xf761; alts[0xf7e0][1] = 0x300;
-    alts[0xf7e1][0] = 0xf761; alts[0xf7e1][1] = 0x301;
-    alts[0xf7e2][0] = 0xf761; alts[0xf7e2][1] = 0x302;
-    alts[0xf7e3][0] = 0xf761; alts[0xf7e3][1] = 0x303;
-    alts[0xf7e4][0] = 0xf761; alts[0xf7e4][1] = 0x308;
-    alts[0xf7e5][0] = 0xf761; alts[0xf7e5][1] = 0x30a;
-    alts[0xf7e6][0] = 0xf761; alts[0xf7e6][1] = 0xf765;
-    alts[0xf7e7][0] = 0xf763; alts[0xf7e7][1] = 0x327;
-    alts[0xf7e8][0] = 0xf765; alts[0xf7e8][1] = 0x300;
-    alts[0xf7e9][0] = 0xf765; alts[0xf7e9][1] = 0x301;
-    alts[0xf7ea][0] = 0xf765; alts[0xf7ea][1] = 0x302;
-    alts[0xf7eb][0] = 0xf765; alts[0xf7eb][1] = 0x308;
-    alts[0xf7ec][0] = 0xf769; alts[0xf7ec][1] = 0x300;
-    alts[0xf7ed][0] = 0xf769; alts[0xf7ed][1] = 0x301;
-    alts[0xf7ee][0] = 0xf769; alts[0xf7ee][1] = 0x302;
-    alts[0xf7ef][0] = 0xf769; alts[0xf7ef][1] = 0x308;
-    alts[0xf7f1][0] = 0xf76e; alts[0xf7f1][1] = 0x303;
-    alts[0xf7f2][0] = 0xf76f; alts[0xf7f2][1] = 0x300;
-    alts[0xf7f3][0] = 0xf76f; alts[0xf7f3][1] = 0x301;
-    alts[0xf7f4][0] = 0xf76f; alts[0xf7f4][1] = 0x302;
-    alts[0xf7f5][0] = 0xf76f; alts[0xf7f5][1] = 0x303;
-    alts[0xf7f6][0] = 0xf76f; alts[0xf7f6][1] = 0x308;
-    alts[0xf7f9][0] = 0xf775; alts[0xf7f9][1] = 0x300;
-    alts[0xf7fa][0] = 0xf775; alts[0xf7fa][1] = 0x301;
-    alts[0xf7fb][0] = 0xf775; alts[0xf7fb][1] = 0x302;
-    alts[0xf7fc][0] = 0xf775; alts[0xf7fc][1] = 0x308;
-
-    alts[0xf7fd][0] = 0xf779; alts[0xf7fd][1] = 0x301;
-    alts[0xf7ff][0] = 0xf779; alts[0xf7ff][1] = 0x308;
-
-    mytoupper[0xf6be] = 'J';		/* Adobe's dotlessj character */
-    mytotitle[0xf6be] = 'J';
-    mytolower[0xf6bf] = 0xf6c0;		/* Adobe's LL character */
-    mytoupper[0xf6c0] = 0xf6bf;		/* Adobe's ll character */
-    mytotitle[0xf6c0] = 0xf6bf;
-#endif
-
     mymirror['('] = ')';
     mymirror[')'] = '(';
     mymirror['>'] = '<';
@@ -1832,6 +1604,5 @@ int main() {
     cheat();				/* over-ride with these mods after reading input files */
     dump();				/* create utype.h, utype.c and ArabicForms.c */
     dump_alttable();			/* create unialt.c */
-    FreeNamesMemorySpace();		/* cleanup alloc of memory */
 return( 0 );
 }

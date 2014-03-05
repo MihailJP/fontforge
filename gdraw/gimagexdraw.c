@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 #ifndef X_DISPLAY_MISSING
 #include "gxdrawP.h"
 #include "gxcdrawP.h"
@@ -1670,7 +1672,7 @@ static void gdraw_bitmap(GXWindow w, struct _GImage *image, GClut *clut,
 	/* sigh. The server doesn't use our convention. I might be able just */
 	/*  to change this field but it doesn't say, so best not to */
 	int len = image->bytes_per_line*image->height;
-	uint8 *newdata = galloc(len), *pt, *ipt, *end;
+	uint8 *newdata = malloc(len), *pt, *ipt, *end;
 	int m1,m2,val;
 
 	for ( ipt = image->data, pt=newdata, end=pt+len; pt<end; ++pt, ++ipt ) {
@@ -1699,18 +1701,12 @@ static void check_image_buffers(GXDisplay *gdisp, int neww, int newh, int is_bit
     }
     if ( width > gdisp->gg.iwidth || (gdisp->gg.img!=NULL && depth!=gdisp->gg.img->depth) ) {
 	if ( depth<=8 ) {
-	    if ( gdisp->gg.red_dith!=NULL ) free(gdisp->gg.red_dith);
-	    if ( gdisp->gg.green_dith!=NULL ) free(gdisp->gg.green_dith);
-	    if ( gdisp->gg.blue_dith!=NULL ) free(gdisp->gg.blue_dith);
-	    gdisp->gg.red_dith = galloc(width*sizeof(short));
-	    gdisp->gg.green_dith = galloc(width*sizeof(short));
-	    gdisp->gg.blue_dith = galloc(width*sizeof(short));
+	    gdisp->gg.red_dith = malloc(width*sizeof(short));
+	    gdisp->gg.green_dith = malloc(width*sizeof(short));
+	    gdisp->gg.blue_dith = malloc(width*sizeof(short));
 	    if ( gdisp->gg.red_dith==NULL || gdisp->gg.green_dith==NULL || gdisp->gg.blue_dith==NULL )
 		gdisp->do_dithering = 0;
 	} else {
-	    if ( gdisp->gg.red_dith!=NULL ) free(gdisp->gg.red_dith);
-	    if ( gdisp->gg.green_dith!=NULL ) free(gdisp->gg.green_dith);
-	    if ( gdisp->gg.blue_dith!=NULL ) free(gdisp->gg.blue_dith);
 	    gdisp->gg.red_dith = NULL;
 	    gdisp->gg.green_dith = NULL;
 	    gdisp->gg.blue_dith = NULL;
@@ -1729,7 +1725,7 @@ return;
     if ( gdisp->gg.mask!=NULL )
 	XDestroyImage(gdisp->gg.mask);
     pixel_size = gdisp->pixel_size;
-    temp = galloc(((width*pixel_size+gdisp->bitmap_pad-1)/gdisp->bitmap_pad)*
+    temp = malloc(((width*pixel_size+gdisp->bitmap_pad-1)/gdisp->bitmap_pad)*
 	    (gdisp->bitmap_pad/8)*height);
     if ( temp==NULL ) {
 	GDrawIError("Can't create image draw area");
@@ -1743,15 +1739,13 @@ return;
 	exit(1);
     }
     if ( !FAST_BITS==0 ) pixel_size=1;
-    temp = galloc(((width*pixel_size+gdisp->bitmap_pad-1)/gdisp->bitmap_pad)*
+    temp = malloc(((width*pixel_size+gdisp->bitmap_pad-1)/gdisp->bitmap_pad)*
 	    (gdisp->bitmap_pad/8)*height);
     gdisp->gg.mask = NULL;
     if ( temp!=NULL ) {
 	gdisp->gg.mask = XCreateImage(gdisp->display,gdisp->visual,depth,
 		depth==1?XYBitmap:ZPixmap,
 		0,temp,width,height,gdisp->bitmap_pad,0);
-	if ( gdisp->gg.mask==NULL )
-	    free(temp);
     }
     gdisp->gg.iwidth = width; gdisp->gg.iheight = height;
     endian.foo = 0xff;
@@ -2005,9 +1999,6 @@ return;
 	XPutImage(display,w,gc,gdisp->gg.img,0,0,
 		x,y, src->width, src->height );
     }
-    
-    if (blended != NULL)
-        GImageDestroy(blended);
 }
 
 void _GXDraw_TileImage( GWindow _w, GImage *image, GRect *src, int32 x, int32 y) {
@@ -2187,7 +2178,7 @@ GImage *_GImageExtract(struct _GImage *base,GRect *src,GRect *size,
     else
 	tbase.bytes_per_line = 4*size->width;
     if ( tbase.bytes_per_line*size->height>dlen )
-	data = grealloc(data,dlen = tbase.bytes_per_line*size->height );
+	data = realloc(data,dlen = tbase.bytes_per_line*size->height );
     tbase.data = data;
 
     /* I used to use rint(x). Now I use floor(x). For normal images rint */
@@ -2291,8 +2282,8 @@ static GImage *xi1_to_gi1(GXDisplay *gdisp,XImage *xi) {
     GImage *gi;
     struct _GImage *base;
 
-    gi = gcalloc(1,sizeof(GImage));
-    base = galloc(sizeof(struct _GImage));
+    gi = calloc(1,sizeof(GImage));
+    base = malloc(sizeof(struct _GImage));
     if ( gi==NULL || base==NULL )
 return( NULL );
     gi->u.image = base;
@@ -2307,7 +2298,7 @@ return( NULL );
     if ( xi->bitmap_bit_order==LSBFirst ) {
 	/* sigh. The server doesn't use our convention. invert all bytes */
 	int len = base->height*base->bytes_per_line;
-	uint8 *newdata = galloc(len), *pt, *ipt, *end;
+	uint8 *newdata = malloc(len), *pt, *ipt, *end;
 	int m1,m2,val;
 
 	for ( ipt = (uint8 *) xi->data, pt=newdata, end=pt+len; pt<end; ++pt, ++ipt ) {
@@ -2329,9 +2320,9 @@ static GImage *xi8_to_gi8(GXDisplay *gdisp,XImage *xi) {
     int i;
     XColor cols[256];
 
-    gi = gcalloc(1,sizeof(GImage));
-    base = galloc(sizeof(struct _GImage));
-    clut = galloc(sizeof(GClut));
+    gi = calloc(1,sizeof(GImage));
+    base = malloc(sizeof(struct _GImage));
+    clut = malloc(sizeof(GClut));
     if ( gi==NULL || base==NULL )
 return( NULL );
     gi->u.image = base;

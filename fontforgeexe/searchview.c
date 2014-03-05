@@ -321,25 +321,6 @@ return;
 	GDrawMove(sv->cv_rpl.gw,sv->rpl_x,sv->cv_y);
     }
 
-#if 0
-    GGadgetGetSize(GWidgetGetControl(sv->gw,CID_Allow),&size);
-    yoff = event->u.resize.size.height-sv->button_height-size.y;
-    if ( yoff!=0 ) {
-	for ( i=CID_Allow; i<=CID_Cancel; ++i ) {
-	    GGadgetGetSize(GWidgetGetControl(sv->gw,i),&size);
-	    GGadgetMove(GWidgetGetControl(sv->gw,i),size.x,size.y+yoff);
-	}
-    }
-    xoff = (event->u.resize.size.width - sv->button_width)/2;
-    GGadgetGetSize(GWidgetGetControl(sv->gw,CID_Find),&size);
-    xoff -= size.x;
-    if ( xoff!=0 ) {
-	for ( i=CID_Find; i<=CID_Cancel; ++i ) {
-	    GGadgetGetSize(GWidgetGetControl(sv->gw,i),&size);
-	    GGadgetMove(GWidgetGetControl(sv->gw,i),size.x+xoff,size.y);
-	}
-    }
-#endif
     GDrawSync(NULL);
     GDrawProcessPendingEvents(NULL);
     GDrawRequestExpose(sv->gw,NULL,false);
@@ -427,14 +408,6 @@ static void SVCheck(SearchView *sv) {
     }
 }
 
-static void SearchViewFree(SearchView *sv) {
-    SplinePointListsFree(sv->sd.sc_srch.layers[ly_fore].splines);
-    SplinePointListsFree(sv->sd.sc_rpl.layers[ly_fore].splines);
-    RefCharsFree(sv->sd.sc_srch.layers[ly_fore].refs);
-    RefCharsFree(sv->sd.sc_rpl.layers[ly_fore].refs);
-    free(sv);
-}
-
 static int sv_e_h(GWindow gw, GEvent *event) {
     SearchView *sv = (SearchView *) ((CharViewBase *) GDrawGetUserData(gw))->container;
 
@@ -458,7 +431,6 @@ static int sv_e_h(GWindow gw, GEvent *event) {
       case et_create:
       break;
       case et_destroy:
-	SearchViewFree(sv);
       break;
       case et_map:
 	if ( event->u.map.is_visible )
@@ -532,10 +504,8 @@ return( false );
 			searcher->chars[i]->layers[ly_fore].refs = rnext;
 		    else
 			rprev->next = rnext;
-		    RefCharFree(r);
 		    any = true;
 		} else {
-		    /*SplinePointListsFree(r->layers[0].splines); r->layers[0].splines = NULL;*/
 		    r->sc = fv->b.sf->glyphs[gid];
 		    r->orig_pos = gid;
 		    SCReinstanciateRefChar(searcher->chars[i],r,fv->b.active_layer);
@@ -670,7 +640,7 @@ return( searcher );
 return( NULL );
     }
 
-    searcher = sv = SVFillup( gcalloc(1,sizeof(SearchView)), fv );
+    searcher = sv = SVFillup( calloc(1,sizeof(SearchView)), fv );
 
     memset(&wattrs,0,sizeof(wattrs));
     wattrs.mask = wam_events|wam_cursor|wam_isdlg/*|wam_icon*/;
@@ -907,7 +877,6 @@ void SVDestroy(SearchView *sv) {
 return;
 
     SDDestroy(&sv->sd);
-    free(sv);
 }
 
 void FVReplaceOutlineWithReference( FontView *fv, double fudge ) {

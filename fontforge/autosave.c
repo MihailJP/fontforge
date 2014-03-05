@@ -25,7 +25,6 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include "fontforgevw.h"
-/*#include "ustring.h"*/
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
@@ -77,7 +76,7 @@ return;
 }
 
 
-int DoAutoRecoveryExtended(int inquire, DoAutoRecoveryPostRecoverFunc PostRecoverFunc )
+int DoAutoRecoveryExtended(int inquire)
 {
     char buffer[1025];
     char *recoverdir = getAutoDirName(buffer);
@@ -107,13 +106,9 @@ return( false );
 return( any );
 }
 
-static void DoAutoRecoveryPostRecover_DontPrompt(SplineFont *sf)
-{
-}
-
 int DoAutoRecovery(int inquire )
 {
-    return DoAutoRecoveryExtended( inquire, DoAutoRecoveryPostRecover_DontPrompt );
+    return DoAutoRecoveryExtended( inquire );
 }
 
 

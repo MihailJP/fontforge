@@ -50,7 +50,7 @@ return;
     if ( p->spl->first!=p->spl->last )
 	if ( p->sp==p->spl->first || p->sp==p->spl->last )
 return;					/* Already cut here */
-    n = chunkalloc(sizeof(SplinePoint));
+    n = XZALLOC(SplinePoint);
     p->sp->pointtype = pt_corner;
     *n = *p->sp;
     n->hintmask = NULL;
@@ -61,7 +61,7 @@ return;					/* Already cut here */
 	p->spl->first = n;
 	p->spl->last = p->sp;
     } else {
-	SplinePointList *nspl = chunkalloc(sizeof(SplinePointList));
+	SplinePointList *nspl = XZALLOC(SplinePointList);
 	nspl->next = p->spl->next;
 	p->spl->next = nspl;
 	nspl->first = n;
@@ -111,18 +111,17 @@ static void ReorderSpirosAndAddAndCut(SplineSet *spl,int spiro_index) {
     if ( spiro_index!=spl->spiro_cnt-1 &&
 	    spl->first->me.x == spl->spiros[spiro_index].x &&
 	    spl->first->me.y == spl->spiros[spiro_index].y ) {
-	newspiros = galloc((spl->spiro_cnt+1) * sizeof(spiro_cp));
+	newspiros = malloc((spl->spiro_cnt+1) * sizeof(spiro_cp));
 	memcpy(newspiros,spl->spiros+spiro_index,(spl->spiro_cnt-1-spiro_index)*sizeof(spiro_cp));
 	memcpy(newspiros+(spl->spiro_cnt-1-spiro_index),spl->spiros,spiro_index*sizeof(spiro_cp));
 	memcpy(newspiros+spl->spiro_cnt-1,newspiros,sizeof(spiro_cp));
 	memcpy(newspiros+spl->spiro_cnt,spl->spiros+spl->spiro_cnt-1,sizeof(spiro_cp));
 	newspiros[0].ty = SPIRO_OPEN_CONTOUR;
-	free(spl->spiros);
 	spl->spiros = newspiros;
 	++(spl->spiro_cnt);
 	spl->spiro_max = spl->spiro_cnt;
     } else {
-	newspiros = galloc((spl->spiro_cnt+2) * sizeof(spiro_cp));
+	newspiros = malloc((spl->spiro_cnt+2) * sizeof(spiro_cp));
 	newspiros[0].x = spl->first->me.x;
 	newspiros[0].y = spl->first->me.y;
 	newspiros[0].ty = SPIRO_OPEN_CONTOUR;
@@ -131,7 +130,6 @@ static void ReorderSpirosAndAddAndCut(SplineSet *spl,int spiro_index) {
 	memcpy(newspiros+spl->spiro_cnt,newspiros,sizeof(spiro_cp));
 	memcpy(newspiros+spl->spiro_cnt+1,spl->spiros+spl->spiro_cnt-1,sizeof(spiro_cp));
 	newspiros[spl->spiro_cnt].ty = SPIRO_G4;
-	free(spl->spiros);
 	spl->spiros = newspiros;
 	spl->spiro_cnt += 2;
 	spl->spiro_max = spl->spiro_cnt;
@@ -146,7 +144,7 @@ static void SplitSpirosAndAddAndCut(SplineSet *spl,SplineSet *spl2,int spiro_ind
     /* In the spl2 we either start out with spl->spiros[spiro_index] or with spl->first */
     /* then add all spiros after spiro_index */
 
-    spl2->spiros = galloc((spl->spiro_cnt-spiro_index+2) * sizeof(spiro_cp));
+    spl2->spiros = malloc((spl->spiro_cnt-spiro_index+2) * sizeof(spiro_cp));
     spl2->spiro_max = spl->spiro_cnt-spiro_index+2;
     if ( spl2->first->me.x == spl->spiros[spiro_index].x &&
 	    spl2->first->me.y == spl->spiros[spiro_index].y ) {
@@ -162,7 +160,7 @@ static void SplitSpirosAndAddAndCut(SplineSet *spl,SplineSet *spl2,int spiro_ind
 	memcpy(spl2->spiros+1,spl->spiros+spiro_index+1,(spl->spiro_cnt-(spiro_index+1))*sizeof(spiro_cp));
 	spl2->spiro_cnt = spl->spiro_cnt-spiro_index;
 	if ( spiro_index+3>spl->spiro_max )
-	    spl->spiros = grealloc(spl->spiros,(spl->spiro_max=spiro_index+3)*sizeof(spiro_cp));
+	    spl->spiros = realloc(spl->spiros,(spl->spiro_max=spiro_index+3)*sizeof(spiro_cp));
 	memcpy(spl->spiros+spiro_index+1,spl2->spiros,sizeof(spiro_cp));
 	spl->spiros[spiro_index+1].ty = SPIRO_G4;
 	memcpy(spl->spiros+spiro_index+2,spl->spiros+spl->spiro_cnt-1,sizeof(spiro_cp));
@@ -225,7 +223,7 @@ void CVMouseUpKnife(CharView *cv, GEvent *event)
 				spl->first = s->to;
 				spl->last = s->from;
 			    } else {
-				spl2 = chunkalloc(sizeof(SplineSet));
+				spl2 = XZALLOC(SplineSet);
 				spl2->next = spl->next;
 				spl->next = spl2;
 				spl2->first = s->to;
@@ -233,7 +231,6 @@ void CVMouseUpKnife(CharView *cv, GEvent *event)
 				spl->last = s->from;
 			    }
 			    s->to->prev = s->from->next = NULL;
-			    SplineFree(s);
 			    SplineSetSpirosClear(spl);
 			}
 		    } else {
@@ -266,7 +263,7 @@ void CVMouseUpKnife(CharView *cv, GEvent *event)
 			    /*  splineset structure so drastically that we just */
 			    /*  can't continue these loops) */
 			    mid->pointtype = pt_corner;
-			    mid2 = chunkalloc(sizeof(SplinePoint));
+			    mid2 = XZALLOC(SplinePoint);
 			    *mid2 = *mid;
 			    mid2->hintmask = NULL;
 			    mid->next = NULL;
@@ -279,7 +276,7 @@ void CVMouseUpKnife(CharView *cv, GEvent *event)
 			        if ( spiro_index!=-1 )
 				    ReorderSpirosAndAddAndCut(spl,spiro_index);
 			    } else {
-				spl2 = chunkalloc(sizeof(SplineSet));
+				spl2 = XZALLOC(SplineSet);
 				spl2->next = spl->next;
 				spl->next = spl2;
 				spl2->first = mid2;

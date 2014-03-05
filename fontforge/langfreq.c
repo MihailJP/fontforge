@@ -1,4 +1,5 @@
 /* -*- coding: utf-8 -*- */
+#include <fontforge-config.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +17,7 @@
 #define FINA	3
 
 struct letter_frequencies {
-    char *utf8_letter;
+    const char *utf8_letter;
     float frequency[4];
     float *afters;
 };
@@ -2102,7 +2103,7 @@ static void ScriptCharInit(SplineFont *sf,uint32 script, struct script_chars *ch
     } while ( k<sf->subfontcnt );
 
     chrs->cnt = cnt;
-    chrs->chars = galloc(cnt*sizeof(unichar_t));
+    chrs->chars = malloc(cnt*sizeof(unichar_t));
     cnt = 0;
     k=0;
     do {
@@ -2221,7 +2222,6 @@ char *RandomParaFromScriptLang(uint32 script, uint32 lang, SplineFont *sf,
     if ( lf==NULL )
 	ScriptCharInit(sf,script,&chrs);
     ret = RandomPara(lf,&chrs,sf);
-    free(chrs.chars);
 return( ret );
 }
 
@@ -2263,7 +2263,6 @@ char *RandomParaFromScript(uint32 script, uint32 *lang, SplineFont *sf) {
 	*lang = CHR('d','f','l','t');
     }
     ret = RandomPara(lf,&chrs,sf);
-    free(chrs.chars);
 return( ret );
 }
 
@@ -2329,8 +2328,8 @@ char **SFScriptLangs(SplineFont *sf,struct lang_frequencies ***_freq) {
 		++extras;
     }
 
-    sl = galloc( (scnt+extras+1) * sizeof(char *));
-    freq = galloc( (scnt+extras+1) * sizeof(struct lang_frequencies *));
+    sl = malloc( (scnt+extras+1) * sizeof(char *));
+    freq = malloc( (scnt+extras+1) * sizeof(struct lang_frequencies *));
     pos = 0;
     for ( s=0 ; s<scnt; ++s ) {
 	for ( i=0; lang_frequencies[i].script!=0; ++i ) {
@@ -2350,6 +2349,5 @@ char **SFScriptLangs(SplineFont *sf,struct lang_frequencies ***_freq) {
     }
     sl[pos] = NULL;
     if ( _freq!=NULL ) *_freq = freq;
-    else free(freq);
 return( sl );
 }

@@ -220,30 +220,6 @@ static void FixIt(struct problems *p) {
     RefChar *r;
     int ncp_changed, pcp_changed;
 
-#if 0	/* The ultimate cause (the thing we need to fix) for these two errors */
-	/* is that the stem is wrong, it's too hard to fix that here, so best */
-	/* not to attempt to fix the proximal cause */
-    if ( p->explaining==_("This glyph contains a horizontal hint near the specified width") ) {
-	for ( h=p->sc->hstem; h!=NULL && !h->active; h=h->next );
-	if ( h!=NULL ) {
-	    h->width = p->widthval;
-	    SCOutOfDateBackground(p->sc);
-	    SCUpdateAll(p->sc);
-	} else
-	    IError("Could not find hint");
-return;
-    }
-    if ( p->explaining==_("This glyph contains a vertical hint near the specified width") ) {
-	for ( h=p->sc->vstem; h!=NULL && !h->active; h=h->next );
-	if ( h!=NULL ) {
-	    h->width = p->widthval;
-	    SCOutOfDateBackground(p->sc);
-	    SCUpdateAll(p->sc);
-	} else
-	    IError("Could not find hint");
-return;
-    }
-#endif
     if ( p->explaining==_("This reference has been flipped, so the paths in it are drawn backwards") ) {
 	for ( r=p->sc->layers[p->layer].refs; r!=NULL && !r->selected; r = r->next );
 	if ( r!=NULL ) {
@@ -277,10 +253,9 @@ return;
 	SplineChar *foundsc;
 	newname = StdGlyphName(buf,p->sc->unicodeenc,p->sc->parent->uni_interp,p->sc->parent->for_new_glyphs);
 	foundsc = SFHashName(p->sc->parent,newname);
-	if ( foundsc==NULL ) {
-	    free(p->sc->name);
+	if ( foundsc==NULL )
 	    p->sc->name = copy(newname);
-	} else {
+	else {
 	    ff_post_error(_("Can't fix"), _("The name FontForge would like to assign to this glyph, %.30s, is already used by a different glyph."),
 		    newname );
 	}
@@ -2010,7 +1985,6 @@ static int SCProblems(CharView *cv,SplineChar *sc,struct problems *p) {
 			*end = ch;
 			p->badsubs_lsubtable = pst->subtable;
 			ExplainIt(p,sc,_("This glyph contains a substitution or ligature entry which refers to an empty char"),0,0);
-			free(p->badsubsname);
 			if ( p->ignorethis )
 			    p->badsubs = false;
 		    } else
@@ -2026,7 +2000,7 @@ static int SCProblems(CharView *cv,SplineChar *sc,struct problems *p) {
     }
 
     if ( p->missinganchor && !p->finish ) {
-	forever {
+	for (;;) {
 	    p->missinganchor_class = SCValidateAnchors(sc);
 	    if ( p->missinganchor_class == NULL )
 	break;
@@ -2141,32 +2115,20 @@ static void mgreplace(char **base, char *str,char *end, char *new, SplineChar *s
 		    p->next = pst->next;
 	    }
 	    pst->next = NULL;
-	    PSTFree(pst);
 	} else if ( *end=='\0' )
 	    *str = '\0';
 	else
 	    strcpy(str,end+1);	/* Skip the space */
     } else {
-	char *res = galloc(strlen(*base)+strlen(new)-(end-str)+1);
+	char *res = malloc(strlen(*base)+strlen(new)-(end-str)+1);
 	strncpy(res,*base,str-*base);
 	strcpy(res+(str-*base),new);
 	strcat(res,end);
-	free(*base);
 	*base = res;
     }
 }
 
 static void ClearMissingState(struct problems *p) {
-    int i;
-
-    if ( p->mg!=NULL ) {
-	for ( i=0; i<p->rpl_cnt; ++i ) {
-	    free(p->mg[i].search);
-	    free(p->mg[i].rpl);
-	}
-	free(p->mg);
-    } else
-	free(p->mlt);
     p->mlt = NULL;
     p->mg = NULL;
     p->rpl_cnt = p->rpl_max = 0;
@@ -2186,12 +2148,8 @@ struct mgask_data {
 static void mark_to_replace(struct problems *p,struct mgask_data *d, char *rpl) {
     int ch;
 
-    if ( p->rpl_cnt >= p->rpl_max ) {
-	if ( p->rpl_max == 0 )
-	    p->mg = galloc((p->rpl_max = 30)*sizeof(struct mgrpl));
-	else
-	    p->mg = grealloc(p->mg,(p->rpl_max += 30)*sizeof(struct mgrpl));
-    }
+    if ( p->rpl_cnt >= p->rpl_max )
+	p->mg = realloc(p->mg,(p->rpl_max += 30)*sizeof(struct mgrpl));
     ch = *d->end; *d->end = '\0';
     p->mg[p->rpl_cnt].search = copy( d->start );
     p->mg[p->rpl_cnt++].rpl = copy( rpl );
@@ -2222,7 +2180,6 @@ static int MGA_Rpl(GGadget *g, GEvent *e) {
 	if ( GGadgetIsChecked(GWidgetGetControl(d->gw,CID_Always)))
 	    mark_to_replace(d->p,d,rpl);
 	mgreplace(d->_str,d->start,d->end,rpl,d->sc,d->pst);
-	free(rpl);
 	d->done = true;
     }
 return( true );
@@ -2634,7 +2591,7 @@ return(false);
 	    buts[0] = _("_OK"); buts[1] = _("_Skip"); buts[2]="_Ignore"; buts[3] = NULL;
 	    ret = ff_ask(_("Missing Script"),(const char **) buts,0,1,buffer);
 	    if ( ret==0 ) {
-		sl = chunkalloc(sizeof(struct scriptlanglist));
+		sl = XZALLOC(struct scriptlanglist);
 		sl->script = script;
 		sl->lang_cnt = 1;
 		sl->langs[0] = DEFAULT_LANG;
@@ -4285,7 +4242,7 @@ char *VSErrorsFromMask(int mask, int private_mask) {
 	    len += strlen( _(vserrornames[m]))+2;
     if ( private_mask != 0 )
 	len += strlen( _("Bad Private Dictionary")) +2;
-    ret = galloc(len+1);
+    ret = malloc(len+1);
     len = 0;
     for ( m=0, bit=(vs_known<<1) ; bit<=vs_last; ++m, bit<<=1 )
 	if ( (mask&bit) && vserrornames[m]!=NULL ) {
@@ -5311,7 +5268,6 @@ return( false );
     } else if ( event->type == et_destroy ) {
 	if ( vw->sf!=NULL )
 	    vw->sf->valwin = NULL;
-	chunkfree(vw,sizeof(*vw));
     }
 return( true );
 }
@@ -5379,7 +5335,7 @@ return;
 	}
     }
 
-    valwin = chunkalloc(sizeof(struct val_data));
+    valwin = XZALLOC(struct val_data);
     valwin->sf = sf;
     valwin->mask = mask;
     valwin->needs_blue = needs_blue;
