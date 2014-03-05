@@ -28,10 +28,6 @@ import fontforge;
 import pango
 import platform
 
-if len(sys.argv) == 0:
-    # some versions of IPython need content in sys.argv
-    sys.argv.append('')
-
 from ipython_view import *
 
 def runShell(data = None, glyphOrFont = None):
