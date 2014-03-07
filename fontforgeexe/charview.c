@@ -6060,6 +6060,8 @@ static void CVAddGuide(CharView *cv,int is_v,int guide_pos) {
     }
 }
 
+static CharView* ActiveCharView = 0;
+
 static int cv_e_h(GWindow gw, GEvent *event) {
     CharView *cv = (CharView *) GDrawGetUserData(gw);
 
@@ -6213,6 +6215,7 @@ return( GGadgetDispatchEvent(cv->vsb,event));
       break;
       case et_focus:
 	if ( event->u.focus.gained_focus ) {
+	    ActiveCharView = cv;
 	    if ( cv->gic!=NULL )
 		GDrawSetGIC(gw,cv->gic,0,20);
 	}
@@ -6220,6 +6223,12 @@ return( GGadgetDispatchEvent(cv->vsb,event));
     }
 return( true );
 }
+
+CharView* CharViewFindActive()
+{
+    return ActiveCharView;
+}
+
 
 #define MID_Fit		2001
 #define MID_ZoomIn	2002
