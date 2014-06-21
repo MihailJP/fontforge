@@ -454,6 +454,10 @@ static uint32 BDFToNFNT(FILE *res, BDFFont *bdf, EncMap *map) {
     putshort(res,(owloc-owpos)/2);
     fseek(res,0,SEEK_END);
 
+    for ( k=0; k<bdf->pixelsize; ++k )
+	free(rows[k]);
+    free(rows);
+
 return(rlenpos);
 }
 
@@ -637,7 +641,7 @@ return(resstarts);
 enum psstyle_flags { psf_bold = 1, psf_italic = 2, psf_outline = 4,
 	psf_shadow = 0x8, psf_condense = 0x10, psf_extend = 0x20 };
 
-uint16 _MacStyleCode( char *styles, SplineFont *sf, uint16 *psstylecode ) {
+uint16 _MacStyleCode( const char *styles, SplineFont *sf, uint16 *psstylecode ) {
     unsigned short stylecode= 0, psstyle=0;
 
     if ( strstrmatch( styles, "Bold" ) || strstrmatch(styles,"Demi") ||
@@ -699,7 +703,7 @@ return( stylecode );
 }
 
 uint16 MacStyleCode( SplineFont *sf, uint16 *psstylecode ) {
-    char *styles;
+    const char *styles;
 
     if ( sf->cidmaster!=NULL )
 	sf = sf->cidmaster;
@@ -985,12 +989,15 @@ return( sfsl );
 static void SFListListFree(struct sflistlist *sfsl) {
     struct sflist *last = NULL;
     struct sflistlist *sfli, *sflnext;
-    /* restore the sfs list */
+    /* free the fond list and restore the sfs list */
 
     for ( sfli=sfsl; sfli!=NULL; sfli = sflnext ) {
 	sflnext = sfli->next;
 	if ( last!=NULL )
 	    last->next = sfli->sfs;
+	for ( last = sfli->sfs; last->next!=NULL; last = last->next );
+	free(sfli->fondname);
+	free(sfli);
     }
 }
 
@@ -1446,9 +1453,12 @@ return( true );
     pt = strrchr(dirname,'/');
     if ( pt!=NULL )
 	pt[1] = '\0';
-    else
+    else {
+	free(dirname);
 	dirname = copy(".");
+    }
     ret=FSPathMakeRef( (uint8 *) dirname,&parentref,NULL);
+    free(dirname);
     if ( ret!=noErr )
 return( false );
 
@@ -1464,7 +1474,9 @@ return( false );
 	ucs2fn[i] = 0;
 	ret = FSCreateFileUnicode(&parentref,u_strlen(filename), ucs2fn,
 		    kFSCatInfoFinderInfo, &info, &ref, NULL);
+	free(ucs2fn);
     }
+    free(filename);
     if ( ret==dupFNErr ) {
     	/* File already exists, create failed, didn't get an FSRef */
 	ret=FSPathMakeRef( (uint8 *) fname,&ref,NULL);
@@ -1484,6 +1496,7 @@ return( false );
     while ( (len=fread(buf,1,8*1024,res))>0 )
 	FSWriteFork(macfile,fsAtMark,0,len,buf,&whocares);
     FSCloseFork(macfile);
+    free(buf);
 return( true );
 #endif
 }
@@ -1588,6 +1601,7 @@ return( 0 );
     resources[0].res = PSToResources(res,temppfb);
     fclose(temppfb);
     DumpResourceMap(res,resources,format);
+    free( resources[0].res );
 
 #if __Mac
     header.macfilename = malloc(strlen(filename)+strlen(buffer)+1);
@@ -1607,6 +1621,9 @@ return( 0 );
     ret = DumpMacBinaryHeader(res,&header);
     if ( ferror(res) ) ret = 0;
     if ( fclose(res)==-1 ) ret = 0;
+#if __Mac
+    free(header.macfilename);
+#endif
 return( ret );
 }
 
@@ -1666,6 +1683,7 @@ return( 0 );
     rlist[1][0].name = sf->fondname ? sf->fondname : sf->familyname;
     fclose(tempttf);
     DumpResourceMap(res,resources,format);
+    free(dummynfnts);
 
     ret = true;
     if ( format==ff_ttfmacbin ) {
@@ -1713,7 +1731,10 @@ int WriteMacBitmaps(char *filename,SplineFont *sf, int32 *sizes, int is_dfont,
 	res = tmpfile();
     else
 	res = fopen(binfilename,"wb+");
+    if ( res==NULL ) {
+	free(binfilename);
 return( 0 );
+    }
 
     if ( is_dfont )
 	WriteDummyDFontHeaders(res);
@@ -1742,6 +1763,8 @@ return( 0 );
     }
     if ( ferror(res)) ret = false;
     if ( fclose(res)==-1 ) ret = 0;
+    free(resources[0].res);
+    free(binfilename);
 return( ret );
 }
 
@@ -1760,6 +1783,7 @@ int WriteMacFamily(char *filename,struct sflist *sfs,enum fontformat format,
     struct macbinaryheader header;
     struct sflist *sfi, *sfsub;
     char buffer[80];
+    int freefilename = 0;
     char *pt;
     int id, fondcnt;
     struct sflistlist *sfsl, *sfli;
@@ -1780,6 +1804,7 @@ int WriteMacFamily(char *filename,struct sflist *sfs,enum fontformat format,
 		char *tf = malloc(strlen(filename)+20);
 		strcpy(tf,filename);
 		filename = tf;
+		freefilename = true;
 		pt = strrchr(filename,'.');
 		if ( pt==NULL || pt<strrchr(filename,'/'))
 		    pt = filename+strlen(filename)+1;
@@ -1791,6 +1816,7 @@ int WriteMacFamily(char *filename,struct sflist *sfs,enum fontformat format,
 	    }
 	    if ( WriteMacPSFont(tempname,sfi->sf,format,flags,sfi->map,layer)==0 )
 return( 0 );
+	    free(tempname);
 	}
     } else if ( format!=ff_none || bf==bf_sfnt_dfont ) {
 	for ( sfi=sfs; sfi!=NULL; sfi = sfi->next ) {
@@ -1864,6 +1890,8 @@ return( 0 );
     DumpResourceMap(res,resources,format!=ff_none?format:
 	    bf==bf_nfntmacbin?ff_ttfmacbin:ff_ttfdfont);
     SFListListFree(sfsl);
+    for ( i=0; i<r; ++i )
+	free(resources[i].res);
 
     ret = true;
     if ( format==ff_ttfmacbin || format==ff_pfbmacbin ||
@@ -1877,7 +1905,25 @@ return( 0 );
     }
     if ( ferror(res) ) ret = false;
     if ( fclose(res)==-1 ) ret = 0;
+    if ( freefilename )
+	free(filename);
+    for ( sfi=sfs; sfi!=NULL; sfi=sfi->next ) {
+	free( sfi->ids );
+	free( sfi->bdfs );
+    }
 return( ret );
+}
+
+void SfListFree(struct sflist *sfs) {
+    struct sflist *sfi;
+
+    while ( sfs!=NULL ) {
+	sfi = sfs->next;
+	free(sfs->sizes);
+	EncMapFree(sfs->map);
+	chunkfree(sfs,sizeof(struct sflist));
+	sfs = sfi;
+    }
 }
 
 /* ******************************** Reading ********************************* */
@@ -1917,6 +1963,7 @@ static SplineFont *SearchPostScriptResources(FILE *f,long rlistpos,int subcnt,lo
     if ( pfb==NULL ) {
 	LogError( _("Can't open temporary file for postscript output\n") );
 	fseek(f,here,SEEK_SET );
+	free(offsets);
 return(NULL);
     }
 
@@ -1965,6 +2012,7 @@ return(NULL);
 	    len = rlen;
 	}
 	if ( rlen>max ) {
+	    free(buffer);
 	    max = rlen;
 	    if ( max<0x800 ) max = 0x800;
 	    buffer=malloc(max);
@@ -1976,6 +2024,9 @@ return(NULL);
 	fread(buffer,1,rlen,f);
 	fwrite(buffer,1,rlen,pfb);
     }
+    free(buffer);
+    free(offsets);
+	free(rsrcids);
     putc(0x80,pfb);
     putc(3,pfb);
     fseek(pfb,lenpos,SEEK_SET);
@@ -1990,9 +2041,11 @@ return( (SplineFont *) _NamesReadPostScript(pfb) );	/* This closes the font for 
 
     fd = _ReadPSFont(pfb);
     sf = NULL;
-    if ( fd!=NULL )
+    if ( fd!=NULL ) {
 	sf = SplineFontFromPSFont(fd);
+	PSFontFree(fd);
 	/* There is no FOND in a postscript file, so we can't read any kerning*/
+    }
     fclose(pfb);
 return( sf );
 }
@@ -2058,13 +2111,18 @@ return( (SplineFont *) names );
 		char *fn = copy(filename);
 		fn[lparen-filename] = '\0';
 		ff_post_error(_("Not in Collection"),_("%s is not in %.100s"),find,fn);
+		free(fn);
 	    }
+	    free(find);
 	} else if ( no_windowing_ui )
 	    which = 0;
 	else
 	    which = ff_choose(_("Pick a font, any font..."),(const char **) names,subcnt,0,_("There are multiple fonts in this file, pick one"));
 	if ( lparen==NULL && which!=-1 )
 	    chosenname = copy(names[which]);
+	for ( i=0; i<subcnt; ++i )
+	    free(names[i]);
+	free(names);
 	fseek(f,rlistpos,SEEK_SET);
     }
 
@@ -2090,6 +2148,7 @@ return( (SplineFont *) names );
 	if ( rlen>16*1024 )
 	    ilen = 16*1024;
 	if ( ilen>max ) {
+	    free(buffer);
 	    max = ilen;
 	    if ( max<0x800 ) max = 0x800;
 	    buffer=malloc(max);
@@ -2107,12 +2166,15 @@ return( (SplineFont *) names );
 	sf = _SFReadTTF(ttf,flags,openflags,NULL,NULL);
 	fclose(ttf);
 	if ( sf!=NULL ) {
+	    free(buffer);
 	    fseek(f,start,SEEK_SET);
 	    if ( sf->chosenname==NULL ) sf->chosenname = chosenname;
 return( sf );
 	}
 	fseek(f,here,SEEK_SET);
     }
+    free(chosenname);
+    free(buffer);
     fseek(f,start,SEEK_SET);
 return( NULL );
 }
@@ -2176,6 +2238,26 @@ struct MacFontRec {
    	/*  to each row. Missing characters have same loc as following */
 };
 
+static void FondListFree(FOND *list) {
+    FOND *next;
+    int i;
+
+    while ( list!=NULL ) {
+	next = list->next;
+	free(list->assoc);
+	for ( i=0; i<list->stylewidthcnt; ++i )
+	    free(list->stylewidths[i].widthtab);
+	free(list->stylewidths);
+	for ( i=0; i<list->stylekerncnt; ++i )
+	    free(list->stylekerns[i].kerns);
+	free(list->stylekerns);
+	for ( i=0; i<48; ++i )
+	    free(list->psnames[i]);
+	free(list);
+	list = next;
+    }
+}
+
 /* There's probably only one fond in the file, but there could be more so be */
 /*  prepared... */
 /* I want the fond: */
@@ -2219,7 +2301,7 @@ static FOND *BuildFondList(FILE *f,long rlistpos,int subcnt,long rdata_pos,
 
 	offset += 4;
 	fseek(f,offset,SEEK_SET);
-	/* isfixed = */ getushort(f)&0x8000?1:0;
+	/* isfixed = */ getushort(f) /* &0x8000?1:0 */;
 	/* family id = */ getushort(f);
 	cur->first = getushort(f);
 	cur->last = getushort(f);
@@ -2311,6 +2393,9 @@ static FOND *BuildFondList(FILE *f,long rlistpos,int subcnt,long rdata_pos,
 		    }
 		*pt = '\0';
 	    }
+	    for ( j=0; j<strcnt; ++j )
+		free(strings[j]);
+	    free(strings);
 	}
 	fseek(f,here,SEEK_SET);
     }
@@ -2322,7 +2407,7 @@ static BDFChar *NFNTCvtBitmap(struct MacFontRec *font,int index,SplineFont *sf,i
     BDFChar *bdfc;
     int i,j, bits, bite, bit;
 
-    bdfc = XZALLOC(BDFChar);
+    bdfc = chunkalloc(sizeof(BDFChar));
     memset( bdfc,'\0',sizeof( BDFChar ));
     bdfc->xmin = (font->offsetWidths[index]>>8)+font->kernMax;
     bdfc->xmax = bdfc->xmin + font->locs[index+1]-font->locs[index]-1;
@@ -2422,6 +2507,10 @@ return;
 	    sf->glyphs[gid]->widthset = true;
 	}
     }
+
+    free(font.fontImage);
+    free(font.locs);
+    free(font.offsetWidths);
 }
 
 static char *BuildName(char *family,int style) {
@@ -2449,7 +2538,7 @@ return( copy(buffer));
 
 static int GuessStyle(char *fontname,int *styles,int style_cnt) {
     int which, style;
-    char *stylenames = _GetModifiers(fontname,NULL,NULL);
+    const char *stylenames = _GetModifiers(fontname,NULL,NULL);
 
     style = _MacStyleCode(stylenames,NULL,NULL);
     for ( which = style_cnt; which>=0; --which )
@@ -2522,7 +2611,9 @@ return( test );
 	    char *fn = copy(filename);
 	    fn[lparen-filename] = '\0';
 	    ff_post_error(_("Not in Collection"),_("%s is not in %.100s"),find,fn);
+	    free(fn);
 	}
+	free(find);
     } else if ( cnt==1 )
 	which = 0;
     else if ( no_windowing_ui )
@@ -2536,6 +2627,9 @@ return( test );
 	*name = copy(names[which]);
 	*style = styles[which];
     }
+    for ( i=0; i<cnt; ++i )
+	free(names[i]);
+    free(names); free(fonds); free(styles);
     if ( which==-1 )
 return( NULL );
 
@@ -2546,7 +2640,6 @@ static SplineFont *SearchBitmapResources(FILE *f,long rlistpos,int subcnt,long r
 	long name_list,char *filename,FOND *fondlist,int flags) {
     long start = ftell(f);
     long roff;
-    int rname = -1;
     int ch1, ch2;
     int i,j;
     int res_id;
@@ -2573,15 +2666,16 @@ return( NULL );
     }
 
     sf = SplineFontBlank(257);
-    sf->fontname = name;
-    sf->familyname = copy(fond->fondname);
+    free(sf->fontname); sf->fontname = name;
+    free(sf->familyname); sf->familyname = copy(fond->fondname);
     sf->fondname = copy(fond->fondname);
-    sf->fullname = copy(name);
-    sf->origname = NULL;
-    if ( style & sf_bold )
-	sf->weight = copy("Bold");
-    sf->copyright = NULL;
-    sf->comments = NULL;
+    free(sf->fullname); sf->fullname = copy(name);
+    free(sf->origname); sf->origname = NULL;
+    if ( style & sf_bold ) {
+	free(sf->weight); sf->weight = copy("Bold");
+    }
+    free(sf->copyright); sf->copyright = NULL;
+    free(sf->comments); sf->comments = NULL;
 
     sf->map = EncMapNew(257,257,FindOrMakeEncoding("mac"));
 
@@ -2605,7 +2699,7 @@ return( NULL );
     fseek(f,rlistpos,SEEK_SET);
     for ( i=0; i<subcnt; ++i ) {
 	res_id = getushort(f);
-	rname = (short) getushort(f);
+	/* rname = */ getushort(f);
 	/* flags = */ getc(f);
 	ch1 = getc(f); ch2 = getc(f);
 	roff = rdata_pos+((ch1<<16)|(ch2<<8)|getc(f));
@@ -2641,6 +2735,7 @@ return( NULL );
     break;
     if ( i==fond->stylekerncnt ) {
 	LogError(_("No kerning table for %s\n"), name );
+	free(name);
 return( NULL );
     }
     for ( j=0; j<fond->stylekerns[i].kernpairs; ++j ) {
@@ -2654,7 +2749,7 @@ return( NULL );
 	break;
 	if ( kp==NULL ) {
 	    uint32 script;
-	    kp = XZALLOC(KernPair);
+	    kp = chunkalloc(sizeof(KernPair));
 	    kp->sc = sc2;
 	    kp->next = sc1->kerns;
 	    sc1->kerns = kp;
@@ -2700,6 +2795,7 @@ return( (SplineFont *) ret );
     rewind(temp);
     sf = _SFReadTTF(temp,flags,openflags,NULL,NULL);
     fclose(temp);
+    free(buffer);
 return( sf );
 }
 
@@ -2712,7 +2808,7 @@ static SplineFont *IsResourceFork(FILE *f, long offset,char *filename,int flags,
     /*  file, not at the beginning */
     unsigned char buffer[16], buffer2[16];
     long rdata_pos, map_pos, type_list, name_list, rpos;
-    int32 rdata_len, map_len;
+    int32 rdata_len;
     uint32 nfnt_pos, font_pos, fond_pos;
     unsigned long tag;
     int i, cnt, subcnt, nfnt_subcnt=0, font_subcnt=0, fond_subcnt=0;
@@ -2725,7 +2821,7 @@ return( NULL );
     rdata_pos = offset + ((buffer[0]<<24)|(buffer[1]<<16)|(buffer[2]<<8)|buffer[3]);
     map_pos = offset + ((buffer[4]<<24)|(buffer[5]<<16)|(buffer[6]<<8)|buffer[7]);
     rdata_len = ((buffer[8]<<24)|(buffer[9]<<16)|(buffer[10]<<8)|buffer[11]);
-    map_len = ((buffer[12]<<24)|(buffer[13]<<16)|(buffer[14]<<8)|buffer[15]);
+    /* map_len = ((buffer[12]<<24)|(buffer[13]<<16)|(buffer[14]<<8)|buffer[15]); */
     if ( rdata_pos+rdata_len!=map_pos || rdata_len==0 )
 return( NULL );
     fseek(f,map_pos,SEEK_SET);
@@ -2781,6 +2877,7 @@ return( NULL );
 	if ( fond_subcnt!=0 )
 	    fondlist = BuildFondList(f,fond_pos,fond_subcnt,rdata_pos,name_list,flags);
 	into = FindFamilyStyleKerns(into,map,fondlist,filename);
+	FondListFree(fondlist);
 return( into );
     }
     /* Ok. If no outline font, try for a bitmap */
@@ -2793,6 +2890,7 @@ return( into );
 	    fondlist = BuildFondList(f,fond_pos,fond_subcnt,rdata_pos,name_list,flags);
 	sf = SearchBitmapResources(f,nfnt_pos,nfnt_subcnt,rdata_pos,name_list,
 		filename,fondlist,flags);
+	FondListFree(fondlist);
 	if ( sf!=NULL )
 return( sf );
     }
@@ -2822,6 +2920,9 @@ static SplineFont *HasResourceFork(char *filename,int flags,enum openflags openf
 	strcat(respath,"/rsrc");
 	resfork = fopen(respath,"r");
     }
+    free(respath);
+    if ( tempfn!=filename )
+	free(tempfn);
     if ( resfork==NULL )
 return( NULL );
     ret = IsResourceFork(resfork,0,filename,flags,openflags,into,map);
@@ -2977,6 +3078,7 @@ static SplineFont *IsResourceInFile(char *filename,int flags,enum openflags open
 	temp[lparen-filename] = '\0';
     }
     f = fopen(temp,"rb");
+    if ( temp!=filename ) free(temp);
     if ( f==NULL )
 return( NULL );
     spt = strrchr(filename,'/');

@@ -60,6 +60,7 @@ return( true );
 	    ff_post_error(_("The only valid values for bits/pixel are 1, 2, 4 or 8"),_("The only valid values for bits/pixel are 1, 2, 4 or 8"));
 return( true );
 	}
+	free( last ); free( last_bits );
 	last = GGadgetGetTitle8(GWidgetGetControl(d->gw,CID_Size));
 	last_bits = GGadgetGetTitle8(GWidgetGetControl(d->gw,CID_Bits));
 	d->done = true;
@@ -208,6 +209,7 @@ static int ExportXBM(char *filename,SplineChar *sc, int layer, int format) {
 return( 0 );
 	if ( (pixelsize=strtol(ans,NULL,10))<=0 )
 return( 0 );
+	free(last);
 	last = ans;
 	bitsperpixel=1;
     } else {
@@ -233,7 +235,9 @@ static GTextInfo bcformats[] = {
 /* 0=*.xbm, 1=*.bmp, 2=*.png, 3=*.xpm, 4=*.c(fontforge-internal) */
     { (unichar_t *) N_("X Bitmap"), NULL, 0, 0, (void *) 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("BMP"), NULL, 0, 0, (void *) 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
+#ifndef _NO_LIBPNG
     { (unichar_t *) N_("png"), NULL, 0, 0, (void *) 2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
+#endif
     { (unichar_t *) N_("X Pixmap"), NULL, 0, 0, (void *) 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("C FontForge"), NULL, 0, 0, (void *) 4, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     GTEXTINFO_EMPTY
@@ -250,7 +254,9 @@ static GTextInfo formats[] = {
     /* 0=*.xbm, 1=*.bmp, 2=*.png, 3=*.xpm, 4=*.c(fontforge-internal) */
     { (unichar_t *) N_("X Bitmap"), NULL, 0, 0, (void *) BITMAP_FORMAT_START, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("BMP"), NULL, 0, 0, (void *) (BITMAP_FORMAT_START+1), 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
+#ifndef _NO_LIBPNG
     { (unichar_t *) N_("png"), NULL, 0, 0, (void *) (BITMAP_FORMAT_START+2), 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
+#endif
     { (unichar_t *) N_("X Pixmap"), NULL, 0, 0, (void *) (BITMAP_FORMAT_START+3), 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("C FontForge"), NULL, 0, 0, (void *) (BITMAP_FORMAT_START+4), 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     GTEXTINFO_EMPTY
@@ -281,10 +287,13 @@ static void DoExport(struct gfc_data *d,unichar_t *path) {
 	good = ExportPlate(temp,d->sc,d->layer);
     else if ( format<fv_pythonbase )
 	good = ExportXBM(temp,d->sc,d->layer,format-BITMAP_FORMAT_START);
+#ifndef _NO_PYTHON
     else if ( format>=fv_pythonbase )
 	PyFF_SCExport(d->sc,format-fv_pythonbase,temp,d->layer);
+#endif
     if ( !good )
 	ff_post_error(_("Save Failed"),_("Save Failed"));
+    free(temp);
     d->done = good;
     d->ret = good;
 }
@@ -309,6 +318,7 @@ static void GFD_exists(GIOControl *gio) {
 	    temp = u2utf8_copy(u_GFileNameTail(gio->path)))==0 ) {
 	DoExport(d,gio->path);
     }
+    free(temp);
     GFileChooserReplaceIO(d->gfc,NULL);
 }
 
@@ -322,6 +332,7 @@ static int GFD_SaveOk(GGadget *g, GEvent *e) {
 
 	    GIOfileExists(GFileChooserReplaceIO(d->gfc,
 		    GIOCreate(ret,d,GFD_exists,GFD_doesnt)));
+	    free(ret);
 	}
     }
 return( true );
@@ -344,6 +355,7 @@ static int GFD_Format(GGadget *g, GEvent *e) {
 	file = GGadgetGetTitle(d->gfc);
 	f2 = malloc(sizeof(unichar_t) * (u_strlen(file)+6));
 	u_strcpy(f2,file);
+	free(file);
 	pt = u_strrchr(f2,'.');
 	if ( pt==NULL )
 	    pt = f2+u_strlen(f2);
@@ -354,8 +366,10 @@ static int GFD_Format(GGadget *g, GEvent *e) {
 			 format==3?".xpm":
 			 format==4?".c":
 				   ".png");
+#ifndef _NO_PYTHON
 	else if ( format>=fv_pythonbase )
 	    uc_strcpy(pt+1,py_ie[format-fv_pythonbase].extension);
+#endif
 	else
 	    uc_strcpy(pt,format==0?".eps":
 			 format==1?".fig":
@@ -370,6 +384,7 @@ static int GFD_Format(GGadget *g, GEvent *e) {
 			 format==10?".c":
 				    ".png");
 	GGadgetSetTitle(d->gfc,f2);
+	free(f2);
     }
 return( true );
 }
@@ -380,6 +395,7 @@ static void GFD_dircreated(GIOControl *gio) {
 
     GFileChooserReplaceIO(d->gfc,NULL);
     GFileChooserSetDir(d->gfc,dir);
+    free(dir);
 }
 
 static void GFD_dircreatefailed(GIOControl *gio) {
@@ -389,6 +405,7 @@ static void GFD_dircreatefailed(GIOControl *gio) {
 
     ff_post_notice(_("Couldn't create directory"),_("Couldn't create directory: %s"),
 		temp = u2utf8_copy(u_GFileNameTail(gio->path)));
+    free(temp);
     GFileChooserReplaceIO(d->gfc,NULL);
     GFileChooserReplaceIO(d->gfc,NULL);
 }
@@ -405,11 +422,13 @@ return( true );
 	if ( !GFileIsAbsolute(newdir)) {
 	    char *basedir = u2utf8_copy(GFileChooserGetDir(d->gfc));
 	    char *temp = GFileAppendFile(basedir,newdir,false);
+	    free(newdir); free(basedir);
 	    newdir = temp;
 	}
-	utemp = utf82u_copy(newdir);
+	utemp = utf82u_copy(newdir); free(newdir);
 	GIOmkDir(GFileChooserReplaceIO(d->gfc,
 		GIOCreate(utemp,d,GFD_dircreated,GFD_dircreatefailed)));
+	free(utemp);
     }
 return( true );
 }
@@ -481,6 +500,7 @@ static int _Export(SplineChar *sc,BDFChar *bc,int layer) {
     if ( bc==NULL )
 	formats[5].disabled = !CanBeAPlateFile(sc);
     cur_formats = bc==NULL ? formats : bcformats;
+#ifndef _NO_PYTHON
     if ( bc==NULL && py_ie!=NULL ) {
 	int cnt, extras;
 	for ( cnt=0; formats[cnt].text!=NULL; ++cnt );
@@ -503,6 +523,7 @@ static int _Export(SplineChar *sc,BDFChar *bc,int layer) {
 	    }
 	}
     }
+#endif
 
     memset(&wattrs,0,sizeof(wattrs));
     wattrs.mask = wam_events|wam_cursor|wam_utf8_wtitle|wam_undercursor|wam_restrict|wam_isdlg;
@@ -624,8 +645,10 @@ static int _Export(SplineChar *sc,BDFChar *bc,int layer) {
     GFileChooserConnectButtons(gcd[0].ret,gcd[1].ret,gcd[2].ret);
     if ( bc!=NULL )
 	ext = _format==0 ? "xbm" : _format==1 ? "bmp" : "png";
+#ifndef _NO_PYTHON
     else if ( _format>=fv_pythonbase )
 	ext = py_ie[_format-fv_pythonbase].extension;
+#endif
     else
 	ext = _format==0?"eps":_format==1?"fig":_format==2?"svg":
 		_format==3?"glif":
@@ -649,6 +672,9 @@ static int _Export(SplineChar *sc,BDFChar *bc,int layer) {
     GGadgetSetTitle(gcd[0].ret,ubuf);
     GFileChooserGetChildren(gcd[0].ret,&pulldown,&files,&tf);
     GWidgetIndicateFocusGadget(tf);
+
+    if ( cur_formats!=formats && cur_formats!=bcformats )
+	GTextInfoListFree(cur_formats);
 
     memset(&d,'\0',sizeof(d));
     d.sc = sc;

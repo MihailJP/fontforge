@@ -35,6 +35,7 @@
 
 #include <fontforge-config.h>
 
+#ifndef _NO_PYTHON
 #include "Python.h"
 #include "structmember.h"
 
@@ -105,6 +106,7 @@ return;
 	else if ( !PyInt_Check(result)) {
 	    char *menu_item_name = u2utf8_copy(mi->ti.text);
 	    LogError(_("Return from enabling function for menu item %s must be boolean"), menu_item_name );
+	    free( menu_item_name );
 	    mi->ti.disabled = true;
 	} else
 	    mi->ti.disabled = PyInt_AsLong(result)==0;
@@ -288,6 +290,7 @@ static void InsertSubMenus(PyObject *args,GMenuItem2 **mn, int is_cv) {
 		mmn[j].invoke = is_cv ? cvpy_menuactivate : fvpy_menuactivate;
 		mmn[j].mid = MenuDataAdd(func,check,data,is_cv);
 		fprintf( stderr, "Redefining menu item %s\n", u2utf8_copy(submenuu) );
+		free(submenuu);
 	    }
 	}
     }
@@ -790,6 +793,7 @@ copyUIMethodsToBaseTable( PyMethodDef* ui, PyMethodDef* md )
 static void python_ui_fd_callback( int fd, void* udata );
 static void python_ui_setup_callback( bool makefifo )
 {
+#ifndef __MINGW32__
     int fd = 0;
     int err = 0;
     char path[ PATH_MAX + 1 ];
@@ -801,37 +805,30 @@ static void python_ui_setup_callback( bool makefifo )
     }
     
     void* udata = 0;
-    printf("PythonUI_Init(0)\n");
     fd = open( path, O_RDONLY | O_NDELAY );
-    printf("PythonUI_Init(1) fd:%d\n", fd);
     GDrawAddReadFD( 0, fd, udata, python_ui_fd_callback );
-    printf("PythonUI_Init(2)\n");
-    
+#endif   
 }
 
 static void python_ui_fd_callback( int fd, void* udata )
 {
-    fprintf( stderr, "python_ui_fd_callback(top) fd:%d\n", fd );
+#ifndef __MINGW32__
     char data[ 1024*100 + 1 ];
     memset(data, '\0', 1024*100 );
 //    sleep( 1 );
     int sz = read( fd, data, 1024*100 );
-    fprintf( stderr, "python_ui_fd_callback() sz:%d d:%s\n", sz, data );
+//    fprintf( stderr, "python_ui_fd_callback() sz:%d d:%s\n", sz, data );
 
     CharView* cv = CharViewFindActive();
     if( cv )
     {
-	fprintf( stderr, "python_ui_fd_callback() cv:%p\n", cv );
-	fprintf( stderr, "python_ui_fd_callback() fv:%p\n", cv->b.fv );
-	fprintf( stderr, "python_ui_fd_callback() sc:%p\n", cv->b.sc );
-	
 	int layer = 0;
 	PyFF_ScriptString( cv->b.fv, cv->b.sc, layer, data );
     }
     
     GDrawRemoveReadFD( 0, fd, udata );
     python_ui_setup_callback( 0 );
-    
+#endif    
 }
 
 void PythonUI_namedpipe_Init(void) {
@@ -850,4 +847,5 @@ void PythonUI_Init(void) {
 
     
 }
+#endif
 

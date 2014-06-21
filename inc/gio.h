@@ -89,6 +89,7 @@ extern void GIOrenameFile(GIOControl *gc);
 extern GDirEntry *GIOgetDirData(GIOControl *gc);
 extern int32 GIOread(GIOControl *gc,void *buffer,int32 len);
 extern int32 GIOwrite(GIOControl *gc,void *buffer,int32 len);
+extern void GIOFreeDirEntries(GDirEntry *lst);
 extern void GIOcancel(GIOControl *gc);
 extern void GIOclose(GIOControl *gc);
 extern GIOControl *GIOCreate(unichar_t *path,void *userdata,
@@ -96,10 +97,6 @@ extern GIOControl *GIOCreate(unichar_t *path,void *userdata,
 	void (*receiveerror)(struct giocontrol *));
 extern void GIOSetDefAuthorizer(int32 (*getauth)(struct giocontrol *));
 extern void GIOSetUserAgent(unichar_t *agent);
-
-//extern unichar_t *GIOguessMimeType(const unichar_t *path,int isdir);
-//extern unichar_t *_GioMacMime(const char *path);
-extern char *GIOGetMimeType(const char *path, bool sniff_data);
 
 extern char *GIO_PasswordCache(char *proto,char *host,char *username,char *password);
 extern char *_GIO_decomposeURL(const unichar_t *url,char **host, int *port, char **username,

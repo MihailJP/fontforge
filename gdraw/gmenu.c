@@ -24,8 +24,6 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include <fontforge-config.h>
-
 #include <stdlib.h>
 #include <gdraw.h>
 #include "ggadgetP.h"
@@ -580,6 +578,8 @@ static int GMenuDrawMenuLine(struct gmenu *m, GMenuItem *mi, int y,GWindow pixma
 		keydesc = hotkeyTextToMacModifiers( keydesc );
 	    }
 	    utf82u_strcpy( shortbuf, keydesc );
+	    if( keydesc != hk->text )
+		free( keydesc );
 	}
 
 	width = GDrawGetTextWidth(pixmap,shortbuf,-1);
@@ -803,6 +803,10 @@ return( true );
 	if ( !event->u.crossing.entered )
 	    UnsetInitialPress(m);
 return( true );
+    } else if ((event->type==et_mouseup || event->type==et_mousedown) &&
+               (event->u.mouse.button>=4 && event->u.mouse.button<=7) ) {
+        //From scrollbar.c: X treats a scroll as a mousedown/mouseup event
+        return GGadgetDispatchEvent(m->vsb,event);
     }
 
     p.x = event->u.mouse.x; p.y = event->u.mouse.y;
@@ -1308,6 +1312,9 @@ static int gmenu_destroy(struct gmenu *m) {
 	most_recent_popup_menu = NULL;
     if ( m->donecallback )
 	(m->donecallback)(m->owner);
+    if ( m->freemi )
+	GMenuItemArrayFree(m->mi);
+    free(m);
 return( true );
 }
 
@@ -1388,7 +1395,7 @@ static GMenu *_GMenu_Create( GMenuBar* toplevel,
     GRect pos;
     GDisplay *disp = GDrawGetDisplayOfWindow(owner);
     GWindowAttrs pattrs;
-    int i, width, keywidth;
+    int i, width, max_iwidth = 0, max_hkwidth = 0;
     unichar_t buffer[300];
     extern int _GScrollBar_Width;
     int ds, ld, temp, lh;
@@ -1422,13 +1429,13 @@ static GMenu *_GMenu_Create( GMenuBar* toplevel,
     lh = m->fh;
 
     GDrawSetFont(m->w,m->font);
-    m->hasticks = false; width = 0; keywidth = 0;
+    m->hasticks = false;
     for ( i=0; mi[i].ti.text!=NULL || mi[i].ti.image!=NULL || mi[i].ti.line; ++i ) {
 	if ( mi[i].ti.checkable )
 	    m->hasticks = true;
 	temp = GTextInfoGetWidth(m->w,&mi[i].ti,m->font);
-	if ( temp>width )
-	    width = temp;
+	if (temp > max_iwidth)
+	    max_iwidth = temp;
 
 	uc_strcpy(buffer,"");
 	uint16 short_mask = 0;
@@ -1467,14 +1474,13 @@ static GMenu *_GMenu_Create( GMenuBar* toplevel,
 	    uc_strcpy( buffer, keydesc );
 
 	    temp = GDrawGetTextWidth(m->w,buffer,-1);
+	    if (temp > max_hkwidth)
+	        max_hkwidth = temp;
 	    /* if( short_mask && mac_menu_icons ) { */
 	    /* 	temp += GMenuMacIconsWidth( m, short_mask ); */
 	    /* } */
 	}
 
-	if ( temp>keywidth ) keywidth=temp;
-	if ( mi[i].sub!=NULL && 3*m->as>keywidth )
-	    keywidth = 3*m->as;
 	temp = GTextInfoGetHeight(m->w,&mi[i].ti,m->font);
 	if ( temp>lh ) {
 	    if ( temp>3*m->fh/2 )
@@ -1484,7 +1490,9 @@ static GMenu *_GMenu_Create( GMenuBar* toplevel,
     }
     m->fh = lh;
     m->mcnt = m->lcnt = i;
-    if ( keywidth!=0 ) width += keywidth + GDrawPointsToPixels(m->w,8);
+
+    //Width: Max item length + max length of hotkey text + padding
+    width = max_iwidth + max_hkwidth + GDrawPointsToPixels(m->w, 10);
     if ( m->hasticks ) {
 	int ticklen = m->as + GDrawPointsToPixels(m->w,5);
 	width += ticklen;
@@ -1955,8 +1963,16 @@ int GMenuBarCheckKey(GWindow top, GGadget *g, GEvent *event) {
 		    GMenuDestroy(mb->child);
 		return( true );
 	    }
+	    else
+	    {
+//		    TRACE("hotkey found for event must be a non menu action... action:%s\n", hk->action );
+
+	    }
 	}
+
+//	    TRACE("END hotkey found by event! hk:%p\n", hk );
     }
+    dlist_free_external(&hklist);
 
     TRACE("menubarcheckkey(e1)\n");
 
@@ -2101,6 +2117,8 @@ return;
 	GDrawSync(NULL);
 	GDrawProcessPendingEvents(NULL);	/* popup's destroy routine must execute before we die */
     }
+    GMenuItemArrayFree(mb->mi);
+    free(mb->xs);
     _ggadget_destroy(g);
 }
 
@@ -2319,8 +2337,10 @@ void GMenuBarSetItemName(GGadget *g, int mid, const unichar_t *name) {
     GMenuItem *item;
 
     item = GMenuBarFindMid(mb->mi,mid);
-    if ( item!=NULL )
+    if ( item!=NULL ) {
+	free( item->ti.text );
 	item->ti.text = u_copy(name);
+    }
 }
 
 /* Check to see if event matches the given shortcut, expressed in our standard*/

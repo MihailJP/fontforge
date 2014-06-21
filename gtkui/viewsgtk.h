@@ -520,9 +520,11 @@ extern void FVAutoWidth(FontView *fv);
 
 extern void SC_MarkInstrDlgAsChanged(SplineChar *sc);
 
+#ifndef _NO_PYTHON
 extern void PyFF_BuildFVToolsMenu(FontView *fv,GtkMenuItem *tools);
 extern void PyFF_BuildCVToolsMenu(CharView *cv,GtkMenuItem *tools);
 extern void PythonUI_Init(void);
+#endif
 
 extern void SCStroke(SplineChar *sc);
 
@@ -549,7 +551,7 @@ extern uint8 *DebuggerGetWatchCvts(struct debugger_context *dc, int *n);
 extern int DebuggingFpgm(struct debugger_context *dc);
 
 
-extern void PrintDlg(FontView *fv,SplineChar *sc,MetricsView *mv);
+extern void PrintFFDlg(FontView *fv,SplineChar *sc,MetricsView *mv);
 extern void PrintWindowClose(void);
 
 extern char *Kern2Text(SplineChar *other,KernPair *kp,int isv);
@@ -735,6 +737,7 @@ extern void CVShowPoint(CharView *cv, BasePoint *me);
 
 extern BitmapView *BitmapViewCreate(BDFChar *bc, BDFFont *bdf, FontView *fv,int enc);
 extern BitmapView *BitmapViewCreatePick(int enc, FontView *fv);
+extern void BitmapViewFree(BitmapView *bv);
 extern void BVRotateBitmap(BitmapView *bv,enum bvtools type );
 extern int  BVColor(BitmapView *bv);
 extern void BCGeneralFunction(BitmapView *bv,
@@ -747,6 +750,7 @@ extern void MVRefreshChar(MetricsView *mv, SplineChar *sc);
 extern void MVRegenChar(MetricsView *mv, SplineChar *sc);
 extern void MVReKern(MetricsView *mv);
 extern MetricsView *MetricsViewCreate(FontView *fv,SplineChar *sc,BDFFont *bdf);
+extern void MetricsViewFree(MetricsView *mv);
 extern void MVRefreshAll(MetricsView *mv);
 
 extern void DoPrefs(void);

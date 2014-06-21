@@ -37,7 +37,7 @@ NameList *force_names_when_opening=NULL;
 NameList *force_names_when_saving=NULL;
 
 static struct psaltnames {
-    char *name;
+    const char *name;
     int unicode;
     int provenance;		/* 1=> Adobe PUA, 2=>AMS PUA, 3=>TeX */
 } psaltnames[];
@@ -101,11 +101,16 @@ static void psreinitnames(void) {
     /*  which means we must remove all the old hash entries before we can put */
     /*  in the new ones */
     int i;
-    struct psbucket *cur, *prev;
     NameList *nl;
 
-    for ( i=0; i<HASH_SIZE; ++i )
+    for ( i=0; i<HASH_SIZE; ++i ) {
+	struct psbucket *cur, *prev;
+	for ( cur = psbuckets[i]; cur!=NULL; cur=prev ) {
+	    prev = cur->prev;
+	    chunkfree(cur,sizeof(struct psbucket));
+	}
 	psbuckets[i] = NULL;
+    }
 
     for ( i=0; psaltnames[i].name!=NULL ; ++i )
 	psaddbucket(psaltnames[i].name,psaltnames[i].unicode);
@@ -477,6 +482,32 @@ NameList *NameListByName(const char *name) {
     return( NULL );
 }
 
+static void NameListFreeContents(NameList *nl) {
+    int np, nb, nc, i;
+
+    for ( np=0; np<17; ++np ) if ( nl->unicode[np]!=NULL ) {
+	for ( nb=0; nb<256; ++nb ) if ( nl->unicode[np][nb]!=NULL ) {
+	    for ( nc=0; nc<256; ++nc ) if ( nl->unicode[np][nb][nc]!=NULL )
+		free((char *)nl->unicode[np][nb][nc] );
+	    free( (char **) nl->unicode[np][nb]);
+	}
+	free( (char ***) nl->unicode[np]);
+    }
+    free( nl->title );
+    if ( nl->renames!=NULL ) {
+	for ( i=0; nl->renames[i].from!=NULL; ++i ) {
+	    free(nl->renames[i].from);
+	    free(nl->renames[i].to);
+	}
+	free(nl->renames);
+    }
+    free(nl->a_utf8_name);
+}
+
+static void NameListFree(NameList *nl) {
+    NameListFreeContents(nl);
+    chunkfree(nl,sizeof(NameList));
+}
 /* ************************************************************************** */
 
 #include <sys/types.h>
@@ -499,7 +530,7 @@ return( NULL );
     if ( !psnamesinited )
 	psinitnames();
 
-    nl = XZALLOC(NameList);
+    nl = chunkalloc(sizeof(NameList));
     pt = strrchr(filename,'/');
     if ( pt==NULL ) pt = filename; else ++pt;
     nl->title = def2utf8_copy(pt);
@@ -519,9 +550,11 @@ return( NULL );
 	    break;
 	    if ( nl2==NULL ) {
 		ff_post_error(_("NameList base missing"),_("NameList %s based on %s which could not be found"), nl->title, pt );
+		NameListFree(nl);
 return( NULL );
 	    } else if ( nl->basedon!=NULL ) {
 		ff_post_error(_("NameList based twice"),_("NameList %s based on two NameLists"), nl->title );
+		NameListFree(nl);
 return( NULL );
 	    }
 	    nl->basedon = nl2;
@@ -530,6 +563,7 @@ return( NULL );
 	    for ( test=pt; *test!=' ' && *test!='\t' && *test!='\0'; ++test );
 	    if ( *test=='\0' ) {
 		ff_post_error(_("NameList parsing error"),_("Missing rename \"to\" name %s\n%s"), nl->title, buffer );
+		NameListFree(nl);
 return( NULL );
 	    }
 	    *test='\0';
@@ -538,6 +572,7 @@ return( NULL );
 		for ( test+=2; *test==' ' || *test=='\t'; ++test);
 	    if ( *test=='\0' ) {
 		ff_post_error(_("NameList parsing error"),_("Missing rename \"to\" name %s\n%s"), nl->title, buffer );
+		NameListFree(nl);
 return( NULL );
 	    }
 	    if ( rn_cnt>=rn_max-1 )
@@ -554,12 +589,14 @@ return( NULL );
 	    uni = strtol(pt,&end,16);
 	    if ( end==pt || uni<0 || (unsigned long)uni>=unicode4_size ) {
 		ff_post_error(_("NameList parsing error"),_("Bad unicode value when parsing %s\n%s"), nl->title, buffer );
+		NameListFree(nl);
 return( NULL );
 	    }
 	    pt = end;
 	    while ( *pt==' ' || *pt==';' || *pt=='\t' ) ++pt;
 	    if ( *pt=='\0' ) {
 		ff_post_error(_("NameList parsing error"),_("Missing name when parsing %s for unicode %x"), nl->title, uni );
+		NameListFree(nl);
 return( NULL );
 	    }
 	    for ( test=pt; *test; ++test ) {
@@ -568,6 +605,7 @@ return( NULL );
 		    *test==')' || *test==']' || *test=='}' || *test=='>' ||
 		    *test=='%' || *test=='/' ) {
 		    ff_post_error(_("NameList parsing error"),_("Bad name when parsing %s for unicode %x"), nl->title, uni );
+		    NameListFree(nl);
 return( NULL );
 		}
 		if ( *test&0x80 ) {
@@ -587,6 +625,7 @@ return( NULL );
 		nl->unicode[up][ub][uc]=copy(pt);
 	    else {
 		ff_post_error(_("NameList parsing error"),_("Multiple names when parsing %s for unicode %x"), nl->title, uni );
+		NameListFree(nl);
 return( NULL );
 	    }
 	}
@@ -599,8 +638,10 @@ return( NULL );
     for ( nl2 = &agl; nl2->next!=NULL; nl2=nl2->next ) {
 	if ( strcmp(nl2->title,nl->title)==0 ) {	/* Replace old version */
 	    NameList *next = nl2->next;
+	    NameListFreeContents(nl2);
 	    *nl2 = *nl;
 	    nl2->next = next;
+	    chunkfree(nl,sizeof(NameList));
 	    psreinitnames();
 return( nl2 );
 	}
@@ -729,7 +770,7 @@ return( buffer );
     }
 }
 
-static void BuildHash(struct glyphnamehash *hash,SplineFont *sf,const char **oldnames) {
+static void BuildHash(struct glyphnamehash *hash,SplineFont *sf, char **oldnames) {
     int gid, hv;
     SplineChar *sc;
     struct glyphnamebucket *new;
@@ -737,7 +778,7 @@ static void BuildHash(struct glyphnamehash *hash,SplineFont *sf,const char **old
     memset(hash,0,sizeof(*hash));
     for ( gid = 0; gid<sf->glyphcnt; ++gid ) {
 	if ( (sc=sf->glyphs[gid])!=NULL && oldnames[gid]!=NULL ) {
-	    new = XZALLOC(struct glyphnamebucket);
+	    new = chunkalloc(sizeof(struct glyphnamebucket));
 	    new->sc = sf->glyphs[gid];
 	    hv = hashname(oldnames[gid]);
 	    new->next = hash->table[hv];
@@ -804,6 +845,7 @@ static char *DoReplacements(struct bits *bits,int bc,char **_src,char *start) {
 	    last_orig = bits[i].end;
 	}
 	strcpy(last,last_orig);
+	free(*_src);
 	*_src = ret;
     }
 
@@ -854,8 +896,10 @@ static void SFRenameLookupsByHash(SplineFont *sf,struct glyphnamehash *hash) {
 	    switch ( pst->type ) {
 	      case pst_pair: case pst_substitution:
 		rpl = HashFind(hash,pst->u.subs.variant);	/* variant is at same location as paired */
-		if ( rpl!=NULL )
+		if ( rpl!=NULL ) {
+		    free( pst->u.subs.variant );
 		    pst->u.subs.variant = copy(rpl->name);
+		}
 	      break;
 	      case pst_alternate: case pst_multiple: case pst_ligature:
 		ReplaceByHash(&pst->u.mult.components,hash);
@@ -950,32 +994,44 @@ return( NULL );
 
     BuildHash(&hash,sf,ret);
     SFRenameLookupsByHash(sf,&hash);
+    __GlyphHashFree(&hash);
     GlyphHashFree(sf);
 return( ret );
 }
 
-void SFTemporaryRestoreGlyphNames(SplineFont *sf,const char **former) {
+void SFTemporaryRestoreGlyphNames(SplineFont *sf, char **former) {
     int gid;
     SplineChar *sc;
     struct glyphnamehash hash;
 
     for ( gid = 0; gid<sf->glyphcnt; ++gid ) if ( (sc=sf->glyphs[gid])!=NULL ) {
 	if ( former[gid]!=NULL ) {
-	    const char *old = sc->name;
+	    char *old = sc->name;
 	    sc->name = copy(former[gid]);
 	    former[gid] = old;
 	}
     }
     BuildHash(&hash,sf,former);
     SFRenameLookupsByHash(sf,&hash);
+    __GlyphHashFree(&hash);
     GlyphHashFree(sf);
+    for ( gid = 0; gid<sf->glyphcnt; ++gid )
+	free(former[gid]);
+    free(former);
 }
 
 void SFRenameGlyphsToNamelist(SplineFont *sf,NameList *new) {
+    char **ret;
+    int gid;
+
     if ( new==NULL )
 return;
 
-    SFTemporaryRenameGlyphsToNamelist(sf,new);
+    ret = SFTemporaryRenameGlyphsToNamelist(sf,new);
+    for ( gid = 0; gid<sf->glyphcnt; ++gid )
+	free(ret[gid]);
+    free(ret);
+
     sf->for_new_glyphs = new;
 }
 /* ************************************************************************** */

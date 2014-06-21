@@ -32,9 +32,12 @@ include $(top_srcdir)/mk/layout.am
 if THE_PROGRAMS
 
 bin_PROGRAMS = fontforge
-dist_man_MANS = fontforge.1 fontimage.1 fontlint.1 sfddiff.1
+dist_man_MANS = fontforge.1
 
+if NATIVE_SCRIPTING
 nodist_bin_SCRIPTS = fontimage fontlint sfddiff
+dist_man_MANS += fontimage.1 fontlint.1 sfddiff.1
+endif NATIVE_SCRIPTING
 
 endif THE_PROGRAMS
 
@@ -73,7 +76,7 @@ LIBADD = $(top_builddir)/Unicode/libgunicode.la	\
 	$(top_builddir)/gutils/libgutils.la	\
 	$(top_builddir)/gutils/libgioftp.la	\
 	$(top_builddir)/fontforge/libfontforge.la \
-	$(top_builddir)/lib/libgnu.la $(LIBGC_LIBS) $(top_builddir)/inc/libggc_veneer.la
+	$(top_builddir)/lib/libgnu.la
 
 GUILIBADD =
 if GRAPHICAL_USER_INTERFACE
@@ -81,7 +84,7 @@ GUILIBADD += $(top_builddir)/gdraw/libgdraw.la $(XINPUT_LIBS)	\
 	$(XKB_LIBS)
 endif GRAPHICAL_USER_INTERFACE
 
-LDADD = $(LIBADD) $(GUILIBADD) $(LIBGC_LIBS)
+LDADD = $(LIBADD) $(GUILIBADD)
 
 AM_CFLAGS = $(WARN_CFLAGS)
 
@@ -137,8 +140,8 @@ if MACINTOSH
 MACFFEXE_LIBADD=macobjective.o
 endif MACINTOSH
 
-libfontforgeexe_la_CPPFLAGS = $(AM_CPPFLAGS) $(LIBZMQ_CFLAGS) $(GTK2_CFLAGS) $(LIBGC_CFLAGS)
-libfontforgeexe_la_LIBADD = $(LTDLDEPS) $(LIBADD) $(GUILIBADD) $(MACFFEXE_LIBADD) $(MY_LIBS) $(GTK2_LIBS) $(LIBGC_LIBS)
+libfontforgeexe_la_CPPFLAGS = $(AM_CPPFLAGS) $(LIBZMQ_CFLAGS) $(GTK2_CFLAGS)
+libfontforgeexe_la_LIBADD = $(LTDLDEPS) $(LIBADD) $(GUILIBADD) $(MACFFEXE_LIBADD) $(MY_LIBS) $(GTK2_LIBS) $(top_builddir)/fontforge/libfontforge.la
 
 libfontforgeexe_la_LDFLAGS = $(MY_CFLAGS) -version-info $(LIBFONTFORGEEXE_VERSION) \
 	${MY_LIB_LDFLAGS}

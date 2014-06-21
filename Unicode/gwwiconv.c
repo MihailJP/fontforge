@@ -25,6 +25,8 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <fontforge-config.h>
+
 #include <basics.h>
 #include <gwwiconv.h>
 #include <charset.h>
@@ -154,6 +156,7 @@ return( ret );
 }
 
 void gww_iconv_close( gww_iconv_t cd) {
+    free(cd);
 }
 
 size_t gww_iconv( gww_iconv_t _cd,

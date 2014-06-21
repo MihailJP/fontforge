@@ -27,6 +27,12 @@
 
 #include <fontforge-config.h>
 
+#ifdef _NO_LIBPNG
+
+static int a_file_must_define_something=0;	/* ANSI says so */
+
+#else
+
 #include <png.h>
 
 #define int32 _int32
@@ -153,7 +159,11 @@ return(false);
 
     png_write_end(png_ptr, info_ptr);
 
+    free(trans_alpha);
+    free(trans_color);
+    free(palette);
     png_destroy_write_struct(&png_ptr, &info_ptr);
+    free(rows);
 return( 1 );
 }
 
@@ -169,3 +179,5 @@ return(false);
     fclose(fp);
 return( ret );
 }
+
+#endif

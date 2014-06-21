@@ -38,9 +38,10 @@ static void ClipBoard_Grab(void) {
 }
 
 static void ClipBoard_AddDataType(const char *mimetype, void *data, int cnt, int size,
-	void *(*gendata)(void *,int32 *len)) {
+	void *(*gendata)(void *,int32 *len), void (*freedata)(void *)) {
     GDrawAddSelectionType(((FontView *) FontViewFirst())->gw,sn_clipboard,
-	    (char *) mimetype, data, cnt, size, gendata);
+	    (char *) mimetype, data, cnt, size,
+	    gendata,freedata);
 }
 
 /* Asks for the clip and waits for the response. */

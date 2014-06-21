@@ -33,7 +33,32 @@
 #include <math.h>
 #include <ctype.h>
 
-#include <zlib.h>
+#ifdef _NO_LIBPNG
+
+SplineFont *_SFReadWOFF(FILE *woff,int flags,enum openflags openflags, char *filename,struct fontdict *fd) {
+    ff_post_error(_("WOFF not supported"), _("This version of fontforge cannot handle WOFF files. You need to recompile it with libpng and zlib") );
+return( NULL );
+}
+
+int _WriteWOFFFont(FILE *woff,SplineFont *sf, enum fontformat format,
+	int32 *bsizes, enum bitmapformat bf,int flags,EncMap *enc,int layer) {
+    ff_post_error(_("WOFF not supported"), _("This version of fontforge cannot handle WOFF files. You need to recompile it with libpng and zlib") );
+return( 1 );
+}
+
+int WriteWOFFFont(char *fontname,SplineFont *sf, enum fontformat format,
+	int32 *bsizes, enum bitmapformat bf,int flags,EncMap *enc,int layer) {
+    ff_post_error(_("WOFF not supported"), _("This version of fontforge cannot handle WOFF files. You need to recompile it with libpng and zlib") );
+return( 1 );
+}
+
+int CanWoff(void) {
+return( 0 );
+}
+
+#else /* ! _NO_LIBPNG */
+
+# include <zlib.h>
 
 static void copydata(FILE *to,int off_to,FILE *from,int off_from, int len) {
     int ch, i;
@@ -324,6 +349,7 @@ return( NULL );
 	sf->woffMetadata[metaLenUncompressed] ='\0';
 	uncompress(sf->woffMetadata,&len,temp,metaLenCompressed);
 	sf->woffMetadata[len] ='\0';
+	free(temp);
     }
 
 return( sf );
@@ -440,6 +466,7 @@ return( ret );
 	newoffset = ftell(woff);
 	compress(temp,&complen,sf->woffMetadata,uncomplen);
 	fwrite(temp,1,complen,woff);
+	free(temp);
 	if ( (ftell(woff)&3)!=0 ) {
 	    /* Pad to a 4 byte boundary */
 	    if ( ftell(woff)&1 )
@@ -484,3 +511,5 @@ return( ret );
 int CanWoff(void) {
     return( true );
 }
+
+#endif /* ! _NO_LIBPNG */

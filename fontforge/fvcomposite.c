@@ -1112,6 +1112,7 @@ const unichar_t *SFGetAlternate(SplineFont *sf, int base,SplineChar *sc,int noch
 	/* agrave.sc should be built from a.sc and grave or grave.sc */
 	char *temp = copyn(sc->name,dot-sc->name);
 	base = UniFromName(temp,sf->uni_interp,NULL);
+	free(temp);
     }
 
     if ( base>=0xac00 && base<=0xd7a3 ) { /* Hangul syllables */
@@ -1232,6 +1233,7 @@ return( SCMakeDotless(sf,SFGetOrMakeChar(sf,unicodeenc,NULL),layer,NULL,false,fa
 	/* agrave.sc should be built from a.sc and grave or grave.sc */
 	char *temp = copyn(sc->name,dot-sc->name);
 	unicodeenc = UniFromName(temp,sf->uni_interp,NULL);
+	free(temp);
     }
 
     if (( all = pt = SFGetAlternate(sf,unicodeenc,sc,false))==NULL )
@@ -1259,7 +1261,7 @@ return( false );
 return( true );
 }
 
-int SFIsRotatable(SplineFont *sf,SplineChar *sc,int layer) {
+int SFIsRotatable(SplineFont *sf,SplineChar *sc) {
     char *end;
     int cid;
 
@@ -1284,10 +1286,13 @@ return( true );
 	if ( *end=='.' && SFCIDFindExistingChar(sf,uni,NULL)!=-1 )
 return( true );
     } else if ( strstr(sc->name,".vert")!=NULL || strstr(sc->name,".vrt2")!=NULL) {
+	int ret;
 	char *temp;
 	end = strchr(sc->name,'.');
 	temp = copyn(sc->name,end-sc->name);
-return SFFindExistingSlot(sf,-1,temp)!=-1;
+	ret = SFFindExistingSlot(sf,-1,temp)!=-1;
+	free(temp);
+return( ret );
     }
 return( false );
 }
@@ -1343,7 +1348,7 @@ return( !onlyaccents || hascomposing(sf,sc->unicodeenc,sc) );
     if ( !onlyaccents && SCMakeDotless(sf,sc,layer,NULL,false,false))
 return( true );
 
-return( SFIsRotatable(sf,sc,layer));
+return( SFIsRotatable(sf,sc));
 }
 
 static int SPInRange(SplinePoint *sp, real ymin, real ymax) {
@@ -1380,7 +1385,7 @@ static void _SplineSetFindXRange(SplinePointList *spl, DBounds *bounds,
 }
 
 static real _SplineSetFindXRangeAtYExtremum(SplinePointList *spl, DBounds *bounds,
-	int findymax, real yextreme, real ia) {
+	int findymax, real yextreme) {
     Spline *spline;
     extended t0, t1, t2, t3;
     bigreal y0, y1, y2, y3, x;
@@ -1437,7 +1442,7 @@ return( yextreme );
 /*  character looks like so that we can do an optical accent placement */
 /* I currently think the best bet is to find the very highest point(s) and */
 /*  center on that. I used to find the bounds of the top quarter of the char */
-static real SCFindTopXRange(SplineChar *sc,int layer,DBounds *bounds, real ia) {
+static real SCFindTopXRange(SplineChar *sc,int layer,DBounds *bounds) {
     RefChar *rf;
     real yextreme = -0x80000;
 
@@ -1445,9 +1450,9 @@ static real SCFindTopXRange(SplineChar *sc,int layer,DBounds *bounds, real ia) {
     bounds->minx = bounds->maxx = 0;
 
     for ( rf=sc->layers[layer].refs; rf!=NULL; rf = rf->next )
-	yextreme = _SplineSetFindXRangeAtYExtremum(rf->layers[0].splines,bounds,true,yextreme,ia);
+	yextreme = _SplineSetFindXRangeAtYExtremum(rf->layers[0].splines,bounds,true,yextreme);
 
-    yextreme = _SplineSetFindXRangeAtYExtremum(sc->layers[layer].splines,bounds,true,yextreme,ia);
+    yextreme = _SplineSetFindXRangeAtYExtremum(sc->layers[layer].splines,bounds,true,yextreme);
     if ( yextreme == -0x80000 ) yextreme = 0;
 return( yextreme );
 }
@@ -1460,9 +1465,9 @@ static real SCFindBottomXRange(SplineChar *sc,int layer,DBounds *bounds, real ia
     bounds->minx = bounds->maxx = 0;
 
     for ( rf=sc->layers[layer].refs; rf!=NULL; rf = rf->next )
-	yextreme = _SplineSetFindXRangeAtYExtremum(rf->layers[0].splines,bounds,false,yextreme,ia);
+	yextreme = _SplineSetFindXRangeAtYExtremum(rf->layers[0].splines,bounds,false,yextreme);
 
-    yextreme = _SplineSetFindXRangeAtYExtremum(sc->layers[layer].splines,bounds,false,yextreme,ia);
+    yextreme = _SplineSetFindXRangeAtYExtremum(sc->layers[layer].splines,bounds,false,yextreme);
     if ( yextreme == 0x80000 ) yextreme = 0;
 return( yextreme );
 }
@@ -1625,6 +1630,7 @@ static void BCClearAndCopyBelow(BDFFont *bdf,int togid,int fromgid, int ymax) {
     BCCompressBitmap(bc);
     if ( bdf->glyphs[fromgid]!=NULL ) {
 	rbc = bdf->glyphs[fromgid];
+	free(bc->bitmap);
 	bc->xmin = rbc->xmin;
 	bc->xmax = rbc->xmax;
 	bc->ymin = rbc->ymin;
@@ -1853,6 +1859,7 @@ static SplineChar *GetGoodAccentGlyph(SplineFont *sf, int uni, int basech,
 	    if ( (test=SFGetChar(sf,-1,uc_accent))!=NULL )
 		rsc = test;
 	}
+	free(uc_accent);
     }
     if ( rsc!=NULL && SCDependsOnSC(rsc,destination))
 	rsc = NULL;
@@ -2171,7 +2178,7 @@ return;
 		if ( CharCenterHighest ) {
 		    if ( basech!='b' && basech!='d' && basech!='h' && basech!='n' && basech!='r' && basech!=0xf8 &&
 			    basech!='B' && basech!='D' && basech!='L' && basech!=0xd8 )
-			ybase = SCFindTopXRange(sc,layer,&bb,ia);
+			ybase = SCFindTopXRange(sc,layer,&bb);
 		    if ( ((basech=='h' && ch==0x307) ||	/* dot over the stem in hdot */
 			    basech=='i' || basech=='j' || basech==0x131 || basech==0xf6be || basech==0x237 ||
 			    (basech=='k' && ch==0x301) ||
@@ -2321,6 +2328,7 @@ static void BCMakeSpace(BDFFont *bdf, int gid, int width, int em) {
 	BCPreserveState(bc);
 	BCFlattenFloat(bc);
 	BCCompressBitmap(bc);
+	free(bc->bitmap);
 	bc->xmin = 0;
 	bc->xmax = 1;
 	bc->ymin = 0;
@@ -2399,7 +2407,7 @@ static void DoSpaces(SplineFont *sf,SplineChar *sc,int layer,BDFFont *bdf,int di
 }
 
 static SplinePoint *MakeSP(real x, real y, SplinePoint *last,int order2) {
-    SplinePoint *new = XZALLOC(SplinePoint);
+    SplinePoint *new = chunkalloc(sizeof(SplinePoint));
 
     new->me.x = x; new->me.y = y;
     new->prevcp = new->nextcp = new->me;
@@ -2419,6 +2427,7 @@ static void BCMakeRule(BDFFont *bdf, int gid, int layer) {
 	BCPreserveState(bc);
 	BCFlattenFloat(bc);
 	BCCompressBitmap(bc);
+	free(bc->bitmap);
 	tempbc = SplineCharRasterize(bc->sc,layer,bdf->pixelsize);
 	bc->xmin = tempbc->xmin;
 	bc->xmax = tempbc->xmax;
@@ -2427,6 +2436,7 @@ static void BCMakeRule(BDFFont *bdf, int gid, int layer) {
 	bc->bytes_per_line = tempbc->bytes_per_line;
 	bc->width = tempbc->width;
 	bc->bitmap = tempbc->bitmap;
+	free(tempbc);
     }
 }
 
@@ -2487,7 +2497,7 @@ static void DoRules(SplineFont *sf,SplineChar *sc,int layer,BDFFont *bdf,int dis
 	sp = MakeSP(width-rbearing,ypos+height,sp,sc->layers[layer].order2);
 	sp = MakeSP(width-rbearing,ypos,sp,sc->layers[layer].order2);
 	SplineMake(sp,first,sc->layers[layer].order2);
-	sc->layers[layer].splines = XZALLOC(SplinePointList);
+	sc->layers[layer].splines = chunkalloc(sizeof(SplinePointList));
 	sc->layers[layer].splines->first = sc->layers[layer].splines->last = first;
 	sc->width = width;
 	sc->widthset = true;
@@ -2558,6 +2568,7 @@ return;
 	    end = strchr(sc->name,'.');
 	    temp = copyn(sc->name,end-sc->name);
 	    cid = SFFindExistingSlot(sf,-1,temp);
+	    free(temp);
 	    if ( cid==-1 )
 return;
 	}
@@ -2694,6 +2705,7 @@ return( true );
 return( false );
 
     SCPreserveLayer(dotless,layer,true);
+    SplinePointListsFree(dotless->layers[layer].splines);
     dotless->layers[layer].splines = NULL;
     SCRemoveLayerDependents(dotless,layer);
     dotless->width = sc->width;
@@ -2778,6 +2790,7 @@ void SCBuildComposit(SplineFont *sf, SplineChar *sc, int layer, BDFFont *bdf, in
 return;
     if ( !disp_only || bdf == NULL ) {
 	SCPreserveLayer(sc,layer,true);
+	SplinePointListsFree(sc->layers[layer].splines);
 	sc->layers[layer].splines = NULL;
 	SCRemoveLayerDependents(sc,layer);
 	sc->width = 0;
@@ -2797,7 +2810,7 @@ return;
     } else if ( sc->unicodeenc>=0x2010 && sc->unicodeenc<=0x2015 ) {
 	DoRules( sf,sc,layer,bdf,disp_only );
 return;
-    } else if ( SFIsRotatable(sf,sc,layer) ) {
+    } else if ( SFIsRotatable(sf,sc) ) {
 	DoRotation( sf,sc,layer,bdf,disp_only );
 return;
     } else if ( sc->unicodeenc==0x131 || sc->unicodeenc==0x237 || sc->unicodeenc==0xf6be ) {

@@ -27,6 +27,7 @@
 #ifndef _PFAEDITUI_H_
 #define _PFAEDITUI_H_
 
+#include <fontforge-config.h>
 #include "ffglib.h"
 #include "fontforgevw.h"
 #include <gprogress.h>
@@ -141,4 +142,5 @@ extern int default_font_filter_index;
 #define FIXED_UI_FAMILIES	"monospace,fixed,clearlyu,unifont"
 
 #define isprivateuse(enc) ((enc)>=0xe000 && (enc)<=0xf8ff)
+#define issurrogate(enc) ((enc)>=0xd800 && (enc)<=0xd8ff)
 #endif

@@ -269,6 +269,7 @@ static void MVSubVExpose(MetricsView *mv, GWindow pixmap, GEvent *event) {
 			(int) rint((width*mv_scales[mv->scale_index])),
 			(int) rint((height*mv_scales[mv->scale_index])));
 	}
+	if ( mv->bdf!=NULL ) BDFCharFree( bdfc );
     }
     if ( si!=-1 && mv->bdf==NULL &&  MVShowGrid(mv) && mv->type==mv_kernwidth ) {
 	y = mv->perchar[si].dy-mv->yoff;
@@ -390,6 +391,7 @@ return;
 			(int) rint((width*mv_scales[mv->scale_index])),
 			(int) rint((height*mv_scales[mv->scale_index])));
 	}
+	if ( mv->bdf!=NULL ) BDFCharFree( bdfc );
     }
     if ( si!=-1 && mv->bdf==NULL && MVShowGrid(mv) && mv->type==mv_kernwidth ) {
 	x = mv->perchar[si].dx-mv->xoff;
@@ -859,97 +861,19 @@ static void MVCreateFields(MetricsView *mv,int i) {
 static void MVSetSb(MetricsView *mv);
 static int MVSetVSb(MetricsView *mv);
 
-static void MVRemetric(MetricsView *mv) {
-    SplineChar *anysc, *goodsc;
-    int i, cnt, x, y, goodpos;
-    const unichar_t *_script = _GGadgetGetTitle(mv->script);
-    uint32 script, lang, *feats;
-    char buf[20];
-    int32 len;
-    GTextInfo **ti;
-    SplineChar *sc;
-    BDFChar *bdfc;
+void MVRefreshMetric(MetricsView *mv) {
     double iscale = mv->pixelsize_set_by_window ? 1.0 : mv_scales[mv->scale_index];
     double scale = iscale*mv->pixelsize/(double) (mv->sf->ascent+mv->sf->descent);
-    SplineFont *sf;
-
-    anysc = goodsc = NULL; goodpos = -1;
-    for ( i=0; mv->chars[i] && i<mv->clen; ++i ) {
-	if ( anysc==NULL ) anysc = mv->chars[i];
-	if ( SCScriptFromUnicode(mv->chars[i])!=DEFAULT_SCRIPT ) {
-	    goodsc = mv->chars[i];
-	    goodpos = i;
-    break;
-	}
-    }
-    if ( _script[0]=='D' && _script[1]=='F' && _script[2]=='L' && _script[3]=='T' ) {
-	if ( goodsc!=NULL ) {
-	    /* Set the script */ /* Remember if we get here the script is DFLT */
-	    script = SCScriptFromUnicode(goodsc);
-	    buf[0] = script>>24; buf[1] = script>>16; buf[2] = script>>8; buf[3] = script;
-	    strcpy(buf+4,"{dflt}");
-	    GGadgetSetTitle8(mv->script,buf);
-	    MVSelectSubtableForScript(mv,script);
-	    MVSetFeatures(mv);
-	}
-    } else {
-	if ( anysc==NULL ) {
-	    /* If we get here the script is not DFLT */
-	    GGadgetSetTitle8(mv->script,"DFLT{dflt}");
-	    MVSetFeatures(mv);
-	}
-    }
-    _script = _GGadgetGetTitle(mv->script);
-    script = DEFAULT_SCRIPT; lang = DEFAULT_LANG;
-    if ( u_strlen(_script)>=4 && (u_strchr(_script,'{')==NULL || u_strchr(_script,'{')-_script>=4)) {
-	unichar_t *pt;
-	script = (_script[0]<<24) | (_script[1]<<16) | (_script[2]<<8) | _script[3];
-	if ( (pt = u_strchr(_script,'{'))!=NULL && u_strlen(pt+1)>=4 &&
-		(u_strchr(pt+1,'}')==NULL || u_strchr(pt+1,'}')-(pt+1)>=4 ))
-	    lang = (pt[1]<<24) | (pt[2]<<16) | (pt[3]<<8) | pt[4];
-    }
-
-    ti = GGadgetGetList(mv->features,&len);
-    for ( i=cnt=0; i<len; ++i )
-	if ( ti[i]->selected ) ++cnt;
-    feats = calloc(cnt+1,sizeof(uint32));
-    for ( i=cnt=0; i<len; ++i )
-	if ( ti[i]->selected )
-	    feats[cnt++] = (intpt) ti[i]->userdata;
-
-    sf = mv->sf;
-    if ( sf->cidmaster ) sf = sf->cidmaster;
-    mv->glyphs = ApplyTickedFeatures(sf,feats,script, lang, mv->pixelsize, mv->chars);
-    if ( goodsc!=NULL )
-	mv->right_to_left = SCRightToLeft(goodsc)?1:0;
-
+    SplineFont *sf = mv->sf;
+    int cnt;
+    // Count the valid glyphs and segfault if there is no null splinechar terminator.
     for ( cnt=0; mv->glyphs[cnt].sc!=NULL; ++cnt );
-    if ( cnt>=mv->max ) {
-	int oldmax=mv->max;
-	mv->max = cnt+10;
-	mv->perchar = realloc(mv->perchar,mv->max*sizeof(struct metricchar));
-	memset(mv->perchar+oldmax,'\0',(mv->max-oldmax)*sizeof(struct metricchar));
-    }
-    for ( i=cnt; i<mv->glyphcnt; ++i ) {
-	static unichar_t nullstr[] = { 0 };
-	GGadgetSetTitle(mv->perchar[i].name,nullstr);
-	GGadgetSetTitle(mv->perchar[i].width,nullstr);
-	GGadgetSetTitle(mv->perchar[i].lbearing,nullstr);
-	GGadgetSetTitle(mv->perchar[i].rbearing,nullstr);
-	if ( mv->perchar[i].kern!=NULL )
-	    GGadgetSetTitle(mv->perchar[i].kern,nullstr);
-    }
-    mv->glyphcnt = cnt;
-    for ( i=0; i<cnt; ++i ) {
-	if ( mv->perchar[i].width==NULL ) {
-	    MVCreateFields(mv,i);
-	}
-    }
-    x = 10; y = 10;
-    for ( i=0; i<cnt; ++i ) {
+    // Calculate positions.
+    int x = 10; int y = 10;
+    for ( int i=0; i<cnt; ++i ) {
 	MVRefreshValues(mv,i);
-	sc = mv->glyphs[i].sc;
-	bdfc = mv->bdf!=NULL ? mv->bdf->glyphs[sc->orig_pos] : BDFPieceMealCheck(mv->show,sc->orig_pos);
+	SplineChar * sc = mv->glyphs[i].sc;
+	BDFChar * bdfc = mv->bdf!=NULL ? mv->bdf->glyphs[sc->orig_pos] : BDFPieceMealCheck(mv->show,sc->orig_pos);
 	mv->perchar[i].dwidth = rint(iscale * bdfc->width);
 	mv->perchar[i].dx = x;
 	mv->perchar[i].xoff = rint(iscale * mv->glyphs[i].vr.xoff);
@@ -968,6 +892,114 @@ static void MVRemetric(MetricsView *mv) {
     MVSetSb(mv);
 }
 
+static void MVRemetric(MetricsView *mv) {
+    SplineChar *anysc, *goodsc;
+    int i, cnt, x, y, goodpos;
+    const unichar_t *_script = _GGadgetGetTitle(mv->script);
+    uint32 script, lang, *feats;
+    char buf[20];
+    int32 len;
+    GTextInfo **ti;
+    SplineChar *sc;
+    BDFChar *bdfc;
+    double iscale = mv->pixelsize_set_by_window ? 1.0 : mv_scales[mv->scale_index];
+    double scale = iscale*mv->pixelsize/(double) (mv->sf->ascent+mv->sf->descent);
+    SplineFont *sf;
+
+    anysc = goodsc = NULL; goodpos = -1;
+    // We recurse through all of the characters in the metrics view.
+    for ( i=0; mv->chars[i] && i<mv->clen; ++i ) {
+        // We assign the first splinechar to anysc.
+	if ( anysc==NULL ) anysc = mv->chars[i];
+        // We assign the first splinechar of a non-default script to goodsc.
+	if ( SCScriptFromUnicode(mv->chars[i])!=DEFAULT_SCRIPT ) {
+	    goodsc = mv->chars[i];
+	    goodpos = i;
+    break;
+	}
+    }
+    if ( _script[0]=='D' && _script[1]=='F' && _script[2]=='L' && _script[3]=='T' ) {
+	if ( goodsc!=NULL ) {
+	    /* Set the script */ /* Remember if we get here the script is DFLT */
+            // To be clear, in this case, we set the script of the metrics view according to the first non-default script in the set of selected characters.
+	    script = SCScriptFromUnicode(goodsc);
+	    buf[0] = script>>24; buf[1] = script>>16; buf[2] = script>>8; buf[3] = script;
+	    strcpy(buf+4,"{dflt}");
+	    GGadgetSetTitle8(mv->script,buf);
+	    MVSelectSubtableForScript(mv,script);
+	    MVSetFeatures(mv);
+	}
+    } else {
+	if ( anysc==NULL ) {
+	    /* If we get here the script is not DFLT */
+	    GGadgetSetTitle8(mv->script,"DFLT{dflt}");
+            // Why do se set the title to DFLT then?
+	    MVSetFeatures(mv);
+	}
+    }
+    _script = _GGadgetGetTitle(mv->script);
+    script = DEFAULT_SCRIPT; lang = DEFAULT_LANG;
+    if ( u_strlen(_script)>=4 && (u_strchr(_script,'{')==NULL || u_strchr(_script,'{')-_script>=4)) {
+        // If there is a four-character script identifier, pack it in script.
+        // If there is a language identifier, pack that in lang.
+	unichar_t *pt;
+	script = (_script[0]<<24) | (_script[1]<<16) | (_script[2]<<8) | _script[3];
+	if ( (pt = u_strchr(_script,'{'))!=NULL && u_strlen(pt+1)>=4 &&
+		(u_strchr(pt+1,'}')==NULL || u_strchr(pt+1,'}')-(pt+1)>=4 ))
+	    lang = (pt[1]<<24) | (pt[2]<<16) | (pt[3]<<8) | pt[4];
+    }
+
+    // Parse the current list of features into feats.
+    ti = GGadgetGetList(mv->features,&len);
+    for ( i=cnt=0; i<len; ++i )
+	if ( ti[i]->selected ) ++cnt;
+    feats = calloc(cnt+1,sizeof(uint32));
+    for ( i=cnt=0; i<len; ++i )
+	if ( ti[i]->selected )
+	    feats[cnt++] = (intpt) ti[i]->userdata;
+
+    // Regenerate glyphs for the selected characters according to features, script, and resolution.
+    free(mv->glyphs); mv->glyphs = NULL;
+    sf = mv->sf;
+    if ( sf->cidmaster ) sf = sf->cidmaster;
+    mv->glyphs = ApplyTickedFeatures(sf,feats,script, lang, mv->pixelsize, mv->chars);
+    free(feats);
+    if ( goodsc!=NULL )
+	mv->right_to_left = SCRightToLeft(goodsc)?1:0;
+
+    // Count the valid glyphs and segfault if there is no null splinechar terminator.
+    for ( cnt=0; mv->glyphs[cnt].sc!=NULL; ++cnt );
+    // If there are too many relative to the available rows, make space.
+    if ( cnt>=mv->max ) {
+	int oldmax=mv->max;
+	mv->max = cnt+10;
+	mv->perchar = realloc(mv->perchar,mv->max*sizeof(struct metricchar));
+	memset(mv->perchar+oldmax,'\0',(mv->max-oldmax)*sizeof(struct metricchar));
+    }
+    // Null names of controls in rows to be abandoned, starting at the last valid glyph and continuing to the end of mv->glyphs.
+    // This may segfault here if mv->max is less than mv->glyphcnt, thus if cnt was 10 less than mv->glyphcnt.
+    // It may segfault in GGadgetSetTitle if the gadgets do not exist.
+    for ( i=cnt; i<mv->glyphcnt; ++i ) {
+	static unichar_t nullstr[] = { 0 };
+	GGadgetSetTitle(mv->perchar[i].name,nullstr);
+	GGadgetSetTitle(mv->perchar[i].width,nullstr);
+	GGadgetSetTitle(mv->perchar[i].lbearing,nullstr);
+	GGadgetSetTitle(mv->perchar[i].rbearing,nullstr);
+	if ( mv->perchar[i].kern!=NULL )
+	    GGadgetSetTitle(mv->perchar[i].kern,nullstr);
+    }
+    // So we set mv->glyphcnt to something possibly less than the size of mv->glyphs.
+    mv->glyphcnt = cnt;
+    // We now populate any new rows with controls.
+    for ( i=0; i<cnt; ++i ) {
+	if ( mv->perchar[i].width==NULL ) {
+	    MVCreateFields(mv,i);
+	}
+    }
+    // Refresh.
+    MVRefreshMetric(mv);
+}
+
 void MVReKern(MetricsView *mv) {
     MVRemetric(mv);
     GDrawRequestExpose(mv->v,NULL,false);
@@ -976,9 +1008,14 @@ void MVReKern(MetricsView *mv) {
 void MVRegenChar(MetricsView *mv, SplineChar *sc) {
     int i;
 
-    if( !sc->suspendMetricsViewEventPropagation &&
-        mv->bdf==NULL && sc->orig_pos<mv->show->glyphcnt )
-        mv->show->glyphs[sc->orig_pos] = NULL;
+    if( !sc->suspendMetricsViewEventPropagation )
+    {
+	if ( mv->bdf==NULL && sc->orig_pos<mv->show->glyphcnt )
+	{
+	    BDFCharFree(mv->show->glyphs[sc->orig_pos]);
+	    mv->show->glyphs[sc->orig_pos] = NULL;
+	}
+    }
 
     for ( i=0; i<mv->glyphcnt; ++i ) {
 	MVRefreshValues(mv,i);
@@ -1008,11 +1045,14 @@ return;
 		GGadgetSetEnabled(mv->perchar[i].kern,bdf==NULL);
 	}
     }
-    if ( mv->bdf==NULL )
+    if ( mv->bdf==NULL ) {
+	BDFFontFree(mv->show);
 	mv->show = NULL;
-    else if ( bdf==NULL )
+    } else if ( bdf==NULL ) {
+	BDFFontFree(mv->show);
 	mv->show = SplineFontPieceMeal(mv->sf,mv->layer,mv->ptsize,mv->dpi,
 				       MVGetSplineFontPieceMealFlags( mv ), NULL );
+    }
     mv->bdf = bdf;
     MVRemetric(mv);
 }
@@ -1022,6 +1062,16 @@ static int isValidInt(unichar_t *end) {
 	return 0;
     return 1;
 }
+
+/*
+ * Unused
+static int GGadgetToInt(GGadget *g)
+{
+    unichar_t *end;
+    int val = u_strtol(_GGadgetGetTitle(g),&end,10);
+    return val;
+}
+*/
 
 static real GGadgetToReal(GGadget *g)
 {
@@ -1033,8 +1083,14 @@ static real GGadgetToReal(GGadget *g)
 /* If we are in a collab session, then send the redo through */
 /* to the server to update other clients to our state.	     */
 static void MV_handle_collabclient_sendRedo( MetricsView *mv, SplineChar *sc ) {
-    if( collabclient_inSessionFV( &mv->fv->b ) )
+    if( collabclient_inSessionFV( &mv->fv->b ) ) {
 	collabclient_sendRedo_SC( sc, UNDO_LAYER_UNKNOWN );
+
+	/* CharViewBase* cv = sc->views; */
+	/* if( !cv ) */
+	/*     cv = CharViewCreate( sc, mv->fv, -1 ); */
+	/* collabclient_sendRedo( cv ); */
+    }
 }
 
 static int MV_WidthChanged(GGadget *g, GEvent *e) {
@@ -1280,8 +1336,10 @@ return( false );
 	/* If we change the kerning offset, then any pixel corrections*/
 	/*  will no longer apply (they only had meaning with the old  */
 	/*  offset) so free the device table, if any */
-	if ( kp != NULL && ((!is_diff && kp->off!=offset) || ( is_diff && offset!=0)) )
+	if ( kp != NULL && ((!is_diff && kp->off!=offset) || ( is_diff && offset!=0)) ) {
+	    DeviceTableFree(kp->adjust);
 	    kp->adjust = NULL;
+	}
 
 	offset = is_diff && kp != NULL ? kp->off+offset : offset;
 	/* If kern offset has been set to zero by user, then cleanup this kerning pair */
@@ -1300,10 +1358,11 @@ return( false );
 		    kpprev = kpcur;
 		}
 	    }
+	    chunkfree( kp,sizeof(KernPair) );
 	    kp = mv->glyphs[which-1].kp = NULL;
 	} else if ( offset != 0 ) {
 	    if ( kp==NULL ) {
-		kp = XZALLOC(KernPair);
+		kp = chunkalloc(sizeof(KernPair));
 		kp->sc = sc;
 		if ( !mv->vertical ) {
 		    kp->next = psc->kerns;
@@ -1442,7 +1501,7 @@ return( true );
 
     if( haveClassBasedKerningInView(mv) )
     {
-	MVRemetric(mv);
+	MVRefreshMetric(mv);
 	GDrawRequestExpose(mv->v,NULL,false);
     }
 
@@ -1470,9 +1529,11 @@ static void MVToggleVertical(MetricsView *mv) {
 	if ( mv->pixelsize != size ) {
 	    mv->pixelsize = size;
 	    mv->dpi = 72;
-	    if ( mv->bdf==NULL )
+	    if ( mv->bdf==NULL ) {
+		BDFFontFree(mv->show);
 		mv->show = SplineFontPieceMeal(mv->sf,mv->layer,mv->pixelsize,72,
 					       MVGetSplineFontPieceMealFlags( mv ), NULL );
+	    }
 	    MVRemetric(mv);
 	}
     }
@@ -1767,6 +1828,7 @@ void MVSetSCs(MetricsView *mv, SplineChar **scs) {
 	    ustr[len] = MVFakeUnicodeOfSc(mv,scs[len]);
     ustr[len] = 0;
     GGadgetSetTitle(mv->text,ustr);
+    free(ustr);
 
     MVRemetric(mv);
 
@@ -1866,6 +1928,7 @@ return;					/* Nothing changed */
 	/*  them was set properly */
 	for ( j=start; j<end; ++j )
 	    mv->chars[j] = hold[j];
+	free(hold);
     }
     mv->clen = u_strlen(ret)-missing;
     mv->chars[mv->clen] = NULL;
@@ -1940,6 +2003,8 @@ static void MVFigureGlyphNames(MetricsView *mv,const unichar_t *names) {
     MVRemetric(mv);
 
     GGadgetSetTitle(mv->text,newtext);
+    free(newtext);
+
     GDrawRequestExpose(mv->v,NULL,false);
 }
 
@@ -1959,6 +2024,7 @@ static void MVLoadWordList(MetricsView *mv,int type)
 	GGadgetSetTitle8(mv->text,(char *) (words[0]->text));
 	if ( type==-2 )
 	    MVFigureGlyphNames(mv,_GGadgetGetTitle(mv->text)+1);
+	GTextInfoArrayFree(words);
 	mv->word_index = 0;
     }
 }
@@ -2245,7 +2311,7 @@ static void MVMenuGenerateTTC(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *
 
 static void MVMenuPrint(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
     MetricsView *mv = (MetricsView *) GDrawGetUserData(gw);
-    PrintDlg(NULL, NULL, mv);
+    PrintFFDlg(NULL, NULL, mv);
 }
 
 static void MVUndo(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
@@ -2573,6 +2639,7 @@ static void _MVMenuOverlap(MetricsView *mv, enum overlap_type ot) {
 	SplineChar *sc = mv->glyphs[i].sc;
 	if ( !SCRoundToCluster(sc, mv->layer, false, 0.03, 0.12))
 	    SCPreserveLayer(sc, mv->layer, false);
+	MinimumDistancesFree(sc->md);
 	sc->md = NULL;
 	sc->layers[mv->layer].splines = SplineSetRemoveOverlap(sc, sc->layers[mv->layer].splines, ot);
 	SCCharChangedUpdate(sc, mv->layer);
@@ -2782,6 +2849,7 @@ static void MVResetText(MetricsView *mv) {
     }
     *pt = '\0';
     GGadgetSetTitle(mv->text,new);
+    free(new );
 }
 
 static void MVMenuLigatures(GWindow gw,struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
@@ -2810,10 +2878,11 @@ static void _MVMenuScale( MetricsView *mv, int mid ) {
 
     if ( mv->pixelsize_set_by_window ) {
 	mv->pixelsize = mv_scales[mv->scale_index]*(mv->vheight - 2);
-	if ( mv->bdf==NULL )
+	if ( mv->bdf==NULL ) {
+	    BDFFontFree(mv->show);
 	    mv->show = SplineFontPieceMeal(mv->sf,mv->layer,mv->pixelsize,72,
 					   MVGetSplineFontPieceMealFlags( mv ), NULL );
-	else
+	} else
 	    mv->pixelsize_set_by_window = false;
     }
     MVReKern(mv);
@@ -2949,6 +3018,7 @@ static void MVMenuAA(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)
 
     mv_antialias = mv->antialias = !mv->antialias;
     mv->bdf = NULL;
+    BDFFontFree(mv->show);
     mv->show = SplineFontPieceMeal(mv->sf, mv->layer, mv->ptsize, mv->dpi,
                     MVGetSplineFontPieceMealFlags( mv ),
                     NULL);
@@ -2961,6 +3031,7 @@ static void MVMenuRenderUsingHinting(GWindow gw, struct gmenuitem *UNUSED(mi), G
 
     mv->usehinting = !mv->usehinting;
     mv->bdf = NULL;
+    BDFFontFree(mv->show);
     mv->show = SplineFontPieceMeal(mv->sf, mv->layer, mv->ptsize, mv->dpi,
 				   MVGetSplineFontPieceMealFlags( mv ),
 				   NULL);
@@ -3078,6 +3149,8 @@ return( true );
 	mv->ptsize = ptsize;
 	mv->dpi = dpi;
 	mv->pixelsize = rint( (ptsize*dpi)/72.0 );
+	if ( mv->bdf==NULL )
+	    BDFFontFree(mv->show);
 	mv->bdf = NULL;
 	mv->show = SplineFontPieceMeal(mv->sf,mv->layer,mv->ptsize,mv->dpi,
 				       MVGetSplineFontPieceMealFlags( mv ), NULL );
@@ -3228,11 +3301,13 @@ static void MVMenuSizeWindow(GWindow mgw, struct gmenuitem *UNUSED(mi), GEvent *
     mv->pixelsize = mv_scales[mv->scale_index]*(mv->vheight - 2);
     mv->dpi = 72;
     mv->ptsize = mv->pixelsize;
-    if ( mv->bdf==NULL )
+    if ( mv->bdf==NULL ) {
+        BDFFontFree(mv->show);
         mv->show = SplineFontPieceMeal(
                         mv->sf, mv->layer, mv->pixelsize, 72,
 			MVGetSplineFontPieceMealFlags( mv ),
                         NULL);
+    }
     MVReKern(mv);
     MVSetVSb(mv);
 }
@@ -3247,6 +3322,8 @@ return;
     else
         --(mv->ptsize);
     mv->pixelsize = rint( (mv->ptsize*mv->dpi)/72.0 );
+    if ( mv->bdf==NULL )
+        BDFFontFree(mv->show);
     mv->bdf = NULL;
     mv->show = SplineFontPieceMeal(mv->sf, mv->layer, mv->ptsize, mv->dpi,
 				   MVGetSplineFontPieceMealFlags( mv ), NULL);
@@ -3259,6 +3336,7 @@ static void MVMenuChangeLayer(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e
     MetricsView *mv = (MetricsView *) GDrawGetUserData(gw);
 
     mv->layer = mi->mid;
+    BDFFontFree(mv->show);
     mv->show = SplineFontPieceMeal(mv->sf, mv->layer, mv->ptsize, mv->dpi,
 				   MVGetSplineFontPieceMealFlags( mv ), NULL);
     MVRemetric(mv);
@@ -3494,6 +3572,7 @@ static GMenuItem2 dummyall[] = {
 static void aplistbuild(GWindow base, struct gmenuitem *mi, GEvent *UNUSED(e)) {
     MetricsView *mv = (MetricsView *) GDrawGetUserData(base);
 
+    GMenuItemArrayFree(mi->sub);
     mi->sub = NULL;
 
     _aplistbuild(mi, mv->sf, MVMenuAnchorPairs);
@@ -3562,6 +3641,7 @@ static void lylistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	sub[ly-1].mid = ly;
 	sub[ly-1].ti.fg = sub[ly-1].ti.bg = COLOR_DEFAULT;
     }
+    GMenuItemArrayFree(mi->sub);
     mi->sub = sub;
 }
 
@@ -3877,8 +3957,10 @@ static void vwlistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	}
     vwlist[i].ti.checked = mv->bdf==NULL;
     base = i+1;
-    for ( i=base; vwlist[i].ti.text!=NULL || vwlist[i].ti.line; ++i )
+    for ( i=base; vwlist[i].ti.text!=NULL || vwlist[i].ti.line; ++i ) {
+	free( vwlist[i].ti.text);
 	vwlist[i].ti.text = NULL;
+    }
 
     if ( mv->sf->bitmaps!=NULL ) {
 	for ( bdf = mv->sf->bitmaps, i=base;
@@ -3897,6 +3979,7 @@ static void vwlistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	    vwlist[i].ti.fg = vwlist[i].ti.bg = COLOR_DEFAULT;
 	}
     }
+    GMenuItemArrayFree(mi->sub);
     mi->sub = GMenuItem2ArrayCopy(vwlist,NULL);
 }
 
@@ -3977,9 +4060,11 @@ return;
     if ( mv->pixelsize_set_by_window ) {
 	mv->ptsize = mv->pixelsize = mv_scales[mv->scale_index]*size;
 	mv->dpi = 72;
-	if ( mv->bdf==NULL )
+	if ( mv->bdf==NULL ) {
+	    BDFFontFree(mv->show);
 	    mv->show = SplineFontPieceMeal(mv->sf,mv->layer,mv->ptsize,mv->dpi,
 					   MVGetSplineFontPieceMealFlags( mv ), NULL );
+	}
     }
 
     for ( i=0; i<mv->max; ++i ) if ( mv->perchar[i].width!=NULL ) {
@@ -4694,6 +4779,7 @@ return;
 	start = pt;
     }
     cnt = i;
+    free( cnames );
     if ( cnt==0 )
 return;
     if ( within<mv->glyphcnt )
@@ -4720,8 +4806,11 @@ return;
     }
     mv->clen += cnt;
     MVRemetric(mv);
+    free(founds);
 
     GGadgetSetTitle(mv->text,newtext);
+    free(newtext);
+
     GDrawRequestExpose(mv->v,NULL,false);
 }
 
@@ -4875,6 +4964,7 @@ return( true );
 	    n->next = mv->next;
 	}
 	KCLD_MvDetach(sf->kcld,mv);
+	MetricsViewFree(mv);
       break;
       case et_focus:
       break;
@@ -4936,10 +5026,12 @@ return( NULL );
 		}
 		++cnt;
 	    }
+	    free(langtags);
 	}
 	if ( !k )
 	    ret = calloc((cnt+1),sizeof(GTextInfo));
     }
+    free(scripttags);
 return( ret );
 }
 
@@ -5156,7 +5248,24 @@ MetricsView *MetricsViewCreate(FontView *fv,SplineChar *sc,BDFFont *bdf) {
 return( mv );
 }
 
+void MetricsViewFree(MetricsView *mv) {
+
+    if ( mv->scriptlangs!=NULL ) {
+	int i;
+	for ( i=0; mv->scriptlangs[i].text!=NULL ; ++i )
+	    free(mv->scriptlangs[i].userdata );
+	GTextInfoListFree(mv->scriptlangs);
+    }
+    BDFFontFree(mv->show);
+    /* the fields will free themselves */
+    free(mv->chars);
+    free(mv->glyphs);
+    free(mv->perchar);
+    free(mv);
+}
+
 void MVRefreshAll(MetricsView *mv) {
+
     if ( mv!=NULL ) {
 	MVRemetric(mv);
 	GDrawRequestExpose(mv->v,NULL,false);

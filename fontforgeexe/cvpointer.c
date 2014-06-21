@@ -676,7 +676,7 @@ return;
 	needsupdate = CVClearSel(cv);
     }
 
-    printf("CVMouseDownPointer() dowidth:%d dolbearing:%d\n", dowidth, dolbearing );
+//    printf("CVMouseDownPointer() dowidth:%d dolbearing:%d\n", dowidth, dolbearing );
 
     if ( !fs->p->anysel )
     {
@@ -836,7 +836,6 @@ return;
 	} else if ( fs->p->sp!=NULL ) {
 	    needsupdate = true;
 	    fs->p->sp->selected = !fs->p->sp->selected;
-	    printf("CVMouseDownPointer(3.1)\n");
 	} else if ( fs->p->spiro!=NULL ) {
 	    needsupdate = true;
 	    fs->p->spiro->ty ^= 0x80;
@@ -1136,6 +1135,7 @@ return;
     }
 
     old->from->nextcpdef = old->to->prevcpdef = false;
+    SplineFree(old);
     CVSetCharChanged(cv,true);
 }
 
@@ -1288,7 +1288,7 @@ return(false);
 	    bool preserveState = false;
 	    CVVisitAllControlPoints( cv, preserveState,
 	    			     FE_touchControlPoint,
-	    			     (void*)cv->b.layerheads[cv->b.drawmode]->order2 );
+	    			     (void*)(intptr_t)cv->b.layerheads[cv->b.drawmode]->order2 );
 	}
     }
     
@@ -1405,7 +1405,7 @@ static void touchControlPointsVisitor ( void* key,
 				 bool isnext,
 				 void* udata )
 {
-    SPTouchControl( sp, which, (int)udata );
+    SPTouchControl( sp, which, (int)(intptr_t)udata );
 }
 
 int CVMouseMovePointer(CharView *cv, GEvent *event) {
@@ -1542,7 +1542,7 @@ return( false );
 	// visiting all is a hammer left below in case it might be needed.
 	CVVisitAdjacentToSelectedControlPoints( cv, false,
 						touchControlPointsVisitor,
-						(void*)cv->b.layerheads[cv->b.drawmode]->order2 );
+						(void*)(intptr_t)cv->b.layerheads[cv->b.drawmode]->order2 );
 	/* CVVisitAllControlPoints( cv, false, */
 	/* 			 touchControlPointsVisitor, */
 	/* 			 (void*)cv->b.layerheads[cv->b.drawmode]->order2 ); */

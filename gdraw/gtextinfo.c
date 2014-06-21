@@ -24,8 +24,6 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include <fontforge-config.h>
-
 #include <stdlib.h>
 #include "gdraw.h"
 #include "ggadgetP.h"
@@ -288,8 +286,9 @@ GTextInfo *GTextInfoCopy(GTextInfo *ti) {
 return( copy);
 }
 
-static const char *imagedir = "fontforge-pixmaps";	/* This is the system pixmap directory */
-static const char **imagepath;			/* May contain user directories too */
+static const char *imagedir_default = "fontforge-pixmaps";
+static char *imagedir = NULL;	/* This is the system pixmap directory */
+static char **imagepath = NULL;			/* May contain user directories too */
 static size_t imagepathlenmax = 0;
 
 struct image_bucket {
@@ -301,8 +300,8 @@ struct image_bucket {
 #define IC_SIZE	127
 static struct image_bucket *imagecache[IC_SIZE];
 
-static int hash_filename(char *_pt ) {
-    unsigned char *pt = (unsigned char *) _pt;
+static int hash_filename(const char *_pt ) {
+    const unsigned char *pt = (const unsigned char *) _pt;
     int val = 0;
 
     while ( *pt ) {
@@ -319,16 +318,20 @@ return( val%IC_SIZE );
 static void ImagePathDefault(void) {
     if ( imagepath==NULL ) {
 	imagepath = malloc(2*sizeof(void *));
-	imagepath[0] = copy(imagedir);
+	imagepath[0] = (imagedir == NULL) ? copy(imagedir_default) : copy(imagedir);
 	imagepath[1] = NULL;
-	imagepathlenmax = strlen(imagedir);
+	imagepathlenmax = strlen(imagepath[0]);
+	free(_GGadget_ImagePath);
 	_GGadget_ImagePath = copy("=");
     }
 }
 
-const char **_GGadget_GetImagePath(void) {
+/**
+ * \return The image path. The return value should not be freed or modified.
+ */
+const char* const* _GGadget_GetImagePath(void) {
     ImagePathDefault();
-return( imagepath );
+    return (const char* const*) imagepath;
 }
 
 int _GGadget_ImageInCache(GImage *image) {
@@ -377,35 +380,55 @@ static void ImageCacheReload(void) {
 		    hold = *(bucket->image);
 		    *bucket->image = *temp;
 		    *temp = hold;
+		    GImageDestroy(temp);
 		}
+		free( bucket->absname );
 		bucket->absname = copy( path );
 	    }
 	}
     }
+    free(path);
 }
 
 void GGadgetSetImageDir(char *dir) {
     int k;
+    char *ptr = imagedir;
+    //Check if imagedir has been initialised
+    if (ptr == NULL) {
+        //We shall check later if ptr should be freed or not
+        ptr = (char*) imagedir_default;
+    }
+    
+    if (dir != NULL && strcmp(ptr,dir) != 0) {
+        imagedir = copy(dir);
+        if (imagepath != NULL) {
+            for (k=0; imagepath[k] != NULL; ++k) {
+                if (strcmp(imagepath[k],ptr) == 0) {
+                    break;
+                }
+            }
 
-    if ( dir!=NULL && strcmp(imagedir,dir)!=0 ) {
-	const char *old = imagedir;
-	imagedir = copy( dir );
-	if ( imagepath!=NULL ) {
-	    for ( k=0; imagepath[k]!=NULL; ++k )
-		if ( strcmp(imagepath[k],old)==0 )
-	    break;
-	    if ( imagepath[k]!=NULL ) {
-		imagepath[k] = imagedir;
-		ImageCacheReload();
-	    }
-	    _GGadget_ImagePath = copy("=");
-	}
+            if (ptr != imagedir_default) {
+                free(ptr);
+            }
+            if (imagepath[k] != NULL) {
+                free(imagepath[k]);
+                imagepath[k] = copy(imagedir);
+                ImageCacheReload();
+            }
+            free(_GGadget_ImagePath);
+            _GGadget_ImagePath = copy("=");
+        }
     }
 }
 
 static char *ImagePathFigureElement(char *start, int len) {
-    if ( *start=='=' && len==1 )
-return( imagedir );
+    if ( *start=='=' && len==1 ) {
+        if (imagedir == NULL) {
+            return copy(imagedir_default);
+        }
+        return copy(imagedir);
+    }
     else if ( *start=='~' && start[1]=='/' && len>=2 && getenv("HOME")!=NULL ) {
 	int hlen = strlen(getenv("HOME"));
 	char *absname = malloc( hlen+len+8 );
@@ -428,7 +451,13 @@ void GGadgetSetImagePath(char *path) {
 
     if ( path==NULL )
 return;
+    free( _GGadget_ImagePath );
 
+    if ( imagepath!=NULL ) {
+	for ( k=0; imagepath[k]!=NULL; ++k )
+	    free( imagepath[k] );
+	free( imagepath );
+    }
     for ( cnt=0, pt = path; (end = strchr(pt,PATH_SEPARATOR))!=NULL; ++cnt, pt = end+1 );
     imagepath = malloc((cnt+2)*sizeof(char *));
     for ( cnt=0, pt = path; (end = strchr(pt,PATH_SEPARATOR))!=NULL; ++cnt, pt = end+1 )
@@ -443,7 +472,7 @@ return;
     _GGadget_ImagePath = copy(path);
 }
 
-static GImage *_GGadgetImageCache(char *filename, char **foundname) {
+static GImage *_GGadgetImageCache(const char *filename, char **foundname) {
     int index = hash_filename(filename);
     struct image_bucket *bucket;
     char *path;
@@ -471,6 +500,7 @@ return( bucket->image );
     break;
 	}
     }
+    free(path);
     if ( bucket->image!=NULL ) {
 	/* Play with the clut to make white be transparent */
 	struct _GImage *base = bucket->image->u.image;
@@ -491,7 +521,7 @@ return( bucket->image );
 return( bucket->image );
 }
 
-GImage *GGadgetImageCache(char *filename) {
+GImage *GGadgetImageCache(const char *filename) {
 return( _GGadgetImageCache(filename,NULL));
 }
 
@@ -524,16 +554,20 @@ return( ri );
 	strcpy(absname,getenv("HOME"));
 	strcat(absname,fname+1);
 	ret = GImageRead(absname);
+	free(fname);
 	ri->filename = fname = absname;
     } else {
 	char *absname;
 	ret = _GGadgetImageCache(fname,&absname);
-	if ( ret )
+	if ( ret ) {
+	    free(fname);
 	    ri->filename = fname = absname;
+	}
     }
-    if ( ret==NULL )
+    if ( ret==NULL ) {
 	ri->filename = NULL;
-    else
+	free(fname);
+    } else
 	ri->image = ret;
 
 return( ri );
@@ -607,6 +641,35 @@ int GTextInfoArrayCount(GTextInfo **ti) {
 return( i );
 }
 
+void GTextInfoFree(GTextInfo *ti) {
+    if ( !ti->text_in_resource )
+	free(ti->text);
+    free(ti);
+}
+
+void GTextInfoListFree(GTextInfo *ti) {
+    int i;
+
+    if ( ti==NULL )
+return;
+
+    for ( i=0; ti[i].text!=NULL || ti[i].image!=NULL || ti[i].line; ++i )
+	if ( !ti[i].text_in_resource )
+	    free(ti[i].text);
+    free(ti);
+}
+
+void GTextInfoArrayFree(GTextInfo **ti) {
+    int i;
+
+    if ( ti == NULL )
+return;
+    for ( i=0; ti[i]->text || ti[i]->image || ti[i]->line; ++i )
+	GTextInfoFree(ti[i]);
+    GTextInfoFree(ti[i]);	/* And free the null entry at end */
+    free(ti);
+}
+
 int GTextInfoCompare(GTextInfo *ti1, GTextInfo *ti2) {
     GTextInfo2 *_ti1 = (GTextInfo2 *) ti1, *_ti2 = (GTextInfo2 *) ti2;
 
@@ -629,6 +692,7 @@ return( 1 );
 	t1 = u2utf8_copy(ti1->text);
 	t2 = u2utf8_copy(ti2->text);
 	ret = strcoll(t1,t2);
+	free(t1); free(t2);
 return( ret );
     }
 }
@@ -653,6 +717,18 @@ return( NULL );
     }
     ti[i] = calloc(1,sizeof(GTextInfo));
 return( ti );
+}
+
+void GMenuItemArrayFree(GMenuItem *mi) {
+    int i;
+
+    if ( mi == NULL )
+return;
+    for ( i=0; mi[i].ti.text || mi[i].ti.image || mi[i].ti.line; ++i ) {
+	GMenuItemArrayFree(mi[i].sub);
+	free(mi[i].ti.text);
+    }
+    free(mi);
 }
 
 GMenuItem *GMenuItemArrayCopy(GMenuItem *mi, uint16 *cnt) {
@@ -717,6 +793,18 @@ return( true );
 	}
     }
 return( false );
+}
+
+void GMenuItem2ArrayFree(GMenuItem2 *mi) {
+    int i;
+
+    if ( mi == NULL )
+return;
+    for ( i=0; mi[i].ti.text || mi[i].ti.image || mi[i].ti.line; ++i ) {
+	GMenuItem2ArrayFree(mi[i].sub);
+	free(mi[i].ti.text);
+    }
+    free(mi);
 }
 
 static char *shortcut_domain = "shortcuts";
@@ -1147,6 +1235,9 @@ int GStringSetResourceFileV(char *filename,uint32 checksum) {
     int i,j;
 
     if ( filename==NULL ) {
+	if ( strarray!=NULL )
+	    for ( i=0; i<slen; ++i ) free( strarray[i]);
+	free(strarray); free(smnemonics); free(intarray);
 	strarray = NULL; smnemonics = NULL; intarray = NULL;
 	slen = ilen = 0;
 return( 1 );
@@ -1164,6 +1255,9 @@ return( 0 );
 
     scnt = getushort(res);
     icnt = getushort(res);
+    if ( strarray!=NULL )
+	for ( i=0; i<slen; ++i ) free( strarray[i]);
+    free(strarray); free(smnemonics); free(intarray);
     strarray = calloc(scnt,sizeof(unichar_t *));
     smnemonics = calloc(scnt,sizeof(unichar_t));
     intarray = malloc(icnt*sizeof(int));

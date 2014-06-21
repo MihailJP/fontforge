@@ -24,6 +24,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
 
 #include "fontforgeui.h"
 #include "cvruler.h"
@@ -557,6 +558,17 @@ return( any );
 }
 
 typedef struct gpl { struct gpl *next; GPoint *gp; int cnt; } GPointList;
+
+static void GPLFree(GPointList *gpl) {
+    GPointList *next;
+
+    while ( gpl!=NULL ) {
+	next = gpl->next;
+	free( gpl->gp );
+	free( gpl );
+	gpl = next;
+    }
+}
 
 /* Before we did clipping this was a single polygon. Now it is a set of */
 /*  sets of line segments. If no clipping is done, then we end up with */
@@ -1316,6 +1328,21 @@ static void CVMarkAlmostHV(CharView *cv, GWindow pixmap,
     }
 }
 
+static void CVDrawPointName(CharView *cv, GWindow pixmap, SplinePoint *sp, Color fg)
+{
+    if (sp->name && *sp->name) {
+	int32 theight;
+
+	GDrawSetFont(pixmap, cv->normal);
+	theight = GDrawGetText8Height(pixmap, sp->name, -1);
+	GDrawDrawText8(pixmap,
+		       cv->xoff + rint(sp->me.x*cv->scale),
+		       cv->height-cv->yoff - rint(sp->me.y*cv->scale) + theight + 3,
+		       sp->name,-1,fg);
+	GDrawSetFont(pixmap,cv->small);	/* For point numbers */
+    }
+}
+
 static void CVDrawContourName(CharView *cv, GWindow pixmap, SplinePointList *ss,
 	Color fg ) {
     SplinePoint *sp, *topright;
@@ -1485,6 +1512,7 @@ void CVDrawSplineSetOutlineOnly(CharView *cv, GWindow pixmap, SplinePointList *s
 	    GPointList *gpl = MakePoly(cv,spl), *cur;
 	    for ( cur=gpl; cur!=NULL; cur=cur->next )
 		GDrawDrawPoly(pixmap,cur->gp,cur->cnt,fc);
+	    GPLFree(gpl);
 	}
     }
 
@@ -1542,10 +1570,13 @@ void CVDrawSplineSetSpecialized( CharView *cv, GWindow pixmap, SplinePointList *
 	    } else {
 		for ( spline = spl->first->next; spline!=NULL && spline!=first; spline=spline->to->next ) {
 		    DrawPoint(cv,pixmap,spline->from,spl,dopoints<0,truetype_markup, AlphaChannelOverride );
+		    CVDrawPointName(cv,pixmap,spline->from,fg);
 		    if ( first==NULL ) first = spline;
 		}
-		if ( spline==NULL )
+		if ( spline==NULL ) {
 		    DrawPoint(cv,pixmap,spl->last,spl,dopoints<0,truetype_markup, AlphaChannelOverride );
+		    CVDrawPointName(cv,pixmap,spl->last,fg);
+		}
 	    }
 	}
     }
@@ -2121,18 +2152,18 @@ return;
 	    DrawAnchorPoint(pixmap,x,y,ap->selected);
 	    ubuf[30]=0;
 	    if ( ap->anchor->type==act_mkmk ) {
-		strncpy(ubuf,ap->anchor->name,30);
+		cc_strncpy(ubuf,ap->anchor->name,30);
 		strcat(ubuf," ");
 		strcat(ubuf,ap->type==at_basemark ? _("Base") : _("Mark") );
 		name = ubuf;
 	    } else if ( ap->type==at_basechar || ap->type==at_mark || ap->type==at_basemark ) {
 		name = ap->anchor->name;
 	    } else if ( ap->type==at_centry || ap->type==at_cexit ) {
-		strncpy(ubuf,ap->anchor->name,30);
+		cc_strncpy(ubuf,ap->anchor->name,30);
 		strcat(ubuf,ap->type==at_centry ? _("Entry") : _("Exit") );
 		name = ubuf;
 	    } else if ( ap->type==at_baselig ) {
-		strncpy(ubuf,ap->anchor->name,30);
+		cc_strncpy(ubuf,ap->anchor->name,30);
 		sprintf(ubuf+strlen(ubuf),"#%d", ap->lig_index);
 		name = ubuf;
 	    } else
@@ -2417,6 +2448,7 @@ return;
     head = SplinePointListTransform(head,trans,tpt_AllPoints);
     CVDrawSplineSet(cv,pixmap,head,anchoredoutlinecol,
 	    false,clip);
+    SplinePointListsFree(head);
     if ( cv->apmine->type==at_mark || cv->apmine->type==at_centry ) {
 	DrawVLine(cv,pixmap,trans[4],anchoredoutlinecol,false,NULL,NULL);
 	DrawLine(cv,pixmap,-8096,trans[5],8096,trans[5],anchoredoutlinecol);
@@ -2850,7 +2882,7 @@ static void CVExpose(CharView *cv, GWindow pixmap, GEvent *event ) {
 	 d.fg = DraggingComparisonOutlineColor;
 	 d.clip = &clip;
 	 d.strokeFillMode = sfm_stroke_trans;
-	 g_list_foreach( cv->p.pretransform_spl, CVExpose_PreTransformSPL_fe, &d );
+	 g_list_foreach( cv->p.pretransform_spl, (GFunc)CVExpose_PreTransformSPL_fe, &d );
      }
 
     /* The call to CVExposeGlyphFill() above will have rendered a filled glyph already. */
@@ -3050,6 +3082,7 @@ static void SC_OutOfDateBackground(SplineChar *sc) {
 /* CVRegenFill() regenerates data used to show or not show paths as filled */
 /* This is not static so that it can be called from the layers palette */
 void CVRegenFill(CharView *cv) {
+    BDFCharFree(cv->filled);
     cv->filled = NULL;
     if ( cv->showfilled ) {
 	extern int use_freetype_to_rasterize_fv;
@@ -3361,10 +3394,12 @@ static int CVCurEnc(CharView *cv)
     return( ((FontView *) (cv->b.fv))->b.map->backmap[cv->b.sc->orig_pos] );
 }
 
-static char *CVMakeTitles(CharView *cv,char *buf) {
+static char *CVMakeTitles(CharView *cv,char *buf,size_t len) {
     char *title;
     SplineChar *sc = cv->b.sc;
+    SplineFont *sf = sc->parent;
     char *uniname;
+    size_t used;
 
 /* GT: This is the title for a window showing an outline character */
 /* GT: It will look something like: */
@@ -3372,20 +3407,23 @@ static char *CVMakeTitles(CharView *cv,char *buf) {
 /* GT: $1 is the name of the glyph */
 /* GT: $2 is the glyph's encoding */
 /* GT: $3 is the font name */
-    sprintf(buf,_("%1$.80s at %2$d from %3$.90s"),
-	    sc->name, CVCurEnc(cv), sc->parent->fontname);
-    if ( sc->changed )
-	strcat(buf," *");
+    used = snprintf(buf,len,_("%1$.80s at %2$d from %3$.90s%s"),
+		    sc->name, CVCurEnc(cv), sf->fontname,
+		    sc->changed ? "*" : "");
     title = copy(buf);
 
-    /* Enhance 'buf' description with Nameslist.txt unicode name definition */
-    if ( (uniname=unicode_name(sc->unicodeenc))!=NULL ) {
-	strcat(buf, " ");
-	strcpy(buf+strlen(buf), uniname);
+    if (used < len) {
+	/* Enhance 'buf' description with Nameslist.txt unicode name definition */
+	if ( (uniname=unicode_name(sc->unicodeenc))!=NULL ) {
+	    used += snprintf(buf+used, len-used, " %s", uniname);
+	    free(uniname);
+	}
     }
 
-    if ( cv->show_ft_results || cv->dv )
-	sprintf(buf+strlen(buf), " (%gpt, %ddpi)", (double) cv->ft_pointsizey, cv->ft_dpi );
+    if (used < len && ( cv->show_ft_results || cv->dv )) {
+	snprintf(buf+used, len-used, " (%gpt, %ddpi)", (double) cv->ft_pointsizey, cv->ft_dpi );
+    }
+
     return( title );
 }
 
@@ -3397,9 +3435,10 @@ static void SC_RefreshTitles(SplineChar *sc) {
     if ( (CharView *) (sc->views)==NULL )
 return;
     for ( cv = (CharView *) (sc->views); cv!=NULL; cv=(CharView *) (cv->b.next) ) {
-	title = CVMakeTitles(cv,buf);
+	title = CVMakeTitles(cv,buf,sizeof(buf));
 	/* Could be different if one window is debugging and one is not */
 	GDrawSetWindowTitles8(cv->gw,buf,title);
+	free(title);
     }
 }
 
@@ -3450,7 +3489,7 @@ static void CVCheckPoints(CharView *cv) {
 	buts[2] = NULL;
 	answer = ff_ask(_("Bad Point Numbering"),(const char **) buts,0,1,_("The points in %s are not numbered properly. This means that any instructions will probably move the wrong points and do the wrong thing.\nWould you like me to remove the instructions?"),cv->b.sc->name);
 	if ( answer==0 ) {
-	    cv->b.sc->ttf_instrs = NULL;
+	    free(cv->b.sc->ttf_instrs); cv->b.sc->ttf_instrs = NULL;
 	    cv->b.sc->ttf_instrs_len = 0;
 	}
     }
@@ -3481,7 +3520,7 @@ static void CVChangeSC_fetchTab( CharView *cv, int tabnumber )
 
 static void CVSetCharSelectorValueFromSC( CharView *cv, SplineChar *sc )
 {
-    char* title = Wordlist_getSCName( sc );
+    const char* title = Wordlist_getSCName( sc );
     TRACE("CVSetCharSelectorValueFromSC() title:%s\n", title );
     GGadgetSetTitle8(cv->charselector, title);
 }
@@ -3503,6 +3542,7 @@ void CVChangeSC( CharView *cv, SplineChar *sc )
     cv->additionalCharsToShowActiveIndex = 0;
     cv->additionalCharsToShow[0] = sc;
     
+
     CVDebugFree(cv->dv);
 
     if ( cv->expandedge != ee_none ) {
@@ -3510,9 +3550,9 @@ void CVChangeSC( CharView *cv, SplineChar *sc )
 	cv->expandedge = ee_none;
     }
 
-    cv->b.gridfit = NULL;
-    cv->oldraster = NULL;
-    cv->raster = NULL;
+    SplinePointListsFree(cv->b.gridfit); cv->b.gridfit = NULL;
+    FreeType_FreeRaster(cv->oldraster); cv->oldraster = NULL;
+    FreeType_FreeRaster(cv->raster); cv->raster = NULL;
 
     SCLigCaretCheck(sc,false);
 
@@ -3549,9 +3589,10 @@ void CVChangeSC( CharView *cv, SplineChar *sc )
     CVNewScale(cv);
 
     CharIcon(cv,(FontView *) (cv->b.fv));
-    title = CVMakeTitles(cv,buf);
+    title = CVMakeTitles(cv,buf,sizeof(buf));
     GDrawSetWindowTitles8(cv->gw,buf,title);
     CVInfoDraw(cv,cv->gw);
+    free(title);
     _CVPaletteActivate(cv,true);
 
     if ( cv->tabs!=NULL ) {
@@ -3582,6 +3623,8 @@ void CVChangeSC( CharView *cv, SplineChar *sc )
 	    
 
 
+	    if ( cv->former_cnt==FORMER_MAX )
+		free(cv->former_names[FORMER_MAX-1]);
 	    for ( i=cv->former_cnt<FORMER_MAX?cv->former_cnt-1:FORMER_MAX-2; i>=0; --i )
 		cv->former_names[i+1] = cv->former_names[i];
 	    cv->former_names[0] = copy(sc->name);
@@ -3607,7 +3650,11 @@ void CVChangeSC( CharView *cv, SplineChar *sc )
 
     if ( sc->inspiro && !hasspiro() && !sc->parent->complained_about_spiros ) {
 	sc->parent->complained_about_spiros = true;
+#ifdef _NO_LIBSPIRO
+	ff_post_error(_("You may not use spiros"),_("This glyph should display spiro points, but unfortunately this version of fontforge was not linked with the spiro library, so only normal bezier points will be displayed."));
+#else
 	ff_post_error(_("You may not use spiros"),_("This glyph should display spiro points, but unfortunately FontForge was unable to load libspiro, spiros are not available for use, and normal bezier points will be displayed instead."));
+#endif
     }
 
     if ( was_fitted )
@@ -3692,8 +3739,10 @@ static int CVChangeToFormer( GGadget *g, GEvent *e) {
 	    int unienc = UniFromName(cv->former_names[new_aspect],sf->uni_interp,cv->b.fv->map->enc);
 	    if ( unienc>=0 ) {
 		gid = SFFindGID(sf,unienc,cv->former_names[new_aspect]);
-		if ( gid>=0 )
+		if ( gid>=0 ) {
+		    free(cv->former_names[new_aspect]);
 		    cv->former_names[new_aspect] = copy(sf->glyphs[gid]->name);
+		}
 	    }
 	}
 	if ( gid<0 )
@@ -4235,7 +4284,7 @@ static void SetFS( FindSel *fs, PressedOn *p, CharView *cv, GEvent *event) {
      */
     if( prefs_cvEditHandleSize > prefs_cvEditHandleSize_default )
     {
-	float delta = prefs_cvEditHandleSize - prefs_cvEditHandleSize_default;
+	float delta = (prefs_cvEditHandleSize - prefs_cvEditHandleSize_default) / cv->scale;
 	delta *= 1.5;
 	fs->fudge += delta;
     }
@@ -4438,7 +4487,10 @@ typedef struct lastselectedpoint
 void CVFreePreTransformSPL( CharView* cv )
 {
     if( cv->p.pretransform_spl )
-        g_list_free( cv->p.pretransform_spl );
+    {
+	g_list_foreach( cv->p.pretransform_spl, (GFunc)SplinePointListFree, NULL );
+	g_list_free( cv->p.pretransform_spl );
+    }
     cv->p.pretransform_spl = 0;
 }
 
@@ -4546,9 +4598,10 @@ static void CVSwitchActiveSC( CharView *cv, SplineChar* sc, int idx )
 	cv->b.drawmode = dm_back;
     }
     CharIcon(cv,(FontView *) (cv->b.fv));
-    char* title = CVMakeTitles(cv,buf);
+    char* title = CVMakeTitles(cv,buf,sizeof(buf));
     GDrawSetWindowTitles8(cv->gw,buf,title);
     CVInfoDraw(cv,cv->gw);
+    free(title);
     _CVPaletteActivate(cv,true);
     
     TRACE("CVSwitchActiveSC() idx:%d\n", idx );
@@ -4883,6 +4936,8 @@ return;		/* I treat this more like a modifier key change than a button press */
 	}
       break;
       case cvt_magnify: case cvt_minify:
+          //When scroll zooming, the old showing tool is the normal pointer.
+          old_showing_tool = cv->active_tool;    
       break;
       case cvt_hand:
 	CVMouseDownHand(cv);
@@ -5568,6 +5623,7 @@ return;
 	start = pt;
     }
 
+    free(cnames);
     CVCharChangedUpdate(&cv->b);
 }
 
@@ -6044,14 +6100,16 @@ static void CVAddGuide(CharView *cv,int is_v,int guide_pos) {
 	sp2 = SplinePointCreate(2*emsize,y);
     }
     SplineMake(sp1,sp2,sf->grid.order2);
-    ss = XZALLOC(SplineSet);
+    ss = chunkalloc(sizeof(SplineSet));
     ss->first = sp1; ss->last = sp2;
     ss->next = sf->grid.splines;
     sf->grid.splines = ss;
     ss->contour_name = gwwv_ask_string(_("Name this contour"),NULL,
 		_("Name this guideline or cancel to create it without a name"));
-    if ( ss->contour_name!=NULL && *ss->contour_name=='\0' )
+    if ( ss->contour_name!=NULL && *ss->contour_name=='\0' ) {
+	free(ss->contour_name);
 	ss->contour_name = NULL;
+    }
 
     FVRedrawAllCharViewsSF(sf);
     if ( !sf->changed ) {
@@ -6383,10 +6441,11 @@ CharView* CharViewFindActive()
 #define MID_SpiroLeft	2315
 #define MID_SpiroRight	2316
 #define MID_SpiroMakeFirst 2317
-#define MID_NameContour	2318
-#define MID_AcceptableExtrema 2319
-#define MID_MakeArc	2320
-#define MID_ClipPath	2321
+#define MID_NamePoint	2318
+#define MID_NameContour	2319
+#define MID_AcceptableExtrema 2320
+#define MID_MakeArc	2321
+#define MID_ClipPath	2322
 
 #define MID_AutoHint	2400
 #define MID_ClearHStem	2401
@@ -6459,6 +6518,7 @@ static void CVMenuCloseTab(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNU
     if ( cv->b.container || cv->tabs==NULL || cv->former_cnt<=1 )
 return;
     pos = GTabSetGetSel(cv->tabs);
+    free(cv->former_names[pos]);
     for ( i=pos+1; i<cv->former_cnt; ++i )
 	cv->former_names[i-1] = cv->former_names[i];
     --cv->former_cnt;
@@ -6579,13 +6639,16 @@ return;
 	}
 	SplineCharFreeContents(cv->b.sc);
 	*cv->b.sc = *sc;
+	chunkfree(sc,sizeof(SplineChar));
 	cv->b.sc->parent = temp.parent;
 	cv->b.sc->dependents = temp.dependents;
 	for ( layer = 0; layer<lc && layer<cv->b.sc->layer_cnt; ++layer )
 	    cv->b.sc->layers[layer].undoes = undoes[layer];
 	for ( ; layer<lc; ++layer )
 	    UndoesFree(undoes[layer]);
+	free(undoes);
 	cv->b.sc->views = temp.views;
+	/* cv->b.sc->changed = temp.changed; */
 	for ( cvs=(CharView *) (cv->b.sc->views); cvs!=NULL; cvs=(CharView *) (cvs->b.next) ) {
 	    cvs->b.layerheads[dm_back] = &cv->b.sc->layers[ly_back];
 	    cvs->b.layerheads[dm_fore] = &cv->b.sc->layers[ly_fore];
@@ -6611,13 +6674,15 @@ static void CVAddWordList(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUS
 static void CVMenuPrint(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
     CharView *cv = (CharView *) GDrawGetUserData(gw);
 
-    PrintDlg(NULL,cv->b.sc,NULL);
+    PrintFFDlg(NULL,cv->b.sc,NULL);
 }
 
+#if !defined(_NO_PYTHON)
 static void CVMenuExecute(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
     CharView *cv = (CharView *) GDrawGetUserData(gw);
     ScriptDlg((FontView *) (cv->b.fv),cv);
 }
+#endif		/* !_NO_PYTHON */
 
 static void fllistcheck(GWindow gw, struct gmenuitem *mi,GEvent *UNUSED(e)) {
     CharView *cv = (CharView *) GDrawGetUserData(gw);
@@ -6824,9 +6889,11 @@ static void CVMenuDefineAlmost(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent 
     if ( ret==NULL )
 return;
     val = strtol(ret,&end,10);
-    if ( val>100 || val<=0 || *end!='\0' )
+    if ( val>100 || val<=0 || *end!='\0' ) {
+	free(ret);
 	ff_post_error(_("Bad number"),_("Bad number"));
-    else {
+    } else {
+	free(ret);
 	CVShows.hvoffset = cv->hvoffset = val;
 	SavePrefs(true);
 	GDrawRequestExpose(cv->v,NULL,false);
@@ -7100,8 +7167,9 @@ return;
     if ( mi->mid==MID_GridFitOff ) {
 	cv->show_ft_results = false;
 	cv->show_ft_results_live_update = false;
-	cv->b.gridfit = NULL;
-	cv->raster = NULL;
+
+	SplinePointListsFree(cv->b.gridfit); cv->b.gridfit = NULL;
+	FreeType_FreeRaster(cv->raster); cv->raster = NULL;
 	GDrawRequestExpose(cv->v,NULL,false);
     } else {
 	if ( mi->mid==MID_Bigger ) {
@@ -7148,6 +7216,7 @@ static void CVMenuClearInstrs(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *
     CharView *cv = (CharView *) GDrawGetUserData(gw);
 
     if ( cv->b.sc->ttf_instrs_len!=0 ) {
+	free(cv->b.sc->ttf_instrs);
 	cv->b.sc->ttf_instrs = NULL;
 	cv->b.sc->ttf_instrs_len = 0;
 	cv->b.sc->instructions_out_of_date = false;
@@ -7275,6 +7344,7 @@ return;
             unichar_t* r = Wordlist_advanceSelectedCharsBy( cv->b.sc->parent,
                                                             ((FontView *) (cv->b.fv))->b.map,
                                                             txtu, offset );
+            free( txtu );
 
 	    GGadgetSetTitle( cv->charselector, r );
             // Force any extra chars to be setup and drawn
@@ -7431,7 +7501,7 @@ void FE_touchControlPoint( void* key,
 			   void* udata )
 {
     TRACE("FE_touchControlPoint() which:%p\n", which );
-    SPTouchControl( sp, which, (int)udata );
+    SPTouchControl( sp, which, (int)(intptr_t)udata );
 }
 
 void FE_unselectBCP( void* key,
@@ -8353,6 +8423,7 @@ static void CVDoClear(CharView *cv) {
 		else
 		    cv->b.sc->anchor = anext;
 		ap->next = NULL;
+		AnchorPointsFree(ap);
 	    } else
 		aprev = ap;
 	}
@@ -8367,6 +8438,8 @@ static void CVDoClear(CharView *cv) {
 		cv->b.layerheads[cv->b.drawmode]->images = next;
 	    else
 		prev->next = next;
+	    chunkfree(imgs,sizeof(ImageList));
+	    /* garbage collection of images????!!!! */
 	    anyimages = true;
 	}
     }
@@ -8446,7 +8519,7 @@ static void _CVMergeToLine(CharView *cv, int elide) {
     g_list_free( gl );
 
     // And make the curve between the two active points a line
-    _CVMenuMakeLine( cv, 0, 0 );
+    _CVMenuMakeLine( (CharViewBase*) cv, 0, 0 );
     SCClearSelPt(cv->b.sc);
     CVCharChangedUpdate(&cv->b);
 }
@@ -8901,7 +8974,9 @@ static void cv_edlistcheck(CharView *cv, struct gmenuitem *mi) {
 	  break;
 	  case MID_Paste:
 	    mi->ti.disabled = !CopyContainsSomething() &&
+#ifndef _NO_LIBPNG
 		    !GDrawSelectionHasType(cv->gw,sn_clipboard,"image/png") &&
+#endif
 		    !GDrawSelectionHasType(cv->gw,sn_clipboard,"image/svg+xml") &&
 		    !GDrawSelectionHasType(cv->gw,sn_clipboard,"image/svg-xml") &&
 		    !GDrawSelectionHasType(cv->gw,sn_clipboard,"image/svg") &&
@@ -9053,6 +9128,7 @@ static void cv_ptlistcheck(CharView *cv, struct gmenuitem *mi) {
     int i;
 
     if ( cv->showing_spiro_pt_menu != (cv->b.sc->inspiro && hasspiro())) {
+	GMenuItemArrayFree(mi->sub);
 	mi->sub = GMenuItem2ArrayCopy(cv->b.sc->inspiro && hasspiro()?spiroptlist:ptlist,&junk);
 	cv->showing_spiro_pt_menu = cv->b.sc->inspiro && hasspiro();
     }
@@ -9156,6 +9232,9 @@ static void cv_ptlistcheck(CharView *cv, struct gmenuitem *mi) {
 	  case MID_AcceptableExtrema:
 	    mi->ti.disabled = acceptable<0;
 	    mi->ti.checked = acceptable==1;
+	  break;
+	  case MID_NamePoint:
+	    mi->ti.disabled = onlysel==NULL || onlysel == (SplineSet *) -1;
 	  break;
 	  case MID_NameContour:
 	    mi->ti.disabled = onlysel==NULL || onlysel == (SplineSet *) -1;
@@ -9578,8 +9657,10 @@ static void _CVMenuOverlap(CharView *cv,enum overlap_type ot) {
     DoAutoSaves();
     if ( !SCRoundToCluster(cv->b.sc,layer,false,.03,.12))
 	CVPreserveState(&cv->b);	/* SCRound2Cluster does this when it makes a change, not otherwise */
-    if ( cv->b.drawmode==dm_fore )
+    if ( cv->b.drawmode==dm_fore ) {
+	MinimumDistancesFree(cv->b.sc->md);
 	cv->b.sc->md = NULL;
+    }
     cv->b.layerheads[cv->b.drawmode]->splines = SplineSetRemoveOverlap(cv->b.sc,cv->b.layerheads[cv->b.drawmode]->splines,ot);
     CVCharChangedUpdate(&cv->b);
 }
@@ -9908,6 +9989,7 @@ return;
     memcpy(newspiros,sel->spiros+which,(sel->spiro_cnt-1-which)*sizeof(spiro_cp));
     memcpy(newspiros+(sel->spiro_cnt-1-which),sel->spiros,which*sizeof(spiro_cp));
     memcpy(newspiros+sel->spiro_cnt-1,sel->spiros+sel->spiro_cnt-1,sizeof(spiro_cp));
+    free(sel->spiros);
     sel->spiros = newspiros;
     SSRegenerateFromSpiros(sel);
     CVCharChangedUpdate(&cv->b);
@@ -9921,6 +10003,34 @@ static void CVMenuSpiroMakeFirst(GWindow gw, struct gmenuitem *UNUSED(mi), GEven
 static void CVMenuMakeLine(GWindow gw, struct gmenuitem *mi, GEvent *e) {
     CharView *cv = (CharView *) GDrawGetUserData(gw);
     _CVMenuMakeLine((CharViewBase *) cv,mi->mid==MID_MakeArc, e!=NULL && (e->u.mouse.state&ksm_meta));
+}
+
+void _CVMenuNamePoint(CharView *cv, SplinePoint *sp) {
+    char *ret, *name, *oldname;
+
+    oldname = (sp->name && *sp->name) ? sp->name : NULL;
+    ret = gwwv_ask_string(_("Name this point"), oldname,
+			      _("Please name this point"));
+    if ( ret!=NULL ) {
+	name = *ret ? ret : NULL;
+	if (name != oldname || (name && oldname && strcmp(name,oldname))) {
+	    sp->name = name;
+	    CVCharChangedUpdate(&cv->b);
+	}
+    }
+}
+
+static void CVMenuNamePoint(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
+    CharView *cv = (CharView *) GDrawGetUserData(gw);
+    SplinePointList *spl;
+    SplinePoint *sp;
+    RefChar *r;
+    ImageList *il;
+    spiro_cp *junk;
+
+    if ( CVOneThingSel( cv, &sp, &spl, &r, &il, NULL, &junk ) && sp) {
+	_CVMenuNamePoint(cv, sp);
+    }
 }
 
 void _CVMenuNameContour(CharView *cv) {
@@ -9960,10 +10070,13 @@ return;
 	ret = gwwv_ask_string(_("Name this contour"),onlysel->contour_name,
 		_("Please name this contour"));
 	if ( ret!=NULL ) {
+	    free(onlysel->contour_name);
 	    if ( *ret!='\0' )
 		onlysel->contour_name = ret;
-	    else
+	    else {
 		onlysel->contour_name = NULL;
+		free(ret);
+	    }
 	    CVCharChangedUpdate(&cv->b);
 	}
     }
@@ -10356,7 +10469,7 @@ static void CVMenuBuildAccent(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *
     extern int onlycopydisplayed;
     int layer = CVLayer((CharViewBase *) cv);
 
-    if ( SFIsRotatable(cv->b.fv->sf,cv->b.sc,layer))
+    if ( SFIsRotatable(cv->b.fv->sf,cv->b.sc))
 	/* It's ok */;
     else if ( !SFIsSomethingBuildable(cv->b.fv->sf,cv->b.sc,layer,true) )
 return;
@@ -10368,7 +10481,7 @@ static void CVMenuBuildComposite(GWindow gw, struct gmenuitem *UNUSED(mi), GEven
     extern int onlycopydisplayed;
     int layer = CVLayer((CharViewBase *) cv);
 
-    if ( SFIsRotatable(cv->b.fv->sf,cv->b.sc,layer))
+    if ( SFIsRotatable(cv->b.fv->sf,cv->b.sc))
 	/* It's ok */;
     else if ( !SFIsCompositBuildable(cv->b.fv->sf,cv->b.sc->unicodeenc,cv->b.sc,layer) )
 return;
@@ -10754,13 +10867,17 @@ static void CVMenuClearHints(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)
     SCPreserveHints(cv->b.sc,CVLayer((CharViewBase *) cv));
     SCHintsChanged(cv->b.sc);
     if ( mi->mid==MID_ClearHStem ) {
+	StemInfosFree(cv->b.sc->hstem);
 	cv->b.sc->hstem = NULL;
 	cv->b.sc->hconflicts = false;
     } else if ( mi->mid==MID_ClearVStem ) {
+	StemInfosFree(cv->b.sc->vstem);
 	cv->b.sc->vstem = NULL;
 	cv->b.sc->vconflicts = false;
-    } else if ( mi->mid==MID_ClearDStem )
+    } else if ( mi->mid==MID_ClearDStem ) {
+	DStemInfosFree(cv->b.sc->dstem);
 	cv->b.sc->dstem = NULL;
+    }
     cv->b.sc->manualhints = true;
 
     if ( mi->mid != MID_ClearDStem ) {
@@ -10826,7 +10943,7 @@ return;
     if ( mi->mid==MID_AddHHint ) {
 	if ( bp[0]->y==bp[1]->y )
 return;
-	h = XZALLOC(StemInfo);
+	h = chunkalloc(sizeof(StemInfo));
 	if ( bp[1]->y>bp[0]->y ) {
 	    h->start = bp[0]->y;
 	    h->width = bp[1]->y-bp[0]->y;
@@ -10839,7 +10956,7 @@ return;
     } else if ( mi->mid==MID_AddVHint ) {
 	if ( bp[0]->x==bp[1]->x )
 return;
-	h = XZALLOC(StemInfo);
+	h = chunkalloc(sizeof(StemInfo));
 	if ( bp[1]->x>bp[0]->x ) {
 	    h->start = bp[0]->x;
 	    h->width = bp[1]->x-bp[0]->x;
@@ -10854,13 +10971,15 @@ return;
 return;
 	/* No additional tests, as the points should have already been */
         /* reordered by PointsDiagonalable */
-        d = XZALLOC(DStemInfo);
+        d = chunkalloc(sizeof(DStemInfo));
         d->where = NULL;
         d->left = *bp[0];
         d->right = *bp[1];
         d->unit = unit;
         SCGuessDHintInstances( cv->b.sc,layer,d );
-        if ( d->where != NULL )
+        if ( d->where == NULL )
+            DStemInfoFree( d );
+        else
             MergeDStemInfo( cv->b.sc->parent,&cv->b.sc->dstem,d );
     }
     cv->b.sc->manualhints = true;
@@ -11009,15 +11128,19 @@ static void cv_sllistcheck(CharView *cv, struct gmenuitem *mi) {
 	    mi->ti.disabled = !cv->showhmetrics;
 	    if ( HasUseMyMetrics(cv->b.sc,CVLayer((CharViewBase *) cv))!=NULL )
 		mi->ti.disabled = true;
-	    if ( !mi->ti.disabled )
+	    if ( !mi->ti.disabled ) {
+		free(mi->ti.text);
 		mi->ti.text = utf82u_copy(cv->widthsel?_("Deselect Width"):_("Width"));
+	    }
 	  break;
 	  case MID_SelectVWidth:
 	    mi->ti.disabled = !cv->showvmetrics || !cv->b.sc->parent->hasvmetrics;
 	    if ( HasUseMyMetrics(cv->b.sc,CVLayer((CharViewBase *) cv))!=NULL )
 		mi->ti.disabled = true;
-	    if ( !mi->ti.disabled )
+	    if ( !mi->ti.disabled ) {
+		free(mi->ti.text);
 		mi->ti.text = utf82u_copy(cv->vwidthsel?_("Deselect VWidth"):_("VWidth"));
+	    }
 	  break;
 	  case MID_SelectHM:
 	    mi->ti.disabled = !exactlyone || sp==NULL || sp->hintmask==NULL;
@@ -11329,6 +11452,7 @@ static void CVMenuCenter(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	transform[2] = 0;
 	LayerUnAllSplines(cv->b.layerheads[cv->b.drawmode]);
 	SplineSetFindBounds(temp,&bb);
+	SplinePointListsFree(temp);
     }
 
     if ( mi->mid==MID_Center )
@@ -11450,8 +11574,10 @@ static GMenuItem2 fllist[] = {
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
     { { (unichar_t *) N_("_Print..."), (GImage *) "fileprint.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'P' }, H_("Print...|No Shortcut"), NULL, NULL, CVMenuPrint, 0 },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
+#if !defined(_NO_PYTHON)
     { { (unichar_t *) N_("E_xecute Script..."), (GImage *) "python.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'x' }, H_("Execute Script...|No Shortcut"), NULL, NULL, CVMenuExecute, 0 },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
+#endif
     { { (unichar_t *) N_("Pr_eferences..."), (GImage *) "fileprefs.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'e' }, H_("Preferences...|No Shortcut"), NULL, NULL, MenuPrefs, 0 },
     { { (unichar_t *) N_("_X Resource Editor..."), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'e' }, H_("X Resource Editor...|No Shortcut"), NULL, NULL, MenuXRes, 0 },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
@@ -11533,6 +11659,7 @@ static GMenuItem2 ptlist[] = {
     { { (unichar_t *) N_("Make _Line"), (GImage *) "pointsmakeline.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Make Line|No Shortcut"), NULL, NULL, CVMenuMakeLine, MID_MakeLine },
     { { (unichar_t *) N_("Ma_ke Arc"), (GImage *) "pointsmakearc.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Make Arc|No Shortcut"), NULL, NULL, CVMenuMakeLine, MID_MakeArc },
     { { (unichar_t *) N_("Inse_rt Point On Spline At..."),  (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Insert Point On Spline At...|No Shortcut"), NULL, NULL, CVMenuInsertPt, MID_InsertPtOnSplineAt },
+    { { (unichar_t *) N_("_Name Point"),  (GImage *) "pointsnamepoint.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Name Point|No Shortcut"), NULL, NULL, CVMenuNamePoint, MID_NamePoint },
     { { (unichar_t *) N_("_Name Contour"),  (GImage *) "pointsnamecontour.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Name Contour|No Shortcut"), NULL, NULL, CVMenuNameContour, MID_NameContour },
     { { (unichar_t *) N_("Make Clip _Path"), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Make Clip Path|No Shortcut"), NULL, NULL, CVMenuClipPath, MID_ClipPath },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
@@ -11552,6 +11679,7 @@ static GMenuItem2 spiroptlist[] = {
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
     { { (unichar_t *) N_("_Add Anchor"), (GImage *) "pointsaddanchor.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'A' }, H_("Add Anchor|No Shortcut"), NULL, NULL, CVMenuAddAnchor, MID_AddAnchor },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
+    { { (unichar_t *) N_("_Name Point"), (GImage *) "pointsnamepoint.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Name Point|No Shortcut"), NULL, NULL, CVMenuNamePoint, MID_NamePoint },
     { { (unichar_t *) N_("_Name Contour"), (GImage *) "pointsnamecontour.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Name Contour|No Shortcut"), NULL, NULL, CVMenuNameContour, MID_NameContour },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
     { { (unichar_t *) N_("Tool_s"),  (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, NULL, cvspirotoollist, cvtoollist_check, NULL, MID_Tools },
@@ -11770,8 +11898,10 @@ static void ap2listbuild(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
     int k, cnt;
     AnchorPoint *ap;
 
-    if ( mi->sub!=NULL )
+    if ( mi->sub!=NULL ) {
+	GMenuItemArrayFree(mi->sub);
 	mi->sub = NULL;
+    }
 
     for ( k=0; k<2; ++k ) {
 	cnt = 0;
@@ -11876,6 +12006,7 @@ static void aplistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	}
     }
 
+    GMenuItemArrayFree(mi->sub);
     if ( found==NULL )
 	glyphs = NULL;
     else
@@ -11900,7 +12031,9 @@ return;
 	if ( glyphs[cnt]==cv->apsc )
 	    mit[cnt+1].ti.checked = mit[cnt+1].ti.checkable = true;
     }
+    free(glyphs);
     mi->sub = GMenuItem2ArrayCopy(mit,NULL);
+    GMenuItem2ArrayFree(mit);
 }
 
 static void CVMoveInWordListByOffset( CharView* cv, int offset )
@@ -12070,7 +12203,13 @@ static void mvlistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	    /* None */
 	mml[1].ti.checked = (cv->mmvisible == 0 || cv->mmvisible == submask);
     }
+    GMenuItemArrayFree(mi->sub);
     mi->sub = GMenuItem2ArrayCopy(mml,NULL);
+    if ( mml!=mvlist ) {
+	for ( i=base; mml[i].ti.text!=NULL; ++i )
+	    free( mml[i].ti.text);
+	free(mml);
+    }
 }
 
 static void CVMenuReblend(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
@@ -12133,7 +12272,13 @@ static void mmlistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	}
     }
     mml[0].ti.disabled = (mm==NULL || cv->b.sc->parent!=mm->normal || mm->apple);
+    GMenuItemArrayFree(mi->sub);
     mi->sub = GMenuItem2ArrayCopy(mml,NULL);
+    if ( mml!=mmlist ) {
+	for ( i=base; mml[i].ti.text!=NULL; ++i )
+	    free( mml[i].ti.text);
+	free(mml);
+    }
 }
 
 static void CVMenuContextualHelp(GWindow UNUSED(gw), struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
@@ -12145,7 +12290,12 @@ static GMenuItem2 mblist[] = {
     { { (unichar_t *) N_("_Edit"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'E' }, H_("Edit|No Shortcut"), edlist, edlistcheck, NULL, 0 },
     { { (unichar_t *) N_("_Point"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'P' }, H_("Point|No Shortcut"), ptlist, ptlistcheck, NULL, 0 },
     { { (unichar_t *) N_("E_lement"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'l' }, H_("Element|No Shortcut"), ellist, ellistcheck, NULL, 0 },
+#ifndef _NO_PYTHON
     { { (unichar_t *) N_("_Tools"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'l' }, H_("Tools|No Shortcut"), NULL, cvpy_tllistcheck, NULL, 0 },
+#endif
+#ifdef NATIVE_CALLBACKS
+    { { (unichar_t *) N_("Tools_2"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'l' }, H_("Tools 2|No Shortcut"), NULL, cv_tl2listcheck, NULL, 0},
+#endif
     { { (unichar_t *) N_("H_ints"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'H' }, H_("Hints|No Shortcut"), htlist, htlistcheck, NULL, 0 },
     { { (unichar_t *) N_("_View"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'V' }, H_("View|No Shortcut"), vwlist, vwlistcheck, NULL, 0 },
     { { (unichar_t *) N_("_Metrics"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Metrics|No Shortcut"), mtlist, mtlistcheck, NULL, 0 },
@@ -12161,7 +12311,12 @@ static GMenuItem2 mblist_nomm[] = {
     { { (unichar_t *) N_("_Edit"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'E' }, H_("Edit|No Shortcut"), edlist, edlistcheck, NULL, 0 },
     { { (unichar_t *) N_("_Point"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'P' }, H_("Point|No Shortcut"), ptlist, ptlistcheck, NULL, 0 },
     { { (unichar_t *) N_("E_lement"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'l' }, H_("Element|No Shortcut"), ellist, ellistcheck, NULL, 0 },
+#ifndef _NO_PYTHON
     { { (unichar_t *) N_("_Tools"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 1, 0, 0, 0, 0, 0, 1, 1, 0, 'l' }, H_("Tools|No Shortcut"), NULL, cvpy_tllistcheck, NULL, 0 },
+#endif
+#ifdef NATIVE_CALLBACKS
+    { { (unichar_t *) N_("Tools_2"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 1, 0, 0, 0, 0, 0, 1, 1, 0, 'l' }, H_("Tools 2|No Shortcut"), NULL, cv_tl2listcheck, NULL, 0},
+#endif
     { { (unichar_t *) N_("H_ints"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'H' }, H_("Hints|No Shortcut"), htlist, htlistcheck, NULL, 0 },
     { { (unichar_t *) N_("_View"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'V' }, H_("View|No Shortcut"), vwlist, vwlistcheck, NULL, 0 },
     { { (unichar_t *) N_("_Metrics"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Metrics|No Shortcut"), mtlist, mtlistcheck, NULL, 0 },
@@ -12360,7 +12515,11 @@ static void _CharViewCreate(CharView *cv, SplineChar *sc, FontView *fv,int enc,i
 	SplineCharIsFlexible(sc,CVLayer((CharViewBase *) cv));
     if ( sc->inspiro && !hasspiro() && !sc->parent->complained_about_spiros ) {
 	sc->parent->complained_about_spiros = true;
+#ifdef _NO_LIBSPIRO
+	ff_post_error(_("You may not use spiros"),_("This glyph should display spiro points, but unfortunately this version of fontforge was not linked with the spiro library, so only normal bezier points will be displayed."));
+#else
 	ff_post_error(_("You may not use spiros"),_("This glyph should display spiro points, but unfortunately FontForge was unable to load libspiro, spiros are not available for use, and normal bezier points will be displayed instead."));
+#endif
     }
 
 }
@@ -12482,6 +12641,7 @@ static int CV_OnCharSelectorTextChanged( GGadget *g, GEvent *e )
 		if( i >= additionalCharsToShowLimit )
 		    break;
 	    }
+	    free(ret);
 
 	    if( selected )
 	    {
@@ -12515,6 +12675,7 @@ static int CV_OnCharSelectorTextChanged( GGadget *g, GEvent *e )
 	    g_array_unref( selected );
 	    
 	}
+	free(txt);
 
 	int i=0;
 	for( i=0; cv->additionalCharsToShow[i]; i++ )
@@ -12571,7 +12732,7 @@ CharView *CharViewCreateExtended(SplineChar *sc, FontView *fv,int enc, int show 
     wattrs.mask = wam_events|wam_cursor|wam_utf8_wtitle|wam_utf8_ititle;
     wattrs.event_masks = -1;
     wattrs.cursor = ct_mypointer;
-    wattrs.utf8_icon_title = CVMakeTitles(cv,buf);
+    wattrs.utf8_icon_title = CVMakeTitles(cv,buf,sizeof(buf));
     wattrs.utf8_window_title = buf;
     wattrs.icon = CharIcon(cv, fv);
     if ( wattrs.icon )
@@ -12582,6 +12743,7 @@ CharView *CharViewCreateExtended(SplineChar *sc, FontView *fv,int enc, int show 
     DefaultY(&pos);
 
     cv->gw = gw = GDrawCreateTopWindow(NULL,&pos,cv_e_h,cv,&wattrs);
+    free( (unichar_t *) wattrs.icon_title );
     GDrawSetWindowTypeName(cv->gw, "CharView");
 
     // FIXME: cant do this until gw is shown?
@@ -12601,9 +12763,19 @@ CharView *CharViewCreateExtended(SplineChar *sc, FontView *fv,int enc, int show 
     memset(&gd,0,sizeof(gd));
     gd.flags = gg_visible | gg_enabled;
     helplist[0].invoke = CVMenuContextualHelp;
+#ifndef _NO_PYTHON
     if ( cvpy_menu!=NULL )
 	mblist[4].ti.disabled = mblist_nomm[4].ti.disabled = false;
     mblist[4].sub = mblist_nomm[4].sub = cvpy_menu;
+#define CALLBACKS_INDEX 5 /* FIXME: There has to be a better way than this. */
+#else
+#define CALLBACKS_INDEX 4 /* FIXME: There has to be a better way than this. */
+#endif		/* _NO_PYTHON */
+#ifdef NATIVE_CALLBACKS
+    if ( cv_menu!=NULL )
+	mblist[CALLBACKS_INDEX].ti.disabled = mblist_nomm[CALLBACKS_INDEX].ti.disabled = false;
+    mblist[CALLBACKS_INDEX].sub = mblist_nomm[CALLBACKS_INDEX].sub = cv_menu;
+#endif		/* NATIVE_CALLBACKS */
     gd.u.menu2 = sc->parent->mm==NULL ? mblist_nomm : mblist;
     cv->mb = GMenu2BarCreate( gw, &gd, NULL);
     GGadgetGetSize(cv->mb,&gsize);
@@ -12679,6 +12851,7 @@ void CharViewFree(CharView *cv) {
 
     if ( cv->qg != NULL )
 	QGRmCharView(cv->qg,cv);
+    BDFCharFree(cv->filled);
     if ( cv->ruler_w ) {
 	GDrawDestroyWindow(cv->ruler_w);
 	cv->ruler_w = NULL;
@@ -12687,12 +12860,26 @@ void CharViewFree(CharView *cv) {
 	GDrawDestroyWindow(cv->ruler_linger_w);
 	cv->ruler_linger_w = NULL;
     }
+    free(cv->gi.u.image->clut);
+    free(cv->gi.u.image);
 #if HANYANG
     if ( cv->jamodisplay!=NULL )
 	Disp_DoFinish(cv->jamodisplay,true);
 #endif
 
     CVDebugFree(cv->dv);
+
+    SplinePointListsFree(cv->b.gridfit);
+    FreeType_FreeRaster(cv->oldraster);
+    FreeType_FreeRaster(cv->raster);
+
+    CVDebugFree(cv->dv);
+
+    for ( i=0; i<cv->former_cnt; ++i )
+	free(cv->former_names[i]);
+
+    free(cv->ruler_intersections);
+    free(cv);
 }
 
 int CVValid(SplineFont *sf, SplineChar *sc, CharView *cv) {
@@ -13040,7 +13227,7 @@ struct sc_interface gdraw_sc_interface = {
     SC_MoreLayers
 };
 
-static void UI_CVGlyphRenameFixup(SplineFont *sf,char *oldname, char *newname) {
+static void UI_CVGlyphRenameFixup(SplineFont *sf, const char *oldname, const char *newname) {
     int gid, i;
     SplineChar *sc;
     CharView *cv;
@@ -13051,6 +13238,7 @@ return;
     for ( gid=0; gid<sf->glyphcnt; ++gid ) if ( (sc=sf->glyphs[gid])!=NULL) {
 	for ( cv=(CharView *) (sc->views); cv!=NULL; cv = (CharView *) (cv->b.next)) {
 	    for ( i=0; i<cv->former_cnt; ++i ) if ( strcmp(oldname,cv->former_names[i])==0 ) {
+		free( cv->former_names[i] );
 		cv->former_names[i] = copy( newname );
 		if ( cv->tabs!=NULL ) {
 		    GTabSetChangeTabName(cv->tabs,newname,i);

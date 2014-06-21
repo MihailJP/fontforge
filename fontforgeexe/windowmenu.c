@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <fontforge-config.h>
+
 # include "fontforgeui.h"
 # include <gfile.h>
 # include "splinefont.h"
@@ -80,6 +82,7 @@ return;
     memcpy(sub,mi->sub,precnt*sizeof(struct gmenuitem));
     for ( i=0; i<precnt; ++i )
 	mi->sub[i].ti.text = NULL;
+    GMenuItemArrayFree(mi->sub);
     mi->sub = sub;
 
     for ( i=0; sub[i].ti.text!=NULL || sub[i].ti.line; ++i ) {
@@ -123,8 +126,10 @@ void MenuRecentBuild(GWindow base,struct gmenuitem *mi,GEvent *e) {
     FontViewBase *fv;
     GMenuItem *sub;
 
-    if ( mi->sub!=NULL )
+    if ( mi->sub!=NULL ) {
+	GMenuItemArrayFree(mi->sub);
 	mi->sub = NULL;
+    }
 
     cnt = 0;
     for ( i=0; i<RECENT_MAX && RecentFiles[i]!=NULL; ++i ) {
@@ -171,6 +176,7 @@ return( true );
 return( false );
 }
 
+#if !defined(_NO_FFSCRIPT) || !defined(_NO_PYTHON)
 static void ScriptSelect(GWindow base,struct gmenuitem *mi,GEvent *e) {
     int index = (intpt) (mi->ti.userdata);
     FontView *fv = (FontView *) GDrawGetUserData(base);
@@ -188,8 +194,10 @@ void MenuScriptsBuild(GWindow base,struct gmenuitem *mi,GEvent *e) {
     int i;
     GMenuItem *sub;
 
-    if ( mi->sub!=NULL )
+    if ( mi->sub!=NULL ) {
+	GMenuItemArrayFree(mi->sub);
 	mi->sub = NULL;
+    }
 
     for ( i=0; i<SCRIPT_MENU_MAX && script_menu_names[i]!=NULL; ++i );
     if ( i==0 ) {
@@ -208,6 +216,7 @@ return;
     }
     mi->sub = sub;
 }
+#endif
 
 /* Builds up a menu containing all the anchor classes */
 void _aplistbuild(struct gmenuitem *top,SplineFont *sf,
@@ -216,8 +225,10 @@ void _aplistbuild(struct gmenuitem *top,SplineFont *sf,
     GMenuItem *mi, *sub;
     AnchorClass *ac;
 
-    if ( top->sub!=NULL )
+    if ( top->sub!=NULL ) {
+	GMenuItemArrayFree(top->sub);
 	top->sub = NULL;
+    }
 
     cnt = 0;
     for ( ac = sf->anchor; ac!=NULL; ac=ac->next ) ++cnt;

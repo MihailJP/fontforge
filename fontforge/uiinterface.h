@@ -259,7 +259,7 @@ struct cv_interface {
 
    /* A glyph's name has changed find all charviews with tabs with that name */
    /*  and update those tabs */
-    void (*glyph_name_change)(struct splinefont *sf, const char *oldname, char *newname);
+    void (*glyph_name_change)(struct splinefont *sf, const char *oldname, const char *newname);
 
    /* We've added a layer to a font */
     void (*layer_palette_check)(struct splinefont *sf);
@@ -367,16 +367,16 @@ struct bdffont;
 
 struct fv_interface {
    /* Create a new font view. Whatever that may entail */
-    struct fontviewbase *(*create)(struct splinefont *,int hide);
+    struct fontviewbase *(*create_view)(struct splinefont *,int hide);
 
    /* Create a new font view but without attaching it to a window */
-    struct fontviewbase *(*_create)(struct splinefont *);
+    struct fontviewbase *(*_create_view)(struct splinefont *);
 
    /* Free a font view (we assume all windows have already been destroyed) */
-    void (*close)(struct fontviewbase *);
+    void (*close_view)(struct fontviewbase *);
 
    /* Free a font view (we assume all windows have already been destroyed) */
-    void (*free)(struct fontviewbase *);
+    void (*free_view)(struct fontviewbase *);
 
    /* Set the window title of this fontview */
     void (*set_title)(struct fontviewbase *);
@@ -458,10 +458,10 @@ struct fv_interface {
 };
 extern struct fv_interface *fv_interface;
 
-#define FontViewCreate		(fv_interface->create)
-#define _FontViewCreate		(fv_interface->_create)
-#define FontViewClose		(fv_interface->close)
-#define FontViewFree		(fv_interface->free)
+#define FontViewCreate		(fv_interface->create_view)
+#define _FontViewCreate		(fv_interface->_create_view)
+#define FontViewClose		(fv_interface->close_view)
+#define FontViewFree		(fv_interface->free_view)
 #define FVSetTitle		(fv_interface->set_title)
 #define FVSetTitles		(fv_interface->set_titles)
 #define FVRefreshAll		(fv_interface->refresh_all)
@@ -497,7 +497,7 @@ struct clip_interface {
    /*  provide a routine to call which will give data on demand */
    /*  (and another routine to clean things up) */
     void  (*add_data_type)(const char *type, void *data, int cnt, int size,
-	void *(*gendata)(void *,int32 *len));
+	void *(*gendata)(void *,int32 *len), void (*freedata)(void *));
    /* Does the clipboard contain something of the given type? */
     int   (*clip_has_type)(const char *mimetype);
    /* Ask for the clipboard, and waits (and returns) for the response */

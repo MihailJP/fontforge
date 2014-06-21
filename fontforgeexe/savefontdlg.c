@@ -108,10 +108,6 @@ static int nfnt_warned = false, post_warned = false;
 #define CID_FontLog		1116
 #define CID_TTF_DummyDSIG	1117
 
-#ifdef HAVE_PTHREAD_H
-#include <pthread.h>
-#endif
-
 struct gfc_data {
     int done;
     int sod_done;
@@ -135,11 +131,6 @@ struct gfc_data {
     SplineFont *sf;
     EncMap *map;
     int layer;
-#ifdef HAVE_PTHREAD_H
-    uint8 please_die_thread;
-    uint8 thread_active;
-    pthread_t validate_thread;
-#endif
 };
 
 static GTextInfo formattypes[] = {
@@ -247,6 +238,7 @@ int32 *ParseBitmapSizes(GGadget *g,char *msg,int *err) {
 	    sizes[i] |= (u_strtol(end+1,&end,10)<<16);
 	if ( sizes[i]>0 ) ++i;
 	if ( *end!=' ' && *end!=',' && *end!='\0' ) {
+	    free(sizes);
 	    GGadgetProtest8(msg);
 	    *err = true;
     break;
@@ -1145,13 +1137,17 @@ static char *SearchDirForWernerFile(char *dir,char *filename) {
 }
 
 static char *SearchNoLibsDirForWernerFile(char *dir,char *filename) {
+    char *ret;
+
     if ( dir==NULL || strstr(dir,"/.libs")==NULL )
 return( NULL );
 
     dir = copy(dir);
     *strstr(dir,"/.libs") = '\0';
 
-return( SearchDirForWernerFile(dir,filename) );
+    ret = SearchDirForWernerFile(dir,filename);
+    free(dir);
+return( ret );
 }
 
 static enum fchooserret GFileChooserFilterWernerSFDs(GGadget *g,GDirEntry *ent,
@@ -1174,6 +1170,7 @@ static enum fchooserret GFileChooserFilterWernerSFDs(GGadget *g,GDirEntry *ent,
 		ret = fc_hide;
 	    fclose(file);
 	}
+	free(filename);
     }
 return( ret );
 }
@@ -1264,8 +1261,10 @@ static int OFLibUploadGather(struct gfc_data *d,unichar_t *path) {
 	oflib.previewimage = NULL;
     else {
 	oflib.previewimage = GGadgetGetTitle8(GWidgetGetControl(d->gw,CID_OFLibPreviewText));
-	if ( *oflib.previewimage=='\0' )
+	if ( *oflib.previewimage=='\0' ) {
+	    free(oflib.previewimage);
 	    oflib.previewimage = NULL;
+	}
     }
 
     ret = OFLibUploadFont( &oflib );
@@ -1275,17 +1274,27 @@ static int OFLibUploadGather(struct gfc_data *d,unichar_t *path) {
 	strcpy(uploadcontrol,baseurl);
 	strcat(uploadcontrol,oflib.upload_id);
 	help(uploadcontrol);
+	free(uploadcontrol);
     }
 
     if ( ret && GGadgetIsChecked(GWidgetGetControl(d->gw,CID_OFLibRememberMe))) {
+	free(oflib_username); free(oflib_password);
 	oflib_username = copy( oflib.username );
 	oflib_password = copy( oflib.password );
 	for ( pt=oflib_password; *pt!='\0' ; ++pt )
 	    *pt ^= 0xf;		/* Simple encryption */
     }
 
+    free( oflib.pathspec );
+    free( oflib.username );
+    free( oflib.password );
+    free( oflib.name );
+    free( oflib.description );
+    free( oflib.tags );
+    free( oflib.artists );
     if ( gendefaultimage && oflib.previewimage!=NULL )
 	unlink(oflib.previewimage);
+    free(oflib.previewimage);
 return ( ret );
 }
 
@@ -1293,6 +1302,8 @@ int will_prepend_timestamp = false;
 
 static void prepend_timestamp(struct gfc_data *d){
 
+  if (d->sf->familyname_with_timestamp)
+    free(d->sf->familyname_with_timestamp);
   d->sf->familyname_with_timestamp = NULL;
 
   if (will_prepend_timestamp){
@@ -1353,6 +1364,7 @@ static void DoSave(struct gfc_data *d,unichar_t *path) {
     buts[2] = NULL;
 
     rename_to = NameListByName(nlname);
+    free(nlname);
     if ( rename_to!=NULL && rename_to->uses_unicode ) {
 	/* I'll let someone generate a font with utf8 names, but I won't let */
 	/*  them take a font and force it to unicode here. */
@@ -1471,7 +1483,7 @@ return;
     }
 
     if ( d->family ) {
-	cur = XZALLOC(struct sflist);
+	cur = chunkalloc(sizeof(struct sflist));
 	cur->next = NULL;
 	sfs = last = cur;
 	cur->sf = d->sf;
@@ -1479,25 +1491,20 @@ return;
 	cur->sizes = sizes;
 	for ( i=0; i<d->familycnt; ++i ) {
 	    if ( GGadgetIsChecked(GWidgetGetControl(d->gw,CID_Family+10*i)) ) {
-		cur = XZALLOC(struct sflist);
+		cur = chunkalloc(sizeof(struct sflist));
 		last->next = cur;
 		last = cur;
 		cur->sf = GGadgetGetUserData(GWidgetGetControl(d->gw,CID_Family+10*i));
 		if ( oldbitmapstate!=bf_none )
 		    cur->sizes = ParseBitmapSizes(GWidgetGetControl(d->gw,CID_Family+10*i+1),_("Pixel List"),&err);
-		if ( err )
+		if ( err ) {
+		    SfListFree(sfs);
 return;
+		}
 		cur->map = EncMapFromEncoding(cur->sf,d->map->enc);
 	    }
 	}
     } else if ( !d->sf->multilayer && !d->sf->strokedfont && !d->sf->onlybitmaps ) {
-#ifdef HAVE_PTHREAD_H
-	if ( d->thread_active ) {
-	    d->please_die_thread = true;
-	    pthread_join(d->validate_thread,NULL);
-	    d->thread_active = false;
-	}
-#endif
 	if ( oldformatstate == ff_ptype3 || oldformatstate == ff_none )
 	    /* No point in validating type3 fonts */;
 	else if ( (old_validate = GGadgetIsChecked(d->validate))) {
@@ -1514,6 +1521,7 @@ return;
 		rsb[2]=NULL;
 		errs = VSErrorsFromMask(vs&mask,blues);
 		ret = gwwv_ask(_("Errors detected"),rsb,0,0,_("The font contains errors.\n%sWould you like to review the errors or save the font anyway?"),errs);
+		free(errs);
 		if ( ret==0 ) {
 		    d->done = true;
 		    d->ret = false;
@@ -1574,15 +1582,21 @@ return;
 		old_fontlog_contents=d->sf->fontlog;
 		if ( d->sf->fontlog==NULL )
 		    d->sf->fontlog = new;
-		else
+		else {
 		    d->sf->fontlog = strconcat3(d->sf->fontlog,"\n\n",new);
+		    free(new);
+		}
 		d->sf->changed = true;
 	    }
 	}
 	if ( res!=-2 )
 	    err = _DoSave(d->sf,temp,sizes,res,d->map, wernersfdname, layer );
-	if ( err && old_fontlog )
+	if ( err && old_fontlog ) {
+	    free(d->sf->fontlog);
 	    d->sf->fontlog = old_fontlog_contents;
+	} else
+	    free( old_fontlog_contents );
+	free(wernersfdname);
     } else if ( d->family == gf_macfamily )
 	err = !WriteMacFamily(temp,sfs,oldformatstate,oldbitmapstate,flags,layer);
     else {
@@ -1606,6 +1620,7 @@ return;
     if ( !iscid )
 	force_names_when_saving = rename_to;
 
+    free(temp);
     if ( !err && !d->family &&
 	    GGadgetIsChecked(GWidgetGetControl(d->gw,CID_OFLibUpload)) )
 	err = !OFLibUploadGather(d,path);
@@ -1634,6 +1649,7 @@ static void GFD_exists(GIOControl *gio) {
 	    temp = u2utf8_copy(u_GFileNameTail(gio->path)))==0 ) {
 	DoSave(d,gio->path);
     }
+    free(temp);
     GFileChooserReplaceIO(d->gfc,NULL);
 }
 
@@ -1672,6 +1688,7 @@ return;
 		    GIOCreate(ret,d,GFD_exists,GFD_doesnt)));
 	else
 	    GFD_doesnt(GIOCreate(ret,d,GFD_exists,GFD_doesnt));	/* No point in bugging the user if we aren't doing anything */
+	free(ret);
     }
 }
 
@@ -1735,6 +1752,7 @@ static void GFD_dircreated(GIOControl *gio) {
 
     GFileChooserReplaceIO(d->gfc,NULL);
     GFileChooserSetDir(d->gfc,dir);
+    free(dir);
 }
 
 static void GFD_dircreatefailed(GIOControl *gio) {
@@ -1744,6 +1762,7 @@ static void GFD_dircreatefailed(GIOControl *gio) {
 
     ff_post_notice(_("Couldn't create directory"),_("Couldn't create directory: %s"),
 		temp = u2utf8_copy(u_GFileNameTail(gio->path)));
+    free(temp);
     GFileChooserReplaceIO(d->gfc,NULL);
 }
 
@@ -1758,11 +1777,13 @@ return( true );
 	if ( !GFileIsAbsolute(newdir)) {
 	    char *olddir = u2utf8_copy(GFileChooserGetDir(d->gfc));
 	    char *temp = GFileAppendFile(olddir,newdir,false);
+	    free(newdir); free(olddir);
 	    newdir = temp;
 	}
 	temp = utf82u_copy(newdir);
 	GIOmkDir(GFileChooserReplaceIO(d->gfc,
 		GIOCreate(temp,d,GFD_dircreated,GFD_dircreatefailed)));
+	free(newdir); free(temp);
     }
 return( true );
 }
@@ -1779,6 +1800,7 @@ return;
 
     dup = malloc((u_strlen(ret)+30)*sizeof(unichar_t));
     u_strcpy(dup,ret);
+    free(ret);
     pt = u_strrchr(dup,'.');
     tpt = u_strrchr(dup,'/');
     if ( pt<tpt )
@@ -1791,6 +1813,7 @@ return;
     if ( uc_strncmp(pt-2, "-*", 2 )==0 ) pt -= 2;
     uc_strcpy(pt,bitmapextensions[bf]);
     GGadgetSetTitle(d->gfc,dup);
+    free(dup);
 }
 
 static int GFD_Format(GGadget *g, GEvent *e) {
@@ -1819,6 +1842,7 @@ return( true );
 	ret = GGadgetGetTitle(d->gfc);
 	dup = malloc((u_strlen(ret)+30)*sizeof(unichar_t));
 	u_strcpy(dup,ret);
+	free(ret);
 	pt = u_strrchr(dup,'.');
 	tpt = u_strrchr(dup,'/');
 	if ( pt<tpt )
@@ -1832,6 +1856,7 @@ return( true );
 	if ( uc_strncmp(pt-2, "-*", 2 )==0 ) pt -= 2;
 	uc_strcpy(pt,savefont_extensions[format]);
 	GGadgetSetTitle(d->gfc,dup);
+	free(dup);
 
 	if ( d->sf->cidmaster!=NULL ) {
 	    if ( format!=ff_none && format != ff_cid && format != ff_cffcid &&
@@ -1979,11 +2004,15 @@ static int GFD_OFLibPreviewBrowse(GGadget *g, GEvent *e) {
 
 	GGadgetSetChecked(GWidgetGetControl(d->gw,CID_OFLibDiskPreview), true);
 
-	if ( *filename=='\0' )
+	if ( *filename=='\0' ) {
+	    free(filename);
 	    filename = NULL;
+	}
 	newname = gwwv_open_filename(_("Browse for a preview image"), filename, "*.{png,gif,jpeg}",NULL);
 	if ( newname!=NULL )
 	    GGadgetSetTitle8(GWidgetGetControl(d->gw,CID_OFLibPreviewText), newname );
+	free(newname);
+	free(filename);
     }
 return( true );
 }
@@ -2036,6 +2065,7 @@ static unichar_t *BitmapList(SplineFont *sf) {
     }
     *pt = '\0';
     uret = uc_copy(cret);
+    free(cret);
 return( uret );
 }
 
@@ -2546,6 +2576,7 @@ return( 0 );
 	}
     }
     gcd[k++].gd.u.list = namelistnames;
+    free(nlnames);
     hvarray[10] = &gcd[k-1]; hvarray[11] = NULL;
 
     if ( !family ) {
@@ -3060,6 +3091,8 @@ return( 0 );
 	}
 	famarray[f++] = NULL;
 
+	free(familysfs);
+
 	boxes[4].gd.flags = gg_enabled|gg_visible;
 	boxes[4].gd.u.boxelements = famarray;
 	boxes[4].creator = GHVBoxCreate;
@@ -3077,7 +3110,13 @@ return( 0 );
     GHVBoxFitWindow(boxes[0].ret);
 
     GGadgetSetUserData(gcd[2].ret,gcd[0].ret);
-    if ( !family ) {
+    free(namelistnames);
+    free(lynames);
+    free(label[9].text);
+    if ( family ) {
+	for ( i=13; i<k; ++i )
+	    free((unichar_t *) gcd[i].gd.popup_msg);
+    } else {
 	GHVBoxSetExpandableCol(boxes[6].ret,1);
 	GHVBoxSetExpandableCol(boxes[7].ret,gb_expandglue);
 	GHVBoxSetExpandableCol(boxes[8].ret,1);
@@ -3092,7 +3131,9 @@ return( 0 );
 	uc_strcpy(temp,fn);
 	uc_strcat(temp,savefont_extensions[ofs]!=NULL?savefont_extensions[ofs]:bitmapextensions[old]);
 	GGadgetSetTitle(gcd[0].ret,temp);
+	free(temp);
     }
+    free(oflpwd);
     GFileChooserGetChildren(gcd[0].ret,&pulldown,&files,&tf);
     GWidgetIndicateFocusGadget(tf);
 #if __Mac
@@ -3123,14 +3164,7 @@ return( 0 );
     GWidgetHidePalettes();
     GDrawSetVisible(gw,true);
     while ( !d.done )
-	GDrawProcessOneEvent(NULL);
+        GDrawProcessOneEvent(NULL);
     GDrawDestroyWindow(gw);
-#ifdef HAVE_PTHREAD_H
-    if ( d.thread_active ) {
-	d.please_die_thread = true;
-	pthread_join(d.validate_thread,NULL);
-	d.thread_active = false;
-    }
-#endif
 return(d.ret);
 }

@@ -1022,6 +1022,7 @@ static void SCCheckForSSToOptimize(SplineChar *sc, SplineSet *ss,int order2) {
 	    foo = *ss;
 	    ss->first = temp->first; ss->last = temp->last;
 	    temp->first = foo.first; temp->last = foo.last;
+	    SplinePointListFree(temp);
 	}
     }
 }
@@ -1037,7 +1038,11 @@ static void CVChangeSpiroMode(CharView *cv) {
 	GDrawRequestExpose(cvtools,NULL,false);
 	SCUpdateAll(cv->b.sc);
     } else
+#ifdef _NO_LIBSPIRO
+	ff_post_error(_("You may not use spiros"),_("This version of fontforge was not linked with the spiro library, so you may not use them."));
+#else
 	ff_post_error(_("You may not use spiros"),_("FontForge was unable to load libspiro, spiros are not available for use."));
+#endif
 }
 
 static void ToolsMouse(CharView *cv, GEvent *event) {
@@ -1302,15 +1307,21 @@ static void CVLayers2Set(CharView *cv) {
 
 	 /* set old to NULL */
     layer2.offtop = 0;
-    for ( i=2; i<layer2.current_layers; ++i )
+    for ( i=2; i<layer2.current_layers; ++i ) {
+	BDFCharFree(layer2.layers[i]);
 	layer2.layers[i]=NULL;
+    }
 
 	 /* reallocate enough space if necessary */
     if ( cv->b.sc->layer_cnt+1>=layer2.max_layers ) {
 	top = cv->b.sc->layer_cnt+10;
-        layer2.layers = realloc(layer2.layers,top*sizeof(BDFChar *));
-        for ( i=layer2.current_layers; i<top; ++i )
-            layer2.layers[i] = NULL;
+	if ( layer2.layers==NULL )
+	    layer2.layers = calloc(top,sizeof(BDFChar *));
+	else {
+	    layer2.layers = realloc(layer2.layers,top*sizeof(BDFChar *));
+	    for ( i=layer2.current_layers; i<top; ++i )
+		layer2.layers[i] = NULL;
+	}
 	layer2.max_layers = top;
     }
     layer2.current_layers = cv->b.sc->layer_cnt+1;
@@ -1396,7 +1407,8 @@ return;
 #define MID_MakeLine 100
 #define MID_MakeArc  200
 #define MID_InsertPtOnSplineAt  2309
-#define MID_NameContour  2318
+#define MID_NamePoint  2318
+#define MID_NameContour  2319
 
 static void CVLayer2Invoked(GWindow v, GMenuItem *mi, GEvent *e) {
     CharView *cv = (CharView *) GDrawGetUserData(v);
@@ -1427,6 +1439,9 @@ return;
 return;
 	if ( gwwv_ask(_("Cannot Be Undone"),(const char **) buts,0,1,_("This operation cannot be undone, do it anyway?"))==1 )
 return;
+	SplinePointListsFree(sc->layers[layer].splines);
+	RefCharsFree(sc->layers[layer].refs);
+	ImageListsFree(sc->layers[layer].images);
 	UndoesFree(sc->layers[layer].undoes);
 	UndoesFree(sc->layers[layer].redoes);
 	for ( i=layer+1; i<sc->layer_cnt; ++i )
@@ -1762,6 +1777,7 @@ return;
     if ( cv->b.drawmode==dm_grid || cv->b.drawmode==dm_back )
 return;
     layer = CVLayer(&cv->b);
+    BDFCharFree(layer2.layers[layer+1]);
     layer2.layers[layer+1] = BDFCharFromLayer(cv->b.sc,layer);
     GDrawRequestExpose(cvlayers2,NULL,false);
 }
@@ -1777,15 +1793,21 @@ static void CVLayers1Set(CharView *cv) {
 
      /* clear old layer previews */
     layerinfo.offtop = 0;
-    for ( i=2; i<layerinfo.current_layers; ++i )
+    for ( i=2; i<layerinfo.current_layers; ++i ) {
+	BDFCharFree(layerinfo.layers[i]);
 	layerinfo.layers[i]=NULL;
+    }
 
      /* reallocate enough space if necessary */
     if ( cv->b.sc->layer_cnt+1>=layerinfo.max_layers ) {
 	top = cv->b.sc->layer_cnt+10;
-        layerinfo.layers = realloc(layerinfo.layers,top*sizeof(BDFChar *));
-        for ( i=layerinfo.current_layers; i<top; ++i )
-            layerinfo.layers[i] = NULL;
+	if ( layerinfo.layers==NULL )
+	    layerinfo.layers = calloc(top,sizeof(BDFChar *));
+	else {
+	    layerinfo.layers = realloc(layerinfo.layers,top*sizeof(BDFChar *));
+	    for ( i=layerinfo.current_layers; i<top; ++i )
+		layerinfo.layers[i] = NULL;
+	}
 	layerinfo.max_layers = top;
     }
     layerinfo.current_layers = cv->b.sc->layer_cnt+1;
@@ -1980,6 +2002,7 @@ static void CVLRemoveEdit(CharView *cv, int save) {
 	if ( save
 		&& layerinfo.active>=0 && str!=NULL && str[0]!='\0' 
 		&& uc_strcmp( str,cv->b.sc->parent->layers[l].name) ) {
+	    free( cv->b.sc->parent->layers[l].name );
 	    cv->b.sc->parent->layers[l].name = cu_copy( str );
 
 	    CVLCheckLayerCount(cv,true);
@@ -2489,9 +2512,9 @@ void CVLSelectLayer(CharView *cv, int layer) {
         }
 
         CVDebugFree(cv->dv);
-        cv->b.gridfit = NULL;
-        cv->oldraster = NULL;
-        cv->raster = NULL;
+        SplinePointListsFree(cv->b.gridfit); cv->b.gridfit = NULL;
+        FreeType_FreeRaster(cv->oldraster); cv->oldraster = NULL;
+        FreeType_FreeRaster(cv->raster); cv->raster = NULL;
         cv->show_ft_results = false;
     }
     layerinfo.active = CVLayer(&cv->b); /* the index of the active layer */
@@ -2696,10 +2719,10 @@ return ( true );
 		cv->b.drawmode = dm_fore;
 		cv->lastselpt = NULL;
 
-                CVDebugFree(cv->dv);
-		cv->b.gridfit = NULL;
-		cv->oldraster = NULL;
-		cv->raster = NULL;
+		CVDebugFree(cv->dv);
+		SplinePointListsFree(cv->b.gridfit); cv->b.gridfit = NULL;
+		FreeType_FreeRaster(cv->oldraster); cv->oldraster = NULL;
+		FreeType_FreeRaster(cv->raster); cv->raster = NULL;
 		cv->show_ft_results = false;
 	      break;
 	      case CID_EBack:
@@ -2707,10 +2730,10 @@ return ( true );
 		cv->b.layerheads[dm_back] = &cv->b.sc->layers[ly_back];
 		cv->lastselpt = NULL;
 
-                CVDebugFree(cv->dv);
-		cv->b.gridfit = NULL;
-		cv->oldraster = NULL;
-		cv->raster = NULL;
+		CVDebugFree(cv->dv);
+		SplinePointListsFree(cv->b.gridfit); cv->b.gridfit = NULL;
+		FreeType_FreeRaster(cv->oldraster); cv->oldraster = NULL;
+		FreeType_FreeRaster(cv->raster); cv->raster = NULL;
 		cv->show_ft_results = false;
 	      break;
 	      case CID_EGrid:
@@ -3051,22 +3074,23 @@ static void CVPopupSelectInvoked(GWindow v, GMenuItem *mi, GEvent *e) {
 	CVMakeClipPath(cv);
       break;
     case MID_MakeLine: {
-	CharView *cv = (CharView *) GDrawGetUserData(v);
 	_CVMenuMakeLine((CharViewBase *) cv,mi->mid==MID_MakeArc, e!=NULL && (e->u.mouse.state&ksm_meta));
 	break;
     }
     case MID_MakeArc: {
-	CharView *cv = (CharView *) GDrawGetUserData(v);
 	_CVMenuMakeLine((CharViewBase *) cv,mi->mid==MID_MakeArc, e!=NULL && (e->u.mouse.state&ksm_meta));
 	break;
     }
     case MID_InsertPtOnSplineAt: {
-	CharView *cv = (CharView *) GDrawGetUserData(v);
 	_CVMenuInsertPt( cv );
 	break;
     }
+    case MID_NamePoint: {
+	if ( cv->p.sp )
+	    _CVMenuNamePoint( cv, cv->p.sp );
+	break;
+    }
     case MID_NameContour: {
-	CharView *cv = (CharView *) GDrawGetUserData(v);
 	_CVMenuNameContour( cv );
 	break;
     }
@@ -3213,6 +3237,16 @@ void CVToolsPopup(CharView *cv, GEvent *event) {
 	i++;
     }
 
+    if ( anysel ) {
+	mi[i].ti.text = (unichar_t *)_("Name Point...");
+	mi[i].ti.text_is_1byte = true;
+	mi[i].ti.fg = COLOR_DEFAULT;
+	mi[i].ti.bg = COLOR_DEFAULT;
+	mi[i].mid = MID_NamePoint;
+	mi[i].invoke = CVPopupSelectInvoked;
+	i++;
+    }
+
     if ( cv->b.sc->parent->multilayer ) {
 	mi[i].ti.text = (unichar_t *) _("Make Clip Path");
 	mi[i].ti.text_is_1byte = true;
@@ -3247,6 +3281,14 @@ void CVToolsPopup(CharView *cv, GEvent *event) {
 	mi[i].ti.fg = COLOR_DEFAULT;
 	mi[i].ti.bg = COLOR_DEFAULT;
 	mi[i].mid = MID_InsertPtOnSplineAt;
+	mi[i].invoke = CVPopupSelectInvoked;
+	i++;
+
+	mi[i].ti.text = (unichar_t *) _("Name Point");
+	mi[i].ti.text_is_1byte = true;
+	mi[i].ti.fg = COLOR_DEFAULT;
+	mi[i].ti.bg = COLOR_DEFAULT;
+	mi[i].mid = MID_NamePoint;
 	mi[i].invoke = CVPopupSelectInvoked;
 	i++;
 

@@ -52,6 +52,8 @@
  * wget http://unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0212.TXT
  */
 
+#include <fontforge-config.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -135,6 +137,10 @@ static int dumpalphas(FILE *output, FILE *header) {
 		if (strlen(buffer)>=199) {
 		    fprintf( stderr, LineLengthBg,alphabets[j],buffer );
 		    fclose(file);
+		    for ( k=0; k<256; ++k ) {
+                        free(table[k]);
+                        free(used[k]);
+		    }
 return( 4 );
 		}
 		if ( buffer[0]=='#' )
@@ -145,6 +151,10 @@ return( 4 );
 		    if ((plane = table[_unicode>>8] = calloc(256,1))==NULL) {
 			fprintf( stderr, NoMoreMemory );
 			fclose(file);
+			for ( k=0; k<256; ++k ) {
+                            free(table[k]);
+                            free(used[k]);
+			}
 return( 3 );
 		    }
 		    if ( j==0 && (_unicode>>8)==0 )
@@ -159,6 +169,10 @@ return( 3 );
 		    if ((used[_unicode>>8] = calloc(256,sizeof(long)))==NULL) {
 			fprintf( stderr, NoMoreMemory );
 			fclose(file);
+			for ( k=0; k<256; ++k ) {
+                            free(table[k]);
+                            free(used[k]);
+			}
 return( 3 );
 		    }
 		}
@@ -212,11 +226,15 @@ return( 3 );
 	    fprintf( output, "struct charmap %s_from_unicode = { %d, %d, (unsigned char **) %s_from_unicode_, (unichar_t *) unicode_from_%s };\n\n",
 		    alnames[j], first, last, alnames[j], alnames[j]);
 
-	    for ( k=first; k<=last; ++k )
+	    for ( k=first; k<=last; ++k ) {
+		free(table[k]);
 		table[k]=NULL;
+	    }
 	}
     }
     if ( l ) {				/* missing files, shouldn't go any further */
+	for ( k=0; k<256; ++k )
+            free(used[k]);
 return( 2 );
     }
 
@@ -342,6 +360,10 @@ static int dumpjis(FILE *output,FILE *header) {
 	    if (strlen(buffer)>=399) {
 		fprintf( stderr, LineLengthBg,adobecjk[j],buffer );
 		fclose(file);
+		for ( k=0; k<256; ++k ) {
+                    free(table[k]);
+                    free(used[k]);
+		}
 return( 4 );
 	    }
 	    if ( buffer[0]=='#' )
@@ -362,6 +384,10 @@ return( 4 );
 		if ((table[_unicode>>8] = calloc(256,sizeof(unichar_t)))==NULL) {
 		    fprintf( stderr, NoMoreMemory );
 		    fclose(file);
+		    for ( k=0; k<256; ++k ) {
+                        free(table[k]);
+                        free(used[k]);
+		    }
 return( 3 );
 		}
 	    table[_unicode>>8][_unicode&0xff] = _orig;
@@ -375,6 +401,10 @@ return( 3 );
 		    if ((used[_unicode>>8] = calloc(256,sizeof(long)))==NULL) {
 			fprintf( stderr, NoMoreMemory );
 			fclose(file);
+			for ( k=0; k<256; ++k ) {
+                            free(table[k]);
+                            free(used[k]);
+			}
 return( 3 );
 		    }
 		}
@@ -394,6 +424,10 @@ return( 3 );
 	    if (strlen(buffer)>=399) {
 		fprintf( stderr, LineLengthBg,adobecjk[j],buffer );
 		fclose(file);
+		for ( k=0; k<256; ++k ) {
+                    free(table[k]);
+                    free(used[k]);
+		}
 return( 4 );
 	    }
 	    if ( buffer[0]=='#' )
@@ -414,6 +448,10 @@ return( 4 );
 		if ((table[_unicode>>8] = calloc(256,sizeof(unichar_t)))==NULL) {
 		    fprintf( stderr, NoMoreMemory );
 		    fclose(file);
+		    for ( k=0; k<256; ++k ) {
+                        free(table[k]);
+                        free(used[k]);
+		    }
 return( 3 );
 		}
 	    if ( table[_unicode>>8][_unicode&0xff]==0 )
@@ -430,6 +468,10 @@ return( 3 );
 		    if ((used[_unicode>>8] = calloc(256,sizeof(long)))==NULL) {
 			fprintf( stderr, NoMoreMemory );
 			fclose(file);
+			for ( k=0; k<256; ++k ) {
+                            free(table[k]);
+                            free(used[k]);
+			}
 return( 3 );
 		    }
 		}
@@ -493,6 +535,8 @@ return( 3 );
     fprintf( output, "struct charmap2 jis_from_unicode = { %d, %d, (unsigned short **) jis_from_unicode_, (unichar_t *) unicode_from_%s };\n\n",
 	    first, last, cjknames[j]);
 
+    for ( k=first; k<=last; ++k )
+	free(table[k]);
 return( 0 );				/* no errors encountered */
 }
 
@@ -518,6 +562,10 @@ static int dumpbig5(FILE *output,FILE *header) {
 	    if (strlen(buffer)>=399) {
 		fprintf( stderr, LineLengthBg,adobecjk[j],buffer );
 		fclose(file);
+		for ( k=0; k<256; ++k ) {
+                    free(table[k]);
+                    free(used[k]);
+		}
 return( 4 );
 	    }
 	    if ( buffer[0]=='#' )
@@ -555,6 +603,10 @@ return( 4 );
 		if ((table[_unicode>>8] = calloc(256,sizeof(unichar_t)))==NULL) {
 		    fprintf( stderr, NoMoreMemory );
 		    fclose(file);
+		    for ( k=0; k<256; ++k ) {
+                        free(table[k]);
+                        free(used[k]);
+		    }
 return( 3 );
 		}
 	    table[_unicode>>8][_unicode&0xff] = _orig;
@@ -562,6 +614,10 @@ return( 3 );
 		if ((used[_unicode>>8] = calloc(256,sizeof(long)))==NULL) {
 		    fprintf( stderr, NoMoreMemory );
 		    fclose(file);
+		    for ( k=0; k<256; ++k ) {
+                        free(table[k]);
+                        free(used[k]);
+		    }
 return( 3 );
 		}
 	    }
@@ -610,6 +666,9 @@ return( 3 );
 	fprintf( header, "extern struct charmap2 %s_from_unicode;\n", cjknames[j]);
 	fprintf( output, "struct charmap2 %s_from_unicode = { %d, %d, (unsigned short **) %s_from_unicode_, (unichar_t *) unicode_from_%s };\n\n",
 		cjknames[j], first, last, cjknames[j], cjknames[j]);
+
+	for ( k=first; k<=last; ++k )
+	    free(table[k]);
     }
 return( 0 );				/* no errors encountered */
 }
@@ -636,6 +695,10 @@ static int dumpbig5hkscs(FILE *output,FILE *header) {
 	    if (strlen(buffer)>=399) {
 		fprintf( stderr, LineLengthBg,cjk[j],buffer );
 		fclose(file);
+		for ( k=0; k<256; ++k ) {
+                    free(table[k]);
+                    free(used[k]);
+		}
 return( 4 );
 	    }
 	    if ( buffer[0]=='#' )
@@ -653,6 +716,10 @@ return( 4 );
 		if ((table[_unicode>>8] = calloc(256,sizeof(unichar_t)))==NULL) {
 		    fprintf( stderr, NoMoreMemory );
 		    fclose(file);
+		    for ( k=0; k<256; ++k ) {
+                        free(table[k]);
+                        free(used[k]);
+		    }
 return( 3 );
 		}
 	    table[_unicode>>8][_unicode&0xff] = _orig;
@@ -660,6 +727,10 @@ return( 3 );
 		if ((used[_unicode>>8] = calloc(256,sizeof(long)))==NULL) {
 		    fprintf( stderr, NoMoreMemory );
 		    fclose(file);
+		    for ( k=0; k<256; ++k ) {
+                        free(table[k]);
+                        free(used[k]);
+		    }
 return( 3 );
 		}
 	    }
@@ -708,6 +779,9 @@ return( 3 );
 	fprintf( header, "extern struct charmap2 %s_from_unicode;\n", cjknames[j]);
 	fprintf( output, "struct charmap2 %s_from_unicode = { %d, %d, (unsigned short **) %s_from_unicode_, (unichar_t *) unicode_from_%s };\n\n",
 		cjknames[j], first, last, cjknames[j], cjknames[j]);
+
+	for ( k=first; k<=last; ++k )
+	    free(table[k]);
     }
 return( 0 );				/* no errors encountered */
 }
@@ -738,6 +812,11 @@ static int dumpWansung(FILE *output,FILE *header) {
 		if (strlen(buffer)>=399) {
 		    fprintf( stderr, LineLengthBg,adobecjk[j],buffer );
 		    fclose(file);
+		    for ( k=0; k<256; ++k ) {
+                        free(table[k]);
+                        free(jtable[k]);
+                        free(used[k]);
+		    }
 return( 4 );
 		}
 		if ( buffer[0]=='#' )
@@ -764,6 +843,11 @@ return( 4 );
 			if ((table[_unicode>>8] = calloc(256,sizeof(unichar_t)))==NULL) {
 			    fprintf( stderr, NoMoreMemory );
 			    fclose(file);
+			    for ( k=0; k<256; ++k ) {
+                                free(table[k]);
+                                free(jtable[k]);
+                                free(used[k]);
+			    }
 return( 3 );
 			}
 		    table[_unicode>>8][_unicode&0xff] = _orig;
@@ -778,6 +862,11 @@ return( 3 );
 			if ((used[_unicode>>8] = calloc(256,sizeof(long)))==NULL) {
 			    fprintf( stderr, NoMoreMemory );
 			    fclose(file);
+			    for ( k=0; k<256; ++k ) {
+                                free(table[k]);
+                                free(jtable[k]);
+                                free(used[k]);
+			    }
 return( 3 );
 			}
 		    }
@@ -788,6 +877,11 @@ return( 3 );
 			if ((jtable[_unicode>>8] = calloc(256,sizeof(unichar_t)))==NULL) {
 			    fprintf( stderr, NoMoreMemory );
 			    fclose(file);
+			    for ( k=0; k<256; ++k ) {
+                                free(table[k]);
+                                free(jtable[k]);
+                                free(used[k]);
+			    }
 return( 3 );
 			}
 		    jtable[_unicode>>8][_unicode&0xff] = _johab;
@@ -797,6 +891,11 @@ return( 3 );
 			if ((used[_unicode>>8] = calloc(256,sizeof(long)))==NULL) {
 			    fprintf( stderr, NoMoreMemory );
 			    fclose(file);
+			    for ( k=0; k<256; ++k ) {
+                                free(table[k]);
+                                free(jtable[k]);
+                                free(used[k]);
+			    }
 return( 3 );
 			}
 		    }
@@ -850,8 +949,10 @@ return( 3 );
 
 	if ( first==-1 )
 	    fprintf( stderr, "No Hangul\n" );
-	else for ( k=first; k<=last; ++k )
+	else for ( k=first; k<=last; ++k ) {
+	    free(table[k]);
 	    table[k]=NULL;
+	}
 
 	/* Then Johab */
 	fprintf( header, "/* Subtract 0x8400 before indexing this array */\n" );
@@ -898,8 +999,11 @@ return( 3 );
 
 	if ( first==-1 )
 	    fprintf( stderr, "No Johab\n" );
-	else for ( k=first; k<=last; ++k )
+	else for ( k=first; k<=last; ++k ) {
+	    free(table[k]);
 	    table[k]=NULL;
+            free(jtable[k]);
+	}
 return( 0 );				/* no errors encountered */
 }
 
@@ -924,6 +1028,10 @@ static int dumpgb2312(FILE *output,FILE *header) {
 		if (strlen(buffer)>=399) {
 		    fprintf( stderr, LineLengthBg,adobecjk[j],buffer );
 		    fclose(file);
+		    for ( k=0; k<256; ++k ) {
+                        free(table[k]);
+                        free(used[k]);
+		    }
 return( 4 );
 		}
 		if ( buffer[0]=='#' )
@@ -944,6 +1052,10 @@ return( 4 );
 		    if ((table[_unicode>>8] = calloc(256,sizeof(unichar_t)))==NULL) {
 			fprintf( stderr, NoMoreMemory );
 			fclose(file);
+			for ( k=0; k<256; ++k ) {
+                            free(table[k]);
+                            free(used[k]);
+			}
 return( 3 );
 		    }
 		table[_unicode>>8][_unicode&0xff] = _orig;
@@ -954,6 +1066,10 @@ return( 3 );
 		    if ((used[_unicode>>8] = calloc(256,sizeof(long)))==NULL) {
 			fprintf( stderr, NoMoreMemory );
 			fclose(file);
+			for ( k=0; k<256; ++k ) {
+                            free(table[k]);
+                            free(used[k]);
+			}
 return( 3 );
 		    }
 		}
@@ -1005,8 +1121,10 @@ return( 3 );
 
 	if ( first==-1 )
 	    fprintf( stderr, "No 94x94\n" );
-	else for ( k=first; k<=last; ++k )
+	else for ( k=first; k<=last; ++k ) {
+	    free(table[k]);
 	    table[k]=NULL;
+	}
 return( 0 );				/* no errors encountered */
 }
 
@@ -1116,5 +1234,7 @@ return 1;
 
     fclose(output); fclose(header);
 
+    for ( i=0; i<256; ++i )
+        free(used[i]);
 return 0;
 }

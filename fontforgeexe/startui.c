@@ -64,10 +64,18 @@ extern uninm_blocks_db blocks_db;
 extern void setup_cocoa_app();
 #endif
 
-#include <png.h>		/* for version number to find up shared image name */
-#define xstr(s) str(s)
-#define str(s) #s
-#define PNGLIBNAME	"libpng" xstr(PNG_LIBPNG_VER_MAJOR) xstr(PNG_LIBPNG_VER_MINOR)
+#ifdef _NO_LIBPNG
+#  define PNGLIBNAME	"libpng"
+#else
+#  include <png.h>		/* for version number to find up shared image name */
+#  if !defined(PNG_LIBPNG_VER_MAJOR) || (PNG_LIBPNG_VER_MAJOR==1 && PNG_LIBPNG_VER_MINOR<2)
+#    define PNGLIBNAME	"libpng"
+#  else
+#    define xstr(s) str(s)
+#    define str(s) #s
+#    define PNGLIBNAME	"libpng" xstr(PNG_LIBPNG_VER_MAJOR) xstr(PNG_LIBPNG_VER_MINOR)
+#  endif
+#endif
 #ifdef __Mac
 #  include <carbon.h>
 /* For reasons obscure to me RunApplicationEventLoop is not defined in */
@@ -121,8 +129,12 @@ static void _dousage(void) {
     printf( "\t-docs\t\t\t (displays this message, invokes a browser)\n\t\t\t\t (Using the BROWSER environment variable)\n" );
     printf( "\t-version\t\t (prints the version of fontforge and exits)\n" );
     printf( "\t-library-status\t (prints information about optional libraries\n\t\t\t\t and exits)\n" );
+#ifndef _NO_PYTHON
     printf( "\t-lang=py\t\t use python for scripts (may precede -script)\n" );
+#endif
+#ifndef _NO_FFSCRIPT
     printf( "\t-lang=ff\t\t use fontforge's legacy scripting language\n" );
+#endif
     printf( "\t-script scriptfile\t (executes scriptfile)\n" );
     printf( "\t\tmust be the first option (or follow -lang).\n" );
     printf( "\t\tAll others passed to scriptfile.\n" );
@@ -241,6 +253,12 @@ static void SplashLayout() {
 #ifdef FREETYPE_HAS_DEBUGGER
     uc_strcat(pt,"-TtfDb");
 #endif
+#ifdef _NO_PYTHON
+    uc_strcat(pt,"-NoPython");
+#endif
+#ifdef FONTFORGE_CONFIG_USE_DOUBLE
+    uc_strcat(pt,"-D");
+#endif
     uc_strcat(pt,")");
     pt += u_strlen(pt);
     lines[linecnt++] = pt;
@@ -264,8 +282,10 @@ static void DoDelayedEvents(GEvent *event) {
     GTimer *t = event->u.timer.timer;
     struct delayed_event *info = (struct delayed_event *) (event->u.timer.userdata);
 
-    if ( info!=NULL )
+    if ( info!=NULL ) {
 	(info->func)(info->data);
+	free(info);
+    }
     GDrawCancelTimer(t);
 }
 
@@ -304,7 +324,7 @@ exit(0);		/* Sent everything */
     GDrawGrabSelection(splashw,sn_user1);
     GDrawAddSelectionType(splashw,sn_user1,"STRING",
 	    copy(msg),strlen(msg),1,
-	    NULL);
+	    NULL,NULL);
 
 	/* If we just sent the other fontforge a request to die, it will never*/
 	/*  take the selection back. So we should just die quietly */
@@ -607,6 +627,7 @@ return( true );
 		MenuExit(NULL,NULL,NULL);
 	    else
 		ViewPostScriptFont(arg,0);
+	    free(arg);
 	    GDrawGrabSelection(splashw,sn_user1);
 	}
       break;
@@ -627,6 +648,7 @@ static void  AddR(char *program_name, char *window_name, char *cmndline_val) {
 	strcat(full,": ");
 	strcat(full,cmndline_val);
 	GResourceAddResourceString(full,program_name);
+	free(full);
     }
 }
 
@@ -760,6 +782,61 @@ static void ensureDotFontForgeIsSetup() {
     ffensuredir( basedir, "python", S_IRWXU );
 }
 
+static void DoAutoRecoveryPostRecover_PromptUserGraphically(SplineFont *sf)
+{
+    /* Ask user to save-as file */
+    char *buts[4];
+    buts[0] = _("_OK");
+    buts[1] = 0;
+    gwwv_ask( _("Recovery Complete"),(const char **) buts,0,1,_("Your file %s has been recovered.\nYou must now Save your file to continue working on it."), sf->filename );
+    _FVMenuSaveAs( (FontView*)sf->fv );
+}
+
+#if defined(__MINGW32__) && !defined(_NO_LIBCAIRO)
+/**
+ * \brief Load fonts from the specified folder for the UI to use.
+ * This should only be used if Cairo is used on Windows, which defaults to the
+ * Win32 font backend.
+ * This is an ANSI version, so files which contain characters outside of the
+ * user's locale will fail to be loaded.
+ * \param prefix The folder to read fonts from. Currently the pixmaps folder
+ *               and the folder 'ui-fonts' in the FontForge preferences folder.
+ */
+static void WinLoadUserFonts(const char *prefix) {
+    HANDLE fileHandle;
+    WIN32_FIND_DATA fileData;
+    char path[MAX_PATH], *ext;
+    HRESULT ret;
+    int i;
+
+    if (prefix == NULL) {
+        return;
+    }
+    ret = snprintf(path, MAX_PATH, "%s/*.???", prefix);
+    if (ret <= 0 || ret >= MAX_PATH) {
+        return;
+    }
+
+    fileHandle = FindFirstFileA(path, &fileData);
+    if (fileHandle != INVALID_HANDLE_VALUE) do {
+        ext = strrchr(fileData.cFileName, '.');
+        if (!ext || (strcasecmp(ext, ".ttf") && strcasecmp(ext, ".ttc") &&
+                     strcasecmp(ext,".otf")))
+        {
+            continue;
+        }
+        ret = snprintf(path, MAX_PATH, "%s/%s", prefix, fileData.cFileName);
+        if (ret > 0 && ret < MAX_PATH) {
+            //printf("WIN32-FONT-TEST: %s\n", path);
+            ret = AddFontResourceExA(path, FR_PRIVATE, NULL);
+            //if (ret > 0) {
+            //    printf("\tLOADED FONT OK!\n");
+            //}
+        }
+    } while (FindNextFileA(fileHandle, &fileData) != 0);
+}
+#endif
+
 
 int fontforge_main( int argc, char **argv ) {
     extern const char *source_modtime_str;
@@ -776,8 +853,11 @@ int fontforge_main( int argc, char **argv ) {
     int ds, ld;
     int openflags=0;
     int doopen=0, quit_request=0;
+    bool use_cairo = true;
 
+#if !(GLIB_CHECK_VERSION(2, 35, 0))
     g_type_init();
+#endif
 
     /* Must be done before we cache the current directory */
     /* Change to HOME dir if specified on the commandline */
@@ -800,8 +880,15 @@ int fontforge_main( int argc, char **argv ) {
         fprintf( stderr, " License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n" );
         fprintf( stderr, " with many parts BSD <http://fontforge.org/license.html>. Please read LICENSE.\n" );
         fprintf( stderr, " Based on sources from %s"
+	        "-ML"
 #ifdef FREETYPE_HAS_DEBUGGER
 	        "-TtfDb"
+#endif
+#ifdef _NO_PYTHON
+	        "-NoPython"
+#endif
+#ifdef FONTFORGE_CONFIG_USE_DOUBLE
+	        "-D"
 #endif
 	        ".\n",
 	        FONTFORGE_MODTIME_STR );
@@ -852,21 +939,21 @@ int fontforge_main( int argc, char **argv ) {
     FF_SetFIInterface(&gdraw_fi_interface);
     FF_SetMVInterface(&gdraw_mv_interface);
     FF_SetClipInterface(&gdraw_clip_interface);
+#ifndef _NO_PYTHON
     PythonUI_Init();
+#endif
 
     FindProgDir(argv[0]);
     InitSimpleStuff();
 
 #if defined(__MINGW32__)
     {
-	char  path[MAX_PATH+4];
-	char  *c = path;
-	unsigned int  len = GetModuleFileNameA(NULL, path, MAX_PATH);
-	path[len] = '\0';
-	for(; *c; *c++) /* backslash to slash */
-	    if(*c == '\\')
-		*c = '/';
-	GResourceSetProg(path);
+        char path[MAX_PATH];
+        unsigned int len = GetModuleFileNameA(NULL, path, MAX_PATH);
+        path[len] = '\0';
+        
+        //The '.exe' must be removed as resources presumes it's not there.
+        GResourceSetProg(GFileRemoveExtension(GFileNormalizePath(path)));
     }
 #else
     GResourceSetProg(argv[0]);
@@ -875,11 +962,11 @@ int fontforge_main( int argc, char **argv ) {
 #if defined(__Mac)
     /* The mac seems to default to the "C" locale, LANG and LC_MESSAGES are not*/
     /*  defined. This means that gettext will not bother to look up any message*/
-    /*  files -- even if we have a "C" or "POSIX" entry in the locale directory */
+    /*  files -- even if we have a "C" or "POSIX" entry in the locale diretory */
     /* Now if X11 gives us the command key, I want to force a rebinding to use */
     /*  Cmd rather than Control key -- more mac-like. But I can't do that if   */
     /*  there is no locale. So I force a locale if there is none specified */
-    /* I force the US English locale, because that's what the messages are */
+    /* I force the US English locale, because that's the what the messages are */
     /*  by default so I'm changing as little as I can. I think. */
     /* Now the locale command will treat a LANG which is "" as undefined, but */
     /*  gettext will not. So I don't bother to check for null strings or "C"  */
@@ -934,6 +1021,7 @@ int fontforge_main( int argc, char **argv ) {
 	GResourceAddResourceFile(path, GResourceProgramName,false);
     }
     hotkeysLoad();
+//    loadPrefsFiles();
     Prefs_LoadDefaultPreferences();
 
     if ( load_prefs!=NULL && strcasecmp(load_prefs,"Always")==0 )
@@ -979,9 +1067,10 @@ int fontforge_main( int argc, char **argv ) {
 # endif
 	else if ( strncmp(pt,"-usecairo",strlen("-usecairo"))==0 ) {
 	    if ( strcmp(pt,"-usecairo=no")==0 )
-		GDrawEnableCairo(false);
+	        use_cairo = false;
 	    else
-		GDrawEnableCairo(true);
+	        use_cairo = true;
+	    GDrawEnableCairo(use_cairo);
 	} else if ( strcmp(pt,"-nosplash")==0 )
 	    splash = 0;
 	else if ( strcmp(pt,"-quiet")==0 )
@@ -1033,6 +1122,30 @@ int fontforge_main( int argc, char **argv ) {
     }
 
     ensureDotFontForgeIsSetup();
+#if defined(__MINGW32__) && !defined(_NO_LIBCAIRO)
+    //Load any custom fonts for the user interface
+    if (use_cairo) {
+        char *system_load = getGResourceProgramDir();
+        char *user_load = getFontForgeUserDir(Data);
+        char lbuf[MAX_PATH];
+        int lret;
+
+        if (system_load != NULL) {
+            //Follow the FontConfig APPSHAREFONTDIR location
+            lret = snprintf(lbuf, MAX_PATH, "%s/../share/fonts", system_load);
+            if (lret > 0 && lret < MAX_PATH) {
+                WinLoadUserFonts(lbuf);
+            }
+        }
+        if (user_load != NULL) {
+            lret = snprintf(lbuf, MAX_PATH, "%s/%s", user_load, "ui-fonts");
+            if (lret > 0 && lret < MAX_PATH) {
+                WinLoadUserFonts(lbuf);
+            }
+            free(user_load);
+        }
+    }
+#endif
     GDrawCreateDisplays(display,argv[0]);
     default_background = GDrawGetDefaultBackground(screen_display);
     InitToolIconClut(default_background);
@@ -1052,8 +1165,10 @@ int fontforge_main( int argc, char **argv ) {
 	}
     }
     
+#ifndef _NO_PYTHON
     if( ProcessPythonInitFiles )
 	PyFF_ProcessInitFiles();
+#endif
 
     /* the splash screen used not to have a title bar (wam_nodecor) */
     /*  but I found I needed to know how much the window manager moved */
@@ -1173,15 +1288,18 @@ exit( 0 );
 		strcpy(fname,buffer); strcat(fname,"/glyphs/contents.plist");
 		if ( GFileExists(fname)) {
 		    /* It's probably a Unified Font Object directory */
+		    free(fname);
 		    if ( ViewPostScriptFont(buffer,openflags) )
 			any = 1;
 		} else {
 		    strcpy(fname,buffer); strcat(fname,"/font.props");
 		    if ( GFileExists(fname)) {
 			/* It's probably a sf dir collection */
+			free(fname);
 			if ( ViewPostScriptFont(buffer,openflags) )
 			    any = 1;
 		    } else {
+			free(fname);
 			if ( buffer[strlen(buffer)-1]!='/' ) {
 			    /* If dirname doesn't end in "/" we'll be looking in parent dir */
 			    buffer[strlen(buffer)+1]='\0';
@@ -1191,6 +1309,7 @@ exit( 0 );
 			if ( fname!=NULL )
 			    ViewPostScriptFont(fname,openflags);
 			any = 1;	/* Even if we didn't get a font, don't bring up dlg again */
+			free(fname);
 		    }
 		}
 	    } else if ( ViewPostScriptFont(buffer,openflags)!=0 )

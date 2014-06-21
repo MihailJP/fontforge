@@ -28,10 +28,20 @@
 
 #include <fontforge-config.h>
 
+#ifdef _NO_LIBUNGIF
+
+static int a_file_must_define_something=0;	/* ANSI says so */
+
+#else /* We can build with gif_lib - therefore import gif files */
+
 #include <basics.h>
 #include <string.h>
 #include "gimage.h"
 #include <gif_lib.h>
+
+#if defined(GIFLIB_MAJOR) && defined(GIFLIB_MINOR) && ((GIFLIB_MAJOR == 5 && GIFLIB_MINOR >= 1) || GIFLIB_MAJOR > 5)
+#define _GIFLIB_51PLUS
+#endif
 
 static GImage *ProcessSavedImage(GifFileType *gif,struct SavedImage *si,int il) {
 /* Process each gif image into an internal FF format. Return NULL if error */
@@ -55,6 +65,7 @@ static GImage *ProcessSavedImage(GifFileType *gif,struct SavedImage *si,int il) 
 	    /* Don't need a clut */;
 	else
 	    if ( (ret->u.image->clut = (GClut *) calloc(1,sizeof(GClut)))==NULL ) {
+		free(ret);
 		NoMoreMemMessage();
 		return( NULL );
 	    }
@@ -63,6 +74,10 @@ static GImage *ProcessSavedImage(GifFileType *gif,struct SavedImage *si,int il) 
 	    return( NULL );
     if ( il && ((id=(int *) malloc(si->ImageDesc.Height*sizeof(int)))==NULL || \
 		(iv=(uint8 *) malloc(si->ImageDesc.Height*sizeof(uint8)))==NULL) ) {
+	free(ret->u.image->clut);
+	free(ret);
+	free(id);
+	free(iv);
 	NoMoreMemMessage();
 	return( NULL );
     }
@@ -117,6 +132,8 @@ static GImage *ProcessSavedImage(GifFileType *gif,struct SavedImage *si,int il) 
 	    for ( i=1; i<base->height; ++i )
 		base->data[i*base->bytes_per_line+j]=iv[i];
 	}
+	free(id);
+	free(iv);
     }
     for ( i=0; i<si->ExtensionBlockCount; ++i ) {
 	if ( si->ExtensionBlocks[i].Function==0xf9 &&
@@ -157,20 +174,34 @@ GImage *GImageReadGif(char *filename) {
 
     if ( DGifSlurp(gif)!=GIF_OK ) {
 	fprintf(stderr,"Bad input file \"%s\"\n",filename );
+#ifdef _GIFLIB_51PLUS
+	DGifCloseFile(gif, NULL);
+#else
 	DGifCloseFile(gif);
+#endif
 	return( NULL );
     }
 
     /* Process each image so that it/they can be imported into FF. */
     if ( (images=(GImage **) malloc(gif->ImageCount*sizeof(GImage *)))==NULL ) {
-	DGifCloseFile(gif);
-	NoMoreMemMessage();
-	return( NULL );
+#ifdef  _GIFLIB_51PLUS
+        DGifCloseFile(gif, NULL);
+#else
+        DGifCloseFile(gif);
+#endif
+        NoMoreMemMessage();
+        return( NULL );
     }
     il=gif->SavedImages[0].ImageDesc.Interlace;
     for ( i=0; i<gif->ImageCount; ++i ) {
 	if ( (images[i]=ProcessSavedImage(gif,&gif->SavedImages[i],il))==NULL ) {
+	    while ( --i>=0 ) free(images[i]);
+	    free(images);
+#ifdef  _GIFLIB_51PLUS
+	    DGifCloseFile(gif, NULL);
+#else
 	    DGifCloseFile(gif);
+#endif
 	    return( NULL );
 	}
     }
@@ -180,6 +211,13 @@ GImage *GImageReadGif(char *filename) {
 	ret = images[0];
     else
 	ret = GImageCreateAnimation(images,gif->ImageCount);
+#ifdef  _GIFLIB_51PLUS
+    DGifCloseFile(gif, NULL);
+#else
     DGifCloseFile(gif);
+#endif
+    free(images);
     return( ret );
 }
+
+#endif /* ! _NO_LIBUNGIF */

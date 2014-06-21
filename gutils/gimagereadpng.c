@@ -27,17 +27,24 @@
 
 #include <fontforge-config.h>
 
-#include <png.h>
+#ifdef _NO_LIBPNG
 
-#define int32 _int32
-#define uint32 _uint32
-#define int16 _int16
-#define uint16 _uint16
-#define int8 _int8
-#define uint8 _uint8
+static void *a_file_must_define_something=(void *) &a_file_must_define_something;
+		/* ANSI says so */
+
+#else
+
+# include <png.h>
+
+# define int32 _int32
+# define uint32 _uint32
+# define int16 _int16
+# define uint16 _uint16
+# define int8 _int8
+# define uint8 _uint8
 
 #include "inc/basics.h"
-#include "gimage.h"
+# include "gimage.h"
 
 static void *libpng=(void *) 1;
 
@@ -91,6 +98,10 @@ return( NULL );
     {
       /* Free all of the memory associated with the png_ptr and info_ptr */
       png_destroy_read_struct(&png_ptr, &info_ptr, (png_infopp)NULL);
+      if ( ret!=NULL ) {
+	  GImageDestroy(ret);
+	  free(row_pointers);
+      }
       /* If we get here, we had a problem reading the file */
 return( NULL );
     }
@@ -176,6 +187,7 @@ return( NULL );
     }
 
     png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+    free(row_pointers);
     /* Note png b&w images come out as indexed */
 return( ret );
 }
@@ -192,3 +204,4 @@ return( NULL );
     fclose(fp);
 return( ret );
 }
+#endif

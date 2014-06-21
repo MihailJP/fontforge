@@ -24,11 +24,15 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
 #include <fontforge-config.h>
 
-#include "Python.h"
-#include "structmember.h"
+#ifndef _NO_PYTHON
+# include "Python.h"
+# include "structmember.h"
+#else
+# include <utype.h>
+#endif
+
 #include "fontforgevw.h"
 #include <unistd.h>
 #include <math.h>
@@ -41,10 +45,17 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <time.h>
-#include "ffpython.h"
+#ifndef _NO_PYTHON
+# include "ffpython.h"
+#endif
 
-/* The UFO (Unified Font Object) format, http://unifiedfontobject.org/ */
-/* Obsolete: http://just.letterror.com/ltrwiki/UnifiedFontObject */
+#include <stdarg.h>
+#include <string.h>
+
+#undef extended			/* used in xlink.h */
+#include <libxml/tree.h>
+
+/* The UFO (Unified Font Object) format ( http://unifiedfontobject.org/ ) */
 /* is a directory containing a bunch of (mac style) property lists and another*/
 /* directory containing glif files (and contents.plist). */
 
@@ -55,7 +66,7 @@
 /* UFO format 2.0 includes an adobe feature file "features.fea" and slightly */
 /*  different/more tags in fontinfo.plist */
 
-static char *buildname(char *basedir,char *sub) {
+static char *buildname(const char *basedir, const char *sub) {
     char *fname = malloc(strlen(basedir)+strlen(sub)+2);
 
     strcpy(fname, basedir);
@@ -65,60 +76,176 @@ static char *buildname(char *basedir,char *sub) {
 return( fname );
 }
 
+static xmlNodePtr xmlNewChildInteger(xmlNodePtr parent, xmlNsPtr ns, const xmlChar * name, long int value) {
+  char * valtmp = NULL;
+  asprintf(&valtmp, "%ld", value); // Textify the value to be enclosed.
+  xmlNodePtr childtmp = xmlNewChild(parent, NULL, BAD_CAST name, BAD_CAST valtmp); // Make a text node for the value.
+  free(valtmp); valtmp = NULL; // Free the temporary text store.
+  return childtmp;
+}
+static xmlNodePtr xmlNewNodeInteger(xmlNsPtr ns, const xmlChar * name, long int value) {
+  char * valtmp = NULL;
+  xmlNodePtr childtmp = xmlNewNode(NULL, BAD_CAST name); // Create a named node.
+  asprintf(&valtmp, "%ld", value); // Textify the value to be enclosed.
+  xmlNodePtr valtmpxml = xmlNewText(BAD_CAST valtmp); // Make a text node for the value.
+  xmlAddChild(childtmp, valtmpxml); // Attach the text node as content of the named node.
+  free(valtmp); valtmp = NULL; // Free the temporary text store.
+  return childtmp;
+}
+static xmlNodePtr xmlNewChildFloat(xmlNodePtr parent, xmlNsPtr ns, const xmlChar * name, double value) {
+  char * valtmp = NULL;
+  asprintf(&valtmp, "%g", value); // Textify the value to be enclosed.
+  xmlNodePtr childtmp = xmlNewChild(parent, NULL, BAD_CAST name, BAD_CAST valtmp); // Make a text node for the value.
+  free(valtmp); valtmp = NULL; // Free the temporary text store.
+  return childtmp;
+}
+static xmlNodePtr xmlNewNodeFloat(xmlNsPtr ns, const xmlChar * name, double value) {
+  char * valtmp = NULL;
+  xmlNodePtr childtmp = xmlNewNode(NULL, BAD_CAST name); // Create a named node.
+  asprintf(&valtmp, "%g", value); // Textify the value to be enclosed.
+  xmlNodePtr valtmpxml = xmlNewText(BAD_CAST valtmp); // Make a text node for the value.
+  xmlAddChild(childtmp, valtmpxml); // Attach the text node as content of the named node.
+  free(valtmp); valtmp = NULL; // Free the temporary text store.
+  return childtmp;
+}
+static xmlNodePtr xmlNewChildString(xmlNodePtr parent, xmlNsPtr ns, const xmlChar * name, char * value) {
+  xmlNodePtr childtmp = xmlNewChild(parent, NULL, BAD_CAST name, BAD_CAST value); // Make a text node for the value.
+  return childtmp;
+}
+static xmlNodePtr xmlNewNodeString(xmlNsPtr ns, const xmlChar * name, char * value) {
+  xmlNodePtr childtmp = xmlNewNode(NULL, BAD_CAST name); // Create a named node.
+  xmlNodePtr valtmpxml = xmlNewText(BAD_CAST value); // Make a text node for the value.
+  xmlAddChild(childtmp, valtmpxml); // Attach the text node as content of the named node.
+  return childtmp;
+}
+static xmlNodePtr xmlNewNodeVPrintf(xmlNsPtr ns, const xmlChar * name, char * format, va_list arguments) {
+  char * valtmp = NULL;
+  if (vasprintf(&valtmp, format, arguments) < 0) {
+    return NULL;
+  }
+  xmlNodePtr childtmp = xmlNewNode(NULL, BAD_CAST name); // Create a named node.
+  xmlNodePtr valtmpxml = xmlNewText(BAD_CAST valtmp); // Make a text node for the value.
+  xmlAddChild(childtmp, valtmpxml); // Attach the text node as content of the named node.
+  free(valtmp); valtmp = NULL; // Free the temporary text store.
+  return childtmp;
+}
+static xmlNodePtr xmlNewNodePrintf(xmlNsPtr ns, const xmlChar * name, char * format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+  xmlNodePtr output = xmlNewNodeVPrintf(ns, name, format, arguments);
+  va_end(arguments);
+  return output;
+}
+static xmlNodePtr xmlNewChildVPrintf(xmlNodePtr parent, xmlNsPtr ns, const xmlChar * name, char * format, va_list arguments) {
+  xmlNodePtr output = xmlNewNodeVPrintf(ns, name, format, arguments);
+  xmlAddChild(parent, output);
+  return output;
+}
+static xmlNodePtr xmlNewChildPrintf(xmlNodePtr parent, xmlNsPtr ns, const xmlChar * name, char * format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+  xmlNodePtr output = xmlNewChildVPrintf(parent, ns, name, format, arguments);
+  va_end(arguments);
+  return output;
+}
+static void xmlSetPropVPrintf(xmlNodePtr target, const xmlChar * name, char * format, va_list arguments) {
+  char * valtmp = NULL;
+  // Generate the value.
+  if (vasprintf(&valtmp, format, arguments) < 0) {
+    return;
+  }
+  xmlSetProp(target, name, valtmp); // Set the property.
+  free(valtmp); valtmp = NULL; // Free the temporary text store.
+  return;
+}
+static void xmlSetPropPrintf(xmlNodePtr target, const xmlChar * name, char * format, ...) {
+  va_list arguments;
+  va_start(arguments, format);
+  xmlSetPropVPrintf(target, name, format, arguments);
+  va_end(arguments);
+  return;
+}
+
 /* ************************************************************************** */
 /* *************************   Python lib Output    ************************* */
 /* ************************************************************************** */
+#ifndef _NO_PYTHON
 static int PyObjDumpable(PyObject *value);
-static void DumpPyObject( FILE *file, PyObject *value );
+xmlNodePtr PyObjectToXML( PyObject *value );
+#endif
 
-static void DumpPythonLib(FILE *file,void *python_persistent,SplineChar *sc) {
-    StemInfo *h;
+xmlNodePtr PythonLibToXML(void *python_persistent,SplineChar *sc) {
     int has_hints = (sc!=NULL && (sc->hstem!=NULL || sc->vstem!=NULL ));
-
+    xmlNodePtr retval = NULL, dictnode = NULL, keynode = NULL, valnode = NULL;
     PyObject *dict = python_persistent, *items, *key, *value;
-    int i, len;
-    char *str;
-
-    if ( has_hints || (dict!=NULL && PyMapping_Check(dict)) ) {
-	if ( sc!=NULL ) {
-	    fprintf( file, "  <lib>\n" );
-	    fprintf( file, "    <dict>\n" );
-	}
+    if ( has_hints 
+#ifndef _NO_PYTHON
+         || (dict!=NULL && PyMapping_Check(dict) && sc!=NULL)
+#endif
+       ) {
+        // retval = xmlNewNode(NULL, BAD_CAST "lib");    // "<lib>"
+        dictnode = xmlNewNode(NULL, BAD_CAST "dict"); // "  <dict>"
+        xmlAddChild(retval, dictnode);
+        /* Not officially part of the UFO/glif spec, but used by robofab */
 	if ( has_hints ) {
-	    fprintf( file, "      <key>com.fontlab.hintData</key>\n" );
-	    fprintf( file, "      <dict>\n" );
+            // Remember that the value of the plist key is in the node that follows it in the dict (not an x.m.l. child).
+            xmlNewChild(dictnode, NULL, BAD_CAST "key", BAD_CAST "com.fontlab.hintData"); // Label the hint data block.
+	    //                                           "    <key>com.fontlab.hintData</key>\n"
+	    //                                           "    <dict>"
+            xmlNodePtr hintdict = xmlNewChild(dictnode, NULL, BAD_CAST "dict", NULL);
 	    if ( sc->hstem!=NULL ) {
-		fprintf( file, "\t<key>hhints</key>\n" );
-		fprintf( file, "\t<array>\n" );
+                StemInfo *h;
+                xmlNewChild(hintdict, NULL, BAD_CAST "key", BAD_CAST "hhints");
+		//                                       "      <key>hhints</key>"
+		//                                       "      <array>"
+                xmlNodePtr hintarray = xmlNewChild(hintdict, NULL, BAD_CAST "array", NULL);
 		for ( h = sc->hstem; h!=NULL; h=h->next ) {
-		    fprintf( file, "\t  <dict>\n" );
-		    fprintf( file, "\t    <key>position</key>" );
-		    fprintf( file, "\t    <integer>%d</integer>\n", (int) rint(h->start));
-		    fprintf( file, "\t    <key>width</key>" );
-		    fprintf( file, "\t    <integer>%d</integer>\n", (int) rint(h->width));
-		    fprintf( file, "\t  </dict>\n" );
+                    char * valtmp = NULL;
+                    xmlNodePtr stemdict = xmlNewChild(hintarray, NULL, BAD_CAST "dict", NULL);
+		    //                                   "        <dict>"
+                    xmlNewChild(stemdict, NULL, BAD_CAST "key", "position");
+		    //                                   "          <key>position</key>"
+                    xmlNewChildInteger(stemdict, NULL, BAD_CAST "integer", (int) rint(h->start));
+		    //                                   "          <integer>%d</integer>\n" ((int) rint(h->start))
+                    xmlNewChild(stemdict, NULL, BAD_CAST "key", "width");
+		    //                                   "          <key>width</key>"
+                    xmlNewChildInteger(stemdict, NULL, BAD_CAST "integer", (int) rint(h->width));
+		    //                                   "          <integer>%d</integer>\n" ((int) rint(h->width))
+		    //                                   "        </dict>\n"
 		}
-		fprintf( file, "\t</array>\n" );
+		//                                       "      </array>\n"
 	    }
 	    if ( sc->vstem!=NULL ) {
-		fprintf( file, "\t<key>vhints</key>\n" );
-		fprintf( file, "\t<array>\n" );
+                StemInfo *h;
+                xmlNewChild(hintdict, NULL, BAD_CAST "key", BAD_CAST "vhints");
+		//                                       "      <key>vhints</key>"
+		//                                       "      <array>"
+                xmlNodePtr hintarray = xmlNewChild(hintdict, NULL, BAD_CAST "array", NULL);
 		for ( h = sc->vstem; h!=NULL; h=h->next ) {
-		    fprintf( file, "\t  <dict>\n" );
-		    fprintf( file, "\t    <key>position</key>\n" );
-		    fprintf( file, "\t    <integer>%d</integer>\n", (int) rint(h->start));
-		    fprintf( file, "\t    <key>width</key>\n" );
-		    fprintf( file, "\t    <integer>%d</integer>\n", (int) rint(h->width));
-		    fprintf( file, "\t  </dict>\n" );
+                    char * valtmp = NULL;
+                    xmlNodePtr stemdict = xmlNewChild(hintarray, NULL, BAD_CAST "dict", NULL);
+		    //                                   "        <dict>"
+                    xmlNewChild(stemdict, NULL, BAD_CAST "key", "position");
+		    //                                   "          <key>position</key>"
+                    xmlNewChildInteger(stemdict, NULL, BAD_CAST "integer", (int) rint(h->start));
+		    //                                   "          <integer>%d</integer>\n" ((int) rint(h->start))
+                    xmlNewChild(stemdict, NULL, BAD_CAST "key", "width");
+		    //                                   "          <key>width</key>"
+                    xmlNewChildInteger(stemdict, NULL, BAD_CAST "integer", (int) rint(h->width));
+		    //                                   "          <integer>%d</integer>\n" ((int) rint(h->width))
+		    //                                   "        </dict>\n"
 		}
-		fprintf( file, "\t</array>\n" );
+		//                                       "      </array>\n"
 	    }
-	    fprintf( file, "      </dict>\n" );
+	    //                                           "    </dict>"
 	}
+#ifndef _NO_PYTHON
 	/* Ok, look at the persistent data and output it (all except for a */
 	/*  hint entry -- we've already handled that with the real hints, */
 	/*  no point in retaining out of date hints too */
 	if ( dict != NULL ) {
+            int i, len;
+            char *str;
 	    items = PyMapping_Items(dict);
 	    len = PySequence_Size(items);
 	    for ( i=0; i<len; ++i ) {
@@ -132,17 +259,21 @@ static void DumpPythonLib(FILE *file,void *python_persistent,SplineChar *sc) {
 			value = PyTuple_GetItem(item,1);
 			if ( !value || !PyObjDumpable(value))
 			continue;
-			fprintf( file, "    <key>%s</key>\n", str );
-			DumpPyObject( file, value );
+			// "<key>%s</key>" str
+      xmlNewChild(dictnode, NULL, BAD_CAST "key", str);
+      xmlNodePtr tmpNode = PyObjectToXML(value);
+      xmlAddChild(dictnode, tmpNode);
+			// "<...>...</...>"
 	    }
 	}
-	if ( sc!=NULL ) {
-	    fprintf( file, "    </dict>\n" );
-	    fprintf( file, "  </lib>\n" );
-	}
+#endif
+      //                                                 "  </dict>"
+      // //                                                 "</lib>"
     }
+    return dictnode;
 }
 
+#ifndef _NO_PYTHON
 static int PyObjDumpable(PyObject *value) {
     if ( PyInt_Check(value))
 return( true );
@@ -162,55 +293,65 @@ return( true );
 return( false );
 }
 
-static void DumpPyObject( FILE *file, PyObject *value ) {
+xmlNodePtr PyObjectToXML( PyObject *value ) {
+    xmlNodePtr childtmp = NULL;
+    xmlNodePtr valtmpxml = NULL;
+    char * valtmp = NULL;
     if (PyDict_Check(value)) {
-		fprintf( file, "      <dict>\n" );
-		DumpPythonLib(file,value,NULL);
-		fprintf( file, "      </dict>\n" );
-	} else if ( PyMapping_Check(value)) {
-		fprintf( file, "      <dict>\n" );
-		DumpPythonLib(file,value,NULL);
-		fprintf( file, "      </dict>\n" );
-	} else if ( PyBytes_Check(value)) {		/* Must precede the sequence check */
-		char *str = PyBytes_AsString(value);
-		if (str != NULL) {
-			fprintf( file, "      <string>%s</string>\n", str );
-		}
+      childtmp = PythonLibToXML(value,NULL);
+    } else if ( PyMapping_Check(value)) {
+      childtmp = PythonLibToXML(value,NULL);
+    } else if ( PyBytes_Check(value)) {		/* Must precede the sequence check */
+      char *str = PyBytes_AsString(value);
+      if (str != NULL) {
+        childtmp = xmlNewNode(NULL, BAD_CAST "integer"); // Create a string node.
+          // "<string>%s</string>" str
+      }
     } else if ( value==Py_True )
-	fprintf( file, "      <true/>\n" );
+	childtmp = xmlNewNode(NULL, BAD_CAST "true"); // "<true/>"
     else if ( value==Py_False )
-	fprintf( file, "      <false/>\n" );
+        childtmp = xmlNewNode(NULL, BAD_CAST "false"); // "<false/>"
     else if ( value==Py_None )
-	fprintf( file, "      <none/>\n" );
-    else if (PyInt_Check(value))
-	fprintf( file, "      <integer>%ld</integer>\n", PyInt_AsLong(value) );
-    else if (PyFloat_Check(value))
-	fprintf( file, "      <real>%g</real>\n", PyFloat_AsDouble(value) );
-    else if (PySequence_Check(value)) {
+        childtmp = xmlNewNode(NULL, BAD_CAST "none");  // "<none/>"
+    else if (PyInt_Check(value)) {
+        childtmp = xmlNewNodeInteger(NULL, BAD_CAST "integer", PyInt_AsLong(value)); // Create an integer node.
+        // "<integer>%ld</integer>"
+    } else if (PyFloat_Check(value)) {
+        childtmp = xmlNewNode(NULL, BAD_CAST "real");
+        asprintf(&valtmp, "%g", PyFloat_AsDouble(value));
+        valtmpxml = xmlNewText(BAD_CAST valtmp);
+        xmlAddChild(childtmp, valtmpxml);
+        free(valtmp); valtmp = NULL;
+        // "<real>%g</real>"
+    } else if (PySequence_Check(value)) {
 	int i, len = PySequence_Size(value);
-
-	fprintf( file, "      <array>\n" );
+        xmlNodePtr itemtmp = NULL;
+        childtmp = xmlNewNode(NULL, BAD_CAST "array");
+        // "<array>"
 	for ( i=0; i<len; ++i ) {
 	    PyObject *obj = PySequence_GetItem(value,i);
 	    if ( PyObjDumpable(obj)) {
-		fprintf( file, "  ");
-		DumpPyObject(file,obj);
+		itemtmp = PyObjectToXML(obj);
+                xmlAddChild(childtmp, itemtmp);
 	    }
 	}
-	fprintf( file, "      </array>\n" );
+        // "</array>"
     }
+    return childtmp;
 }
+#endif
 
 /* ************************************************************************** */
 /* ****************************   GLIF Output    **************************** */
 /* ************************************************************************** */
+
 static int refcomp(const void *_r1, const void *_r2) {
     const RefChar *ref1 = *(RefChar * const *)_r1;
     const RefChar *ref2 = *(RefChar * const *)_r2;
 return( strcmp( ref1->sc->name, ref2->sc->name) );
 }
 
-static int _GlifDump(FILE *glif,SplineChar *sc,int layer) {
+xmlNodePtr _GlifToXML(SplineChar *sc,int layer) {
     struct altuni *altuni;
     int isquad = sc->layers[layer].order2;
     SplineSet *spl;
@@ -218,25 +359,45 @@ static int _GlifDump(FILE *glif,SplineChar *sc,int layer) {
     AnchorPoint *ap;
     RefChar *ref;
     int err;
+    char * stringtmp = NULL;
+    char numstring[32];
+    memset(numstring, 0, sizeof(numstring));
 
-    if ( glif==NULL )
-return( false );
-
-    fprintf( glif, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" );
+    // "<?xml version=\"1.0\" encoding=\"UTF-8\""
     /* No DTD for these guys??? */
-    fprintf( glif, "<glyph name=\"%s\" format=\"1\">\n", sc->name );
-    if ( sc->parent->hasvmetrics )
-	fprintf( glif, "  <advance width=\"%d\" height=\"%d\"/>\n", sc->width, sc->vwidth );
-    else
-	fprintf( glif, "  <advance width=\"%d\"/>\n", sc->width );
-    if ( sc->unicodeenc!=-1 )
-	fprintf( glif, "  <unicode hex=\"%04X\"/>\n", sc->unicodeenc );
+    // Is there a DTD for glif data? (asks Frank)
+    // Perhaps we need to make one.
+
+    xmlNodePtr topglyphxml = xmlNewNode(NULL, BAD_CAST "glyph"); // Create the glyph node.
+    xmlSetProp(topglyphxml, "name", sc->name); // Set the name for the glyph.
+    xmlSetProp(topglyphxml, "format", "1"); // Set the format of the glyph.
+    // "<glyph name=\"%s\" format=\"1\">" sc->name
+
+    xmlNodePtr tmpxml2 = xmlNewChild(topglyphxml, NULL, BAD_CAST "advance", NULL); // Create the advance node.
+    xmlSetPropPrintf(tmpxml2, BAD_CAST "width", "%d", sc->width);
+    if ( sc->parent->hasvmetrics ) {
+      asprintf(&stringtmp, "%d", sc->width);
+      xmlSetProp(tmpxml2, BAD_CAST "height", stringtmp);
+      free(stringtmp); stringtmp = NULL;
+    }
+    // "<advance width=\"%d\" height=\"%d\"/>" sc->width sc->vwidth
+
+    if ( sc->unicodeenc!=-1 ) {
+      xmlNodePtr unicodexml = xmlNewChild(topglyphxml, NULL, BAD_CAST "unicode", NULL);
+      xmlSetPropPrintf(unicodexml, BAD_CAST "hex", "%04X", sc->unicodeenc);
+    }
+    // "<unicode hex=\"%04X\"/>\n" sc->unicodeenc
+
     for ( altuni = sc->altuni; altuni!=NULL; altuni = altuni->next )
-	if ( altuni->vs==-1 && altuni->fid==0 )
-	    fprintf( glif, "  <unicode hex=\"%04x\"/>\n", altuni->unienc );
+	if ( altuni->vs==-1 && altuni->fid==0 ) {
+          xmlNodePtr unicodexml = xmlNewChild(topglyphxml, NULL, BAD_CAST "unicode", NULL);
+          xmlSetPropPrintf(unicodexml, BAD_CAST "hex", "%04X", altuni->unienc);
+        }
+        // "<unicode hex=\"%04X\"/>" altuni->unienc
 
     if ( sc->layers[layer].refs!=NULL || sc->layers[layer].splines!=NULL ) {
-	fprintf( glif, "  <outline>\n" );
+      xmlNodePtr outlinexml = xmlNewChild(topglyphxml, NULL, BAD_CAST "outline", NULL);
+	// fprintf( glif, "  <outline>\n" );
 	/* RoboFab outputs components in alphabetic (case sensitive) order */
 	/*  I've been asked to do that too */
 	if ( sc->layers[layer].refs!=NULL ) {
@@ -251,159 +412,212 @@ return( false );
 		qsort(refs,cnt,sizeof(RefChar *),refcomp);
 	    for ( i=0; i<cnt; ++i ) {
 		ref = refs[i];
-		fprintf( glif, "    <component base=\"%s\"", ref->sc->name );
-		if ( ref->transform[0]!=1 )
-		    fprintf( glif, " xScale=\"%g\"", (double) ref->transform[0] );
-		if ( ref->transform[3]!=1 )
-		    fprintf( glif, " yScale=\"%g\"", (double) ref->transform[3] );
-		if ( ref->transform[1]!=0 )
-		    fprintf( glif, " xyScale=\"%g\"", (double) ref->transform[1] );
-		if ( ref->transform[2]!=0 )
-		    fprintf( glif, " yxScale=\"%g\"", (double) ref->transform[2] );
-		if ( ref->transform[4]!=0 )
-		    fprintf( glif, " xOffset=\"%g\"", (double) ref->transform[4] );
-		if ( ref->transform[5]!=0 )
-		    fprintf( glif, " yOffset=\"%g\"", (double) ref->transform[5] );
-		fprintf( glif, "/>\n" );
+    xmlNodePtr componentxml = xmlNewChild(outlinexml, NULL, BAD_CAST "component", NULL);
+		// "<component base=\"%s\"" ref->sc->name
+    char *floattmp = NULL;
+		if ( ref->transform[0]!=1 ) {
+                  xmlSetPropPrintf(componentxml, BAD_CAST "xScale", "%g", (double) ref->transform[0]);
+		    // "xScale=\"%g\"" (double)ref->transform[0]
+                }
+		if ( ref->transform[3]!=1 ) {
+                  xmlSetPropPrintf(componentxml, BAD_CAST "yScale", "%g", (double) ref->transform[3]);
+		    // "yScale=\"%g\"" (double)ref->transform[3]
+                }
+		if ( ref->transform[1]!=0 ) {
+                  xmlSetPropPrintf(componentxml, BAD_CAST "xyScale", "%g", (double) ref->transform[1]);
+		    // "xyScale=\"%g\"" (double)ref->transform[1]
+                }
+		if ( ref->transform[2]!=0 ) {
+                  xmlSetPropPrintf(componentxml, BAD_CAST "yxScale", "%g", (double) ref->transform[2]);
+		    // "yxScale=\"%g\"" (double)ref->transform[2]
+                }
+		if ( ref->transform[4]!=0 ) {
+                  xmlSetPropPrintf(componentxml, BAD_CAST "xOffset", "%g", (double) ref->transform[4]);
+		    // "xOffset=\"%g\"" (double)ref->transform[4]
+                }
+		if ( ref->transform[5]!=0 ) {
+                  xmlSetPropPrintf(componentxml, BAD_CAST "yOffset", "%g", (double) ref->transform[5]);
+		    // "yOffset=\"%g\"" (double)ref->transform[5]
+                }
+		// "/>"
 	    }
+	    free(refs);
 	}
         for ( ap=sc->anchor; ap!=NULL; ap=ap->next ) {
             int ismark = (ap->type==at_mark || ap->type==at_centry);
-            fprintf( glif, "    <contour>\n" );
-            fprintf( glif, "      <point x=\"%g\" y=\"%g\" type=\"move\" name=\"%s%s\"/>\n", ap->me.x, ap->me.y,
-                            ismark ? "_" : "", ap->anchor->name );
-            fprintf( glif, "    </contour>\n" );
+            xmlNodePtr contourxml = xmlNewChild(outlinexml, NULL, BAD_CAST "contour", NULL);
+            // "<contour>"
+            xmlNodePtr pointxml = xmlNewChild(contourxml, NULL, BAD_CAST "point", NULL);
+            xmlSetPropPrintf(pointxml, BAD_CAST "x", "%g", ap->me.x);
+            xmlSetPropPrintf(pointxml, BAD_CAST "y", "%g", ap->me.y);
+            xmlSetPropPrintf(pointxml, BAD_CAST "type", BAD_CAST "move");
+            xmlSetPropPrintf(pointxml, BAD_CAST "name", "%s%s", ismark ? "_" : "", ap->anchor->name);
+            // "<point x=\"%g\" y=\"%g\" type=\"move\" name=\"%s%s\"/>" ap->me.x ap->me.y (ismark ? "_" : "") ap->anchor->name
+            // "</contour>"
         }
 	for ( spl=sc->layers[layer].splines; spl!=NULL; spl=spl->next ) {
-	    fprintf( glif, "    <contour>\n" );
+            xmlNodePtr contourxml = xmlNewChild(outlinexml, NULL, BAD_CAST "contour", NULL);
+	    // "<contour>\n"
 	    for ( sp=spl->first; sp!=NULL; ) {
-			/* Undocumented fact: If a contour contains a series of off-curve points with no on-curve then treat as quadratic even if no qcurve */
-			// We write the next on-curve point.
-			if (!isquad || sp->ttfindex != 0xffff || !SPInterpolate(sp) || sp->pointtype!=pt_curve || sp->name != NULL)
-				fprintf( glif, "      <point x=\"%g\" y=\"%g\" type=\"%s\"%s%s%s%s/>\n",
-					(double) sp->me.x, (double) sp->me.y,
-					sp->prev==NULL        ? "move"   :
+		/* Undocumented fact: If a contour contains a series of off-curve points with no on-curve then treat as quadratic even if no qcurve */
+		// We write the next on-curve point.
+		if (!isquad || sp->ttfindex != 0xffff || !SPInterpolate(sp) || sp->pointtype!=pt_curve || sp->name != NULL) {
+		  xmlNodePtr pointxml = xmlNewChild(contourxml, NULL, BAD_CAST "point", NULL);
+		  xmlSetPropPrintf(pointxml, BAD_CAST "x", "%g", (double)sp->me.x);
+		  xmlSetPropPrintf(pointxml, BAD_CAST "y", "%g", (double)sp->me.y);
+		  xmlSetPropPrintf(pointxml, BAD_CAST "type", BAD_CAST (
+		  sp->prev==NULL        ? "move"   :
 					sp->prev->knownlinear ? "line"   :
 					isquad 		      ? "qcurve" :
-								"curve",
-					sp->pointtype!=pt_corner?" smooth=\"yes\"":"",
-					sp->name?" name=\"":"",
-					sp->name?sp->name:"",
-					sp->name?"\"":"" );
-			if ( sp->next==NULL )
-	    	break;
-			// We write control points.
-			if ( !sp->next->knownlinear )
-		    	fprintf( glif, "      <point x=\"%g\" y=\"%g\"/>\n",
-				    (double) sp->nextcp.x, (double) sp->nextcp.y );
-			sp = sp->next->to;
-			if ( !isquad && !sp->prev->knownlinear )
-		    	fprintf( glif, "      <point x=\"%g\" y=\"%g\"/>\n",
-				    (double) sp->prevcp.x, (double) sp->prevcp.y );
-			if ( sp==spl->first )
+					"curve"));
+		  if (sp->pointtype != pt_corner) xmlSetProp(pointxml, BAD_CAST "smooth", BAD_CAST "yes");
+		  if (sp->name !=NULL) xmlSetProp(pointxml, BAD_CAST "name", BAD_CAST sp->name);
+                  // "<point x=\"%g\" y=\"%g\" type=\"%s\"%s%s%s%s/>\n" (double)sp->me.x (double)sp->me.y
+		  // (sp->prev==NULL ? "move" : sp->prev->knownlinear ? "line" : isquad ? "qcurve" : "curve")
+		  // (sp->pointtype!=pt_corner?" smooth=\"yes\"":"")
+		  // (sp->name?" name=\"":"") (sp->name?sp->name:"") (sp->name?"\"":"")
+		}
+		if ( sp->next==NULL )
+	    	  break;
+		// We write control points.
+		if ( !sp->next->knownlinear ) {
+                          xmlNodePtr pointxml = xmlNewChild(contourxml, NULL, BAD_CAST "point", NULL);
+                          xmlSetPropPrintf(pointxml, BAD_CAST "x", "%g", (double)sp->nextcp.x);
+                          xmlSetPropPrintf(pointxml, BAD_CAST "y", "%g", (double)sp->nextcp.y);
+		    	  // "<point x=\"%g\" y=\"%g\"/>\n" (double)sp->nextcp.x (double)sp->nextcp.y
+		}
+		sp = sp->next->to;
+		if ( !isquad && !sp->prev->knownlinear ) {
+                          xmlNodePtr pointxml = xmlNewChild(contourxml, NULL, BAD_CAST "point", NULL);
+                          xmlSetPropPrintf(pointxml, BAD_CAST "x", "%g", (double)sp->prevcp.x);
+                          xmlSetPropPrintf(pointxml, BAD_CAST "y", "%g", (double)sp->prevcp.y);
+                          // "<point x=\"%g\" y=\"%g\"/>\n" (double)sp->prevcp.x (double)sp->prevcp.y
+		}
+		if ( sp==spl->first )
 	    		break;
 	    }
-	    fprintf( glif, "    </contour>\n" );
+	    // "</contour>"
 	}
-	fprintf( glif, "  </outline>\n" );
+	// "</outline>"
     }
-    DumpPythonLib(glif,sc->python_persistent,sc);
-    fprintf( glif, "</glyph>\n" );
-    err = ferror(glif);
-    if ( fclose(glif))
-	err = true;
-return( !err );
+    xmlNodePtr libxml = xmlNewChild(topglyphxml, NULL, BAD_CAST "lib", NULL);
+    xmlNodePtr pythonblob = PythonLibToXML(sc->python_persistent, sc);
+    xmlAddChild(libxml, pythonblob);
+    return topglyphxml;
 }
 
 static int GlifDump(char *glyphdir,char *gfname,SplineChar *sc,int layer) {
     char *gn = buildname(glyphdir,gfname);
-    FILE *glif = fopen(gn,"w");
-    int ret = _GlifDump(glif,sc,layer);
-return( ret );
+    xmlDocPtr doc = xmlNewDoc(BAD_CAST "1.0");
+    if (doc == NULL) return 0;
+    xmlNodePtr root_node = _GlifToXML(sc, layer);
+    if (root_node == NULL) {xmlFreeDoc(doc); doc = NULL; return 0;}
+    xmlDocSetRootElement(doc, root_node);
+    int ret = (xmlSaveFormatFileEnc(gn, doc, "UTF-8", 1) != -1);
+    xmlFreeDoc(doc); doc = NULL;
+    free(gn);
+    return ret;
 }
 
 int _ExportGlif(FILE *glif,SplineChar *sc,int layer) {
-return( _GlifDump(glif,sc,layer));
+    xmlDocPtr doc = xmlNewDoc(BAD_CAST "1.0");
+    xmlNodePtr root_node = _GlifToXML(sc, layer);
+    xmlDocSetRootElement(doc, root_node);
+    xmlDocFormatDump(glif, doc, 1);
+    xmlFreeDoc(doc); doc = NULL;
+    return ( doc != NULL );
 }
 
 /* ************************************************************************** */
 /* ****************************    UFO Output    **************************** */
 /* ************************************************************************** */
 
-static void PListOutputHeader(FILE *plist) {
-    fprintf( plist, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" );
-    fprintf( plist, "<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n" );
-    fprintf( plist, "<plist version=\"1.0\">\n" );
-    fprintf( plist, "    <dict>\n" );
+xmlDocPtr PlistInit() {
+    // Some of this code is pasted from libxml2 samples.
+    xmlDocPtr doc = NULL;
+    xmlNodePtr root_node = NULL, dict_node = NULL;
+    xmlDtdPtr dtd = NULL;
+    
+    char buff[256];
+    int i, j;
+
+    LIBXML_TEST_VERSION;
+
+    doc = xmlNewDoc(BAD_CAST "1.0");
+    dtd = xmlCreateIntSubset(doc, BAD_CAST "plist", BAD_CAST "-//Apple Computer//DTD PLIST 1.0//EN", BAD_CAST "http://www.apple.com/DTDs/PropertyList-1.0.dtd");
+    root_node = xmlNewNode(NULL, BAD_CAST "plist");
+    xmlDocSetRootElement(doc, root_node);
+    return doc;
 }
 
-static FILE *PListCreate(char *basedir,char *sub) {
-    char *fname = buildname(basedir,sub);
-    FILE *plist = fopen( fname, "w" );
-
-    if ( plist==NULL )
-return( NULL );
-    PListOutputHeader(plist);
-return( plist );
+static void PListAddInteger(xmlNodePtr parent, const char *key, int value) {
+    xmlNewChild(parent, NULL, BAD_CAST "key", BAD_CAST key);
+    xmlNewChildPrintf(parent, NULL, BAD_CAST "integer", "%d", value);
 }
 
-static int PListOutputTrailer(FILE *plist) {
-    int ret = true;
-    fprintf( plist, "    </dict>\n" );
-    fprintf( plist, "</plist>\n" );
-    if ( ferror(plist))
-	ret = false;
-    if ( fclose(plist) )
-	ret = false;
-return( ret );
+static void PListAddReal(xmlNodePtr parent, const char *key, double value) {
+    xmlNewChild(parent, NULL, BAD_CAST "key", BAD_CAST key);
+    xmlNewChildPrintf(parent, NULL, BAD_CAST "real", "%g", value);
 }
 
-static void PListOutputInteger(FILE *plist, char *key, int value) {
-    fprintf( plist, "\t<key>%s</key>\n", key );
-    fprintf( plist, "\t<integer>%d</integer>\n", value );
+static void PListAddBoolean(xmlNodePtr parent, const char *key, int value) {
+    xmlNewChild(parent, NULL, BAD_CAST "key", BAD_CAST key);
+    xmlNewChild(parent, NULL, BAD_CAST (value ? "true": "false"), NULL);
 }
 
-static void PListOutputReal(FILE *plist, char *key, double value) {
-    fprintf( plist, "\t<key>%s</key>\n", key );
-    fprintf( plist, "\t<real>%g</real>\n", value );
-}
-
-static void PListOutputBoolean(FILE *plist, char *key, int value) {
-    fprintf( plist, "\t<key>%s</key>\n", key );
-    fprintf( plist, value ? "\t<true/>\n" : "\t<false/>\n" );
-}
-
-static void PListOutputDate(FILE *plist, char *key, time_t timestamp) {
+static void PListAddDate(xmlNodePtr parent, const char *key, time_t timestamp) {
 /* openTypeHeadCreated = string format as \"YYYY/MM/DD HH:MM:SS\".	*/
 /* \"YYYY/MM/DD\" is year/month/day. The month is in the range 1-12 and	*/
 /* the day is in the range 1-end of month.				*/
 /*  \"HH:MM:SS\" is hour:minute:second. The hour is in the range 0:23.	*/
 /* Minutes and seconds are in the range 0-59.				*/
     struct tm *tm = gmtime(&timestamp);
-
-    fprintf( plist, "\t<key>%s</key>\n", key );
-    fprintf( plist, "\t<string>%4d/%02d/%02d %02d:%02d:%02d</string>\n",
-	    tm->tm_year+1900, tm->tm_mon+1,
-	    tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec );
+    xmlNewChild(parent, NULL, BAD_CAST "key", BAD_CAST key);
+    xmlNewChildPrintf(parent, NULL, BAD_CAST "string",
+            "%4d/%02d/%02d %02d:%02d:%02d", tm->tm_year+1900, tm->tm_mon+1,
+	    tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
 }
 
-static void PListOutputString(FILE *plist, char *key, char *value) {
+int countOccurrence(const char* big, const char* little) {
+    const char * tmp = big;
+    int output = 0;
+    while (tmp = strstr(big, little)) { output ++; tmp ++; }
+    return output;
+}
+
+xmlNodePtr PListAddString(xmlNodePtr parent, const char *key, const char *value) {
     if ( value==NULL ) value = "";
-    fprintf( plist, "\t<key>%s</key>\n", key );
-    fprintf( plist, "\t<string>" );
+    xmlNodePtr keynode = xmlNewChild(parent, NULL, BAD_CAST "key", BAD_CAST key); // "<key>%s</key>" key
+#ifdef ESCAPE_LIBXML_STRINGS
+    size_t main_size = strlen(value) +
+                       (countOccurrence(value, "<") * (strlen("&lt")-strlen("<"))) +
+                       (countOccurrence(value, ">") * (strlen("&gt")-strlen("<"))) +
+                       (countOccurrence(value, "&") * (strlen("&amp")-strlen("<")));
+    char *tmpstring = malloc(main_size + 1); tmpstring[0] = '\0';
+    off_t pos1 = 0;
     while ( *value ) {
-	if ( *value=='<' )
-	    fprintf( plist,"&lt;");
-	else if ( *value == '&' )
-	    fprintf( plist,"&amp;");
-	else
-	    putc(*value,plist);
+	if ( *value=='<' ) {
+	    strcat(tmpstring, "&lt;");
+            pos1 += strlen("&lt;");
+	} else if ( *value=='>' ) {
+	    strcat(tmpstring, "&gt;");
+            pos1 += strlen("&gt;");
+	} else if ( *value == '&' ) {
+	    strcat(tmpstring, "&amp;");
+	    pos1 += strlen("&amp;");
+	} else {
+	    tmpstring[pos1++] = *value;
+            tmpstring[pos1] = '\0';
+        }
 	++value;
     }
-    fprintf(plist, "</string>\n" );
+    xmlNodePtr valnode = xmlNewChild(parent, NULL, BAD_CAST "string", tmpstring); // "<string>%s</string>" tmpstring
+#else
+    xmlNodePtr valnode = xmlNewChild(parent, NULL, BAD_CAST "string", value); // "<string>%s</string>" tmpstring
+#endif
 }
 
-static void PListOutputNameString(FILE *plist, char *key, SplineFont *sf, int strid) {
+static void PListAddNameString(xmlNodePtr parent, const char *key, const SplineFont *sf, int strid) {
     char *value=NULL, *nonenglish=NULL, *freeme=NULL;
     struct ttflangname *nm;
 
@@ -420,149 +634,174 @@ static void PListOutputNameString(FILE *plist, char *key, SplineFont *sf, int st
 	value = freeme = strconcat("Version ",sf->version);
     if ( value==NULL )
 	value=nonenglish;
-    if ( value!=NULL )
-	PListOutputString(plist,key,value);
-}
-
-static void PListOutputIntArray(FILE *plist, char *key, char *entries, int len) {
-    int i;
-
-    fprintf( plist, "\t<key>%s</key>\n", key );
-    fprintf( plist, "\t<array>\n" );
-    for ( i=0; i<len; ++i )
-	fprintf( plist, "\t\t<integer>%d</integer>\n", entries[i] );
-    fprintf( plist, "\t</array>\n" );
-}
-
-static void PListOutputPrivateArray(FILE *plist, char *key, struct psdict *private) {
-    char *value;
-    int skipping;
-
-    if ( private==NULL )
-return;
-    value = PSDictHasEntry(private,key);
-    if ( value==NULL )
-return;
-
-    while ( *value==' ' || *value=='[' ) ++value;
-
-    fprintf( plist, "\t<key>postscript%s</key>\n", key );
-    fprintf( plist, "\t<array>\n" );
-    for (;;) {
-	fprintf( plist, "\t\t<integer>" );
-	skipping=0;
-	while ( *value!=']' && *value!='\0' && *value!=' ' ) {
-	    if ( *value=='.' || skipping ) {
-		skipping=true;
-		++value;
-	    } else
-		fputc(*value++,plist);
-	}
-	fprintf( plist, "</integer>\n" );
-	while ( *value==' ' ) ++value;
-	if ( *value==']' || *value=='\0' )
-    break;
+    if ( value!=NULL ) {
+	PListAddString(parent,key,value);
     }
-    fprintf( plist, "\t</array>\n" );
+    free(freeme);
 }
 
-static void PListOutputPrivateThing(FILE *plist, char *key, struct psdict *private, char *type) {
-    char *value;
+static void PListAddIntArray(xmlNodePtr parent, const char *key, const char *entries, int len) {
+    int i;
+    xmlNewChild(parent, NULL, BAD_CAST "key", BAD_CAST key);
+    xmlNodePtr arrayxml = xmlNewChild(parent, NULL, BAD_CAST "array", NULL);
+    for ( i=0; i<len; ++i ) {
+      xmlNewChildInteger(arrayxml, NULL, BAD_CAST "integer", entries[i]);
+    }
+}
 
+static void PListAddPrivateArray(xmlNodePtr parent, const char *key, struct psdict *private) {
+    char *value;
     if ( private==NULL )
 return;
     value = PSDictHasEntry(private,key);
     if ( value==NULL )
 return;
+    xmlNewChildPrintf(parent, NULL, BAD_CAST "key", "postscript%s", key); // "<key>postscript%s</key>" key
+    xmlNodePtr arrayxml = xmlNewChild(parent, NULL, BAD_CAST "array", NULL); // "<array>"
+    while ( *value==' ' || *value=='[' ) ++value;
+    for (;;) {
+	int skipping=0;
+        size_t tmpsize = 8;
+        char * tmp = malloc(tmpsize);
+        off_t tmppos = 0;
+	while ( *value!=']' && *value!='\0' && *value!=' ' && tmp!=NULL) {
+            if (*value=='.') skipping = true;
+	    if (skipping)
+		++value;
+	    else
+                tmp[tmppos++] = *value++;
+            if (tmppos == tmpsize) { tmpsize *= 2; tmp = realloc(tmp, tmpsize); }
+	}
+        tmp[tmppos] = '\0';
+        if (tmp != NULL) {
+          xmlNewChildString(arrayxml, NULL, BAD_CAST "integer", BAD_CAST tmp); // "<integer>%s</integer>" tmp
+          free(tmp); tmp = NULL;
+        }
+	while ( *value==' ' ) ++value;
+	if ( *value==']' || *value=='\0' ) break;
+    }
+    // "</array>"
+}
+
+static void PListAddPrivateThing(xmlNodePtr parent, const char *key, struct psdict *private, char *type) {
+    char *value;
+
+    if ( private==NULL ) return;
+    value = PSDictHasEntry(private,key);
+    if ( value==NULL ) return;
 
     while ( *value==' ' || *value=='[' ) ++value;
 
-    fprintf( plist, "\t<key>postscript%s</key>\n", key );
-    fprintf( plist, "\t<%s>%s</%s>\n", type, value, type );
+    xmlNewChildPrintf(parent, NULL, BAD_CAST "key", "postscript%s", key); // "<key>postscript%s</key>" key
+    while ( *value==' ' || *value=='[' ) ++value;
+    {
+	int skipping=0;
+        size_t tmpsize = 8;
+        char * tmp = malloc(tmpsize);
+        off_t tmppos = 0;
+	while ( *value!=']' && *value!='\0' && *value!=' ' && tmp!=NULL) {
+            if (*value=='.') skipping = true;
+	    if (skipping)
+		++value;
+	    else
+                tmp[tmppos++] = *value++;
+            if (tmppos == tmpsize) { tmpsize *= 2; tmp = realloc(tmp, tmpsize); }
+	}
+        if (tmp != NULL) {
+          xmlNewChildString(parent, NULL, BAD_CAST "integer", BAD_CAST tmp); // "<integer>%s</integer>" tmp
+          free(tmp); tmp = NULL;
+        }
+	while ( *value==' ' ) ++value;
+    }
 }
 
-static int UFOOutputMetaInfo(char *basedir,SplineFont *sf) {
-    FILE *plist = PListCreate( basedir, "metainfo.plist" );
-
-    if ( plist==NULL )
-return( false );
-    PListOutputString(plist,"creator","net.GitHub.FontForge");
-    PListOutputInteger(plist,"formatVersion",2);
-return( PListOutputTrailer(plist));
+static int UFOOutputMetaInfo(const char *basedir,SplineFont *sf) {
+    xmlDocPtr plistdoc = PlistInit(); if (plistdoc == NULL) return false; // Make the document.
+    xmlNodePtr rootnode = xmlDocGetRootElement(plistdoc); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Find the root node.
+    xmlNodePtr dictnode = xmlNewChild(rootnode, NULL, BAD_CAST "dict", NULL); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Find the dict.
+    PListAddString(dictnode,"creator","net.GitHub.FontForge");
+    PListAddInteger(dictnode,"formatVersion",2);
+    char *fname = buildname(basedir, "metainfo.plist"); // Build the file name.
+    xmlSaveFormatFileEnc(fname, plistdoc, "UTF-8", 1); // Store the document.
+    free(fname); fname = NULL;
+    xmlFreeDoc(plistdoc); // Free the memory.
+    xmlCleanupParser();
+    return true;
 }
 
-static int UFOOutputFontInfo(char *basedir,SplineFont *sf, int layer) {
-    FILE *plist = PListCreate( basedir, "fontinfo.plist" );
+static int UFOOutputFontInfo(const char *basedir, SplineFont *sf, int layer) {
+    xmlDocPtr plistdoc = PlistInit(); if (plistdoc == NULL) return false; // Make the document.
+    xmlNodePtr rootnode = xmlDocGetRootElement(plistdoc); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Find the root node.
+    xmlNodePtr dictnode = xmlNewChild(rootnode, NULL, BAD_CAST "dict", NULL); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Find the dict.
+
     DBounds bb;
     double test;
 
-    if ( plist==NULL )
-return( false );
 /* Same keys in both formats */
-    PListOutputString(plist,"familyName",sf->familyname_with_timestamp ? sf->familyname_with_timestamp : sf->familyname);
-    PListOutputString(plist,"styleName",SFGetModifiers(sf));
-    PListOutputString(plist,"copyright",sf->copyright);
-    PListOutputNameString(plist,"trademark",sf,ttf_trademark);
-    PListOutputInteger(plist,"unitsPerEm",sf->ascent+sf->descent);
+    PListAddString(dictnode,"familyName",sf->familyname_with_timestamp ? sf->familyname_with_timestamp : sf->familyname);
+    PListAddString(dictnode,"styleName",SFGetModifiers(sf));
+    PListAddString(dictnode,"copyright",sf->copyright);
+    PListAddNameString(dictnode,"trademark",sf,ttf_trademark);
+    PListAddInteger(dictnode,"unitsPerEm",sf->ascent+sf->descent);
     test = SFXHeight(sf,layer,true);
     if ( test>0 )
-	PListOutputInteger(plist,"xHeight",(int) rint(test));
+	PListAddInteger(dictnode,"xHeight",(int) rint(test));
     test = SFCapHeight(sf,layer,true);
     if ( test>0 )
-	PListOutputInteger(plist,"capHeight",(int) rint(test));
+	PListAddInteger(dictnode,"capHeight",(int) rint(test));
     if ( sf->ufo_ascent==0 )
-	PListOutputInteger(plist,"ascender",sf->ascent);
+	PListAddInteger(dictnode,"ascender",sf->ascent);
     else if ( sf->ufo_ascent==floor(sf->ufo_ascent))
-	PListOutputInteger(plist,"ascender",sf->ufo_ascent);
+	PListAddInteger(dictnode,"ascender",sf->ufo_ascent);
     else
-	PListOutputReal(plist,"ascender",sf->ufo_ascent);
+	PListAddReal(dictnode,"ascender",sf->ufo_ascent);
     if ( sf->ufo_descent==0 )
-	PListOutputInteger(plist,"descender",-sf->descent);
+	PListAddInteger(dictnode,"descender",-sf->descent);
     else if ( sf->ufo_descent==floor(sf->ufo_descent))
-	PListOutputInteger(plist,"descender",sf->ufo_descent);
+	PListAddInteger(dictnode,"descender",sf->ufo_descent);
     else
-	PListOutputReal(plist,"descender",sf->ufo_descent);
-    PListOutputReal(plist,"italicAngle",sf->italicangle);
-    PListOutputString(plist,"note",sf->comments);
-    PListOutputDate(plist,"openTypeHeadCreated",sf->creationtime);
+	PListAddReal(dictnode,"descender",sf->ufo_descent);
+    PListAddReal(dictnode,"italicAngle",sf->italicangle);
+    PListAddString(dictnode,"note",sf->comments);
+    PListAddDate(dictnode,"openTypeHeadCreated",sf->creationtime);
     SplineFontFindBounds(sf,&bb);
-    if ( sf->pfminfo.hheadset ) {
-	if ( sf->pfminfo.hheadascent_add )
-	    PListOutputInteger(plist,"openTypeHheaAscender",bb.maxy+sf->pfminfo.hhead_ascent);
-	else
-	    PListOutputInteger(plist,"openTypeHheaAscender",sf->pfminfo.hhead_ascent);
-	if ( sf->pfminfo.hheaddescent_add )
-	    PListOutputInteger(plist,"openTypeHheaDescender",bb.miny+sf->pfminfo.hhead_descent);
-	else
-	    PListOutputInteger(plist,"openTypeHheaDescender",sf->pfminfo.hhead_descent);
-	PListOutputInteger(plist,"openTypeHheaLineGap",sf->pfminfo.linegap);
-    }
-    PListOutputNameString(plist,"openTypeNameDesigner",sf,ttf_designer);
-    PListOutputNameString(plist,"openTypeNameDesignerURL",sf,ttf_designerurl);
-    PListOutputNameString(plist,"openTypeNameManufacturer",sf,ttf_manufacturer);
-    PListOutputNameString(plist,"openTypeNameManufacturerURL",sf,ttf_venderurl);
-    PListOutputNameString(plist,"openTypeNameLicense",sf,ttf_license);
-    PListOutputNameString(plist,"openTypeNameLicenseURL",sf,ttf_licenseurl);
-    PListOutputNameString(plist,"openTypeNameVersion",sf,ttf_version);
-    PListOutputNameString(plist,"openTypeNameUniqueID",sf,ttf_uniqueid);
-    PListOutputNameString(plist,"openTypeNameDescription",sf,ttf_descriptor);
-    PListOutputNameString(plist,"openTypeNamePreferedFamilyName",sf,ttf_preffamilyname);
-    PListOutputNameString(plist,"openTypeNamePreferedSubfamilyName",sf,ttf_prefmodifiers);
-    PListOutputNameString(plist,"openTypeNameCompatibleFullName",sf,ttf_compatfull);
-    PListOutputNameString(plist,"openTypeNameSampleText",sf,ttf_sampletext);
-    PListOutputNameString(plist,"openTypeWWSFamilyName",sf,ttf_wwsfamily);
-    PListOutputNameString(plist,"openTypeWWSSubfamilyName",sf,ttf_wwssubfamily);
+
+    if ( sf->pfminfo.hheadascent_add )
+	PListAddInteger(dictnode,"openTypeHheaAscender",bb.maxy+sf->pfminfo.hhead_ascent);
+    else
+	PListAddInteger(dictnode,"openTypeHheaAscender",sf->pfminfo.hhead_ascent);
+    if ( sf->pfminfo.hheaddescent_add )
+	PListAddInteger(dictnode,"openTypeHheaDescender",bb.miny+sf->pfminfo.hhead_descent);
+    else
+	PListAddInteger(dictnode,"openTypeHheaDescender",sf->pfminfo.hhead_descent);
+    PListAddInteger(dictnode,"openTypeHheaLineGap",sf->pfminfo.linegap);
+
+    PListAddNameString(dictnode,"openTypeNameDesigner",sf,ttf_designer);
+    PListAddNameString(dictnode,"openTypeNameDesignerURL",sf,ttf_designerurl);
+    PListAddNameString(dictnode,"openTypeNameManufacturer",sf,ttf_manufacturer);
+    PListAddNameString(dictnode,"openTypeNameManufacturerURL",sf,ttf_venderurl);
+    PListAddNameString(dictnode,"openTypeNameLicense",sf,ttf_license);
+    PListAddNameString(dictnode,"openTypeNameLicenseURL",sf,ttf_licenseurl);
+    PListAddNameString(dictnode,"openTypeNameVersion",sf,ttf_version);
+    PListAddNameString(dictnode,"openTypeNameUniqueID",sf,ttf_uniqueid);
+    PListAddNameString(dictnode,"openTypeNameDescription",sf,ttf_descriptor);
+    PListAddNameString(dictnode,"openTypeNamePreferedFamilyName",sf,ttf_preffamilyname);
+    PListAddNameString(dictnode,"openTypeNamePreferedSubfamilyName",sf,ttf_prefmodifiers);
+    PListAddNameString(dictnode,"openTypeNameCompatibleFullName",sf,ttf_compatfull);
+    PListAddNameString(dictnode,"openTypeNameSampleText",sf,ttf_sampletext);
+    PListAddNameString(dictnode,"openTypeWWSFamilyName",sf,ttf_wwsfamily);
+    PListAddNameString(dictnode,"openTypeWWSSubfamilyName",sf,ttf_wwssubfamily);
     if ( sf->pfminfo.panose_set )
-	PListOutputIntArray(plist,"openTypeOS2Panose",sf->pfminfo.panose,10);
+	PListAddIntArray(dictnode,"openTypeOS2Panose",sf->pfminfo.panose,10);
     if ( sf->pfminfo.pfmset ) {
 	char vendor[8], fc[2];
-	PListOutputInteger(plist,"openTypeOS2WidthClass",sf->pfminfo.width);
-	PListOutputInteger(plist,"openTypeOS2WeightClass",sf->pfminfo.weight);
+	PListAddInteger(dictnode,"openTypeOS2WidthClass",sf->pfminfo.width);
+	PListAddInteger(dictnode,"openTypeOS2WeightClass",sf->pfminfo.weight);
 	memcpy(vendor,sf->pfminfo.os2_vendor,4);
 	vendor[4] = 0;
-	PListOutputString(plist,"openTypeOS2VendorID",vendor);
+	PListAddString(dictnode,"openTypeOS2VendorID",vendor);
 	fc[0] = sf->pfminfo.os2_family_class>>8; fc[1] = sf->pfminfo.os2_family_class&0xff;
-	PListOutputIntArray(plist,"openTypeOS2FamilyClass",fc,2);
+	PListAddIntArray(dictnode,"openTypeOS2FamilyClass",fc,2);
 	if ( sf->pfminfo.fstype!=-1 ) {
 	    int fscnt,i;
 	    char fstype[16];
@@ -570,40 +809,40 @@ return( false );
 		if ( sf->pfminfo.fstype&(1<<i) )
 		    fstype[fscnt++] = i;
 	    if ( fscnt!=0 )
-		PListOutputIntArray(plist,"openTypeOS2Type",fstype,fscnt);
+		PListAddIntArray(dictnode,"openTypeOS2Type",fstype,fscnt);
 	}
 	if ( sf->pfminfo.typoascent_add )
-	    PListOutputInteger(plist,"openTypeOS2TypoAscender",sf->ascent+sf->pfminfo.os2_typoascent);
+	    PListAddInteger(dictnode,"openTypeOS2TypoAscender",sf->ascent+sf->pfminfo.os2_typoascent);
 	else
-	    PListOutputInteger(plist,"openTypeOS2TypoAscender",sf->pfminfo.os2_typoascent);
+	    PListAddInteger(dictnode,"openTypeOS2TypoAscender",sf->pfminfo.os2_typoascent);
 	if ( sf->pfminfo.typodescent_add )
-	    PListOutputInteger(plist,"openTypeOS2TypoDescender",sf->descent+sf->pfminfo.os2_typodescent);
+	    PListAddInteger(dictnode,"openTypeOS2TypoDescender",sf->descent+sf->pfminfo.os2_typodescent);
 	else
-	    PListOutputInteger(plist,"openTypeOS2TypoDescender",sf->pfminfo.os2_typodescent);
-	PListOutputInteger(plist,"openTypeOS2TypoLineGap",sf->pfminfo.os2_typolinegap);
+	    PListAddInteger(dictnode,"openTypeOS2TypoDescender",sf->pfminfo.os2_typodescent);
+	PListAddInteger(dictnode,"openTypeOS2TypoLineGap",sf->pfminfo.os2_typolinegap);
 	if ( sf->pfminfo.winascent_add )
-	    PListOutputInteger(plist,"openTypeOS2WinAscent",bb.maxy+sf->pfminfo.os2_winascent);
+	    PListAddInteger(dictnode,"openTypeOS2WinAscent",bb.maxy+sf->pfminfo.os2_winascent);
 	else
-	    PListOutputInteger(plist,"openTypeOS2WinAscent",sf->pfminfo.os2_winascent);
+	    PListAddInteger(dictnode,"openTypeOS2WinAscent",sf->pfminfo.os2_winascent);
 	if ( sf->pfminfo.windescent_add )
-	    PListOutputInteger(plist,"openTypeOS2WinDescent",bb.miny+sf->pfminfo.os2_windescent);
+	    PListAddInteger(dictnode,"openTypeOS2WinDescent",bb.miny+sf->pfminfo.os2_windescent);
 	else
-	    PListOutputInteger(plist,"openTypeOS2WinDescent",sf->pfminfo.os2_windescent);
+	    PListAddInteger(dictnode,"openTypeOS2WinDescent",sf->pfminfo.os2_windescent);
     }
     if ( sf->pfminfo.subsuper_set ) {
-	PListOutputInteger(plist,"openTypeOS2SubscriptXSize",sf->pfminfo.os2_subxsize);
-	PListOutputInteger(plist,"openTypeOS2SubscriptYSize",sf->pfminfo.os2_subysize);
-	PListOutputInteger(plist,"openTypeOS2SubscriptXOffset",sf->pfminfo.os2_subxoff);
-	PListOutputInteger(plist,"openTypeOS2SubscriptYOffset",sf->pfminfo.os2_subyoff);
-	PListOutputInteger(plist,"openTypeOS2SuperscriptXSize",sf->pfminfo.os2_supxsize);
-	PListOutputInteger(plist,"openTypeOS2SuperscriptYSize",sf->pfminfo.os2_supysize);
-	PListOutputInteger(plist,"openTypeOS2SuperscriptXOffset",sf->pfminfo.os2_supxoff);
-	PListOutputInteger(plist,"openTypeOS2SuperscriptYOffset",sf->pfminfo.os2_supyoff);
-	PListOutputInteger(plist,"openTypeOS2StrikeoutSize",sf->pfminfo.os2_strikeysize);
-	PListOutputInteger(plist,"openTypeOS2StrikeoutPosition",sf->pfminfo.os2_strikeypos);
+	PListAddInteger(dictnode,"openTypeOS2SubscriptXSize",sf->pfminfo.os2_subxsize);
+	PListAddInteger(dictnode,"openTypeOS2SubscriptYSize",sf->pfminfo.os2_subysize);
+	PListAddInteger(dictnode,"openTypeOS2SubscriptXOffset",sf->pfminfo.os2_subxoff);
+	PListAddInteger(dictnode,"openTypeOS2SubscriptYOffset",sf->pfminfo.os2_subyoff);
+	PListAddInteger(dictnode,"openTypeOS2SuperscriptXSize",sf->pfminfo.os2_supxsize);
+	PListAddInteger(dictnode,"openTypeOS2SuperscriptYSize",sf->pfminfo.os2_supysize);
+	PListAddInteger(dictnode,"openTypeOS2SuperscriptXOffset",sf->pfminfo.os2_supxoff);
+	PListAddInteger(dictnode,"openTypeOS2SuperscriptYOffset",sf->pfminfo.os2_supyoff);
+	PListAddInteger(dictnode,"openTypeOS2StrikeoutSize",sf->pfminfo.os2_strikeysize);
+	PListAddInteger(dictnode,"openTypeOS2StrikeoutPosition",sf->pfminfo.os2_strikeypos);
     }
     if ( sf->pfminfo.vheadset )
-	PListOutputInteger(plist,"openTypeVheaTypoLineGap",sf->pfminfo.vlinegap);
+	PListAddInteger(dictnode,"openTypeVheaTypoLineGap",sf->pfminfo.vlinegap);
     if ( sf->pfminfo.hasunicoderanges ) {
 	char ranges[128];
 	int i, j, c = 0;
@@ -613,7 +852,7 @@ return( false );
 		if ( sf->pfminfo.unicoderanges[i] & (1 << j) )
 		    ranges[c++] = i*32+j;
 	if ( c!=0 )
-	    PListOutputIntArray(plist,"openTypeOS2UnicodeRanges",ranges,c);
+	    PListAddIntArray(dictnode,"openTypeOS2UnicodeRanges",ranges,c);
     }
     if ( sf->pfminfo.hascodepages ) {
 	char pages[64];
@@ -624,111 +863,135 @@ return( false );
 		if ( sf->pfminfo.codepages[i] & (1 << j) )
 		    pages[c++] = i*32+j;
 	if ( c!=0 )
-	    PListOutputIntArray(plist,"openTypeOS2CodePageRanges",pages,c);
+	    PListAddIntArray(dictnode,"openTypeOS2CodePageRanges",pages,c);
     }
-    PListOutputString(plist,"postscriptFontName",sf->fontname);
-    PListOutputString(plist,"postscriptFullName",sf->fullname);
-    PListOutputString(plist,"postscriptWeightName",sf->weight);
+    PListAddString(dictnode,"postscriptFontName",sf->fontname);
+    PListAddString(dictnode,"postscriptFullName",sf->fullname);
+    PListAddString(dictnode,"postscriptWeightName",sf->weight);
     /* Spec defines a "postscriptSlantAngle" but I don't think postscript does*/
     /* PS does define an italicAngle, but presumably that's the general italic*/
     /* angle we output earlier */
     /* UniqueID is obsolete */
-    PListOutputInteger(plist,"postscriptUnderlineThickness",sf->uwidth);
-    PListOutputInteger(plist,"postscriptUnderlinePosition",sf->upos);
+    PListAddInteger(dictnode,"postscriptUnderlineThickness",sf->uwidth);
+    PListAddInteger(dictnode,"postscriptUnderlinePosition",sf->upos);
     if ( sf->private!=NULL ) {
 	char *pt;
-	PListOutputPrivateArray(plist, "BlueValues", sf->private);
-	PListOutputPrivateArray(plist, "OtherBlues", sf->private);
-	PListOutputPrivateArray(plist, "FamilyBlues", sf->private);
-	PListOutputPrivateArray(plist, "FamilyOtherBlues", sf->private);
-	PListOutputPrivateArray(plist, "StemSnapH", sf->private);
-	PListOutputPrivateArray(plist, "StemSnapV", sf->private);
-	PListOutputPrivateThing(plist, "BlueFuzz", sf->private, "integer");
-	PListOutputPrivateThing(plist, "BlueShift", sf->private, "integer");
-	PListOutputPrivateThing(plist, "BlueScale", sf->private, "real");
+	PListAddPrivateArray(dictnode, "BlueValues", sf->private);
+	PListAddPrivateArray(dictnode, "OtherBlues", sf->private);
+	PListAddPrivateArray(dictnode, "FamilyBlues", sf->private);
+	PListAddPrivateArray(dictnode, "FamilyOtherBlues", sf->private);
+	PListAddPrivateArray(dictnode, "StemSnapH", sf->private);
+	PListAddPrivateArray(dictnode, "StemSnapV", sf->private);
+	PListAddPrivateThing(dictnode, "BlueFuzz", sf->private, "integer");
+	PListAddPrivateThing(dictnode, "BlueShift", sf->private, "integer");
+	PListAddPrivateThing(dictnode, "BlueScale", sf->private, "real");
 	if ( (pt=PSDictHasEntry(sf->private,"ForceBold"))!=NULL &&
 		strstr(pt,"true")!=NULL )
-	    PListOutputBoolean(plist, "postscriptForceBold", true );
+	    PListAddBoolean(dictnode, "postscriptForceBold", true );
     }
     if ( sf->fondname!=NULL )
-    PListOutputString(plist,"macintoshFONDName",sf->fondname);
-return( PListOutputTrailer(plist));
+    PListAddString(dictnode,"macintoshFONDName",sf->fondname);
+    // TODO: Output unrecognized data.
+    char *fname = buildname(basedir, "fontinfo.plist"); // Build the file name.
+    xmlSaveFormatFileEnc(fname, plistdoc, "UTF-8", 1); // Store the document.
+    free(fname); fname = NULL;
+    xmlFreeDoc(plistdoc); // Free the memory.
+    xmlCleanupParser();
+    return true;
+return true;
 }
 
-static int UFOOutputGroups(char *basedir,SplineFont *sf) {
-    FILE *plist = PListCreate( basedir, "groups.plist" );
-
-    if ( plist==NULL )
-return( false );
+static int UFOOutputGroups(const char *basedir, const SplineFont *sf) {
     /* These don't act like fontforge's groups. There are comments that this */
     /*  could be used for defining classes (kerning classes, etc.) but no */
     /*  resolution saying that the actually are. */
     /* Should I omit a file I don't use? Or leave it blank? */
-return( PListOutputTrailer(plist));
+    xmlDocPtr plistdoc = PlistInit(); if (plistdoc == NULL) return false; // Make the document.
+    xmlNodePtr rootnode = xmlDocGetRootElement(plistdoc); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Find the root node.
+    xmlNodePtr dictnode = xmlNewChild(rootnode, NULL, BAD_CAST "dict", NULL); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Find the dict.
+    // TODO: Maybe output things.
+    char *fname = buildname(basedir, "groups.plist"); // Build the file name.
+    xmlSaveFormatFileEnc(fname, plistdoc, "UTF-8", 1); // Store the document.
+    free(fname); fname = NULL;
+    xmlFreeDoc(plistdoc); // Free the memory.
+    xmlCleanupParser();
+    return true;
 }
 
-static void KerningPListOutputGlyph(FILE *plist, char *key,KernPair *kp) {
-    fprintf( plist, "\t<key>%s</key>\n", key );
-    fprintf( plist, "\t<dict>\n" );
+static void KerningPListAddGlyph(xmlNodePtr parent, const char *key, const KernPair *kp) {
+    xmlNewChild(parent, NULL, BAD_CAST "key", BAD_CAST key); // "<key>%s</key>" key
+    xmlNodePtr dictxml = xmlNewChild(parent, NULL, BAD_CAST "dict", NULL); // "<dict>"
     while ( kp!=NULL ) {
-	if ( kp->off!=0 && SCWorthOutputting(kp->sc)) {
-	    fprintf( plist, "\t    <key>%s</key>\n", kp->sc->name );
-	    fprintf( plist, "\t    <integer>%d</integer>\n", kp->off );
-	}
-	kp = kp->next;
+      xmlNewChildInteger(dictxml, NULL, BAD_CAST kp->sc->name, kp->off); // "<key>%s</key><integer>%d</integer>" kp->sc->name kp->off
+      kp = kp->next;
     }
-    fprintf( plist, "\t</dict>\n" );
 }
 
-static int UFOOutputKerning(char *basedir,SplineFont *sf) {
-    FILE *plist = PListCreate( basedir, "kerning.plist" );
+static int UFOOutputKerning(const char *basedir, const SplineFont *sf) {
     SplineChar *sc;
     int i;
 
-    if ( plist==NULL )
-return( false );
-    /* There is some muttering about how to do kerning by classes, but no */
-    /*  resolution to those thoughts. So I ignore the issue */
+    xmlDocPtr plistdoc = PlistInit(); if (plistdoc == NULL) return false; // Make the document.
+    xmlNodePtr rootnode = xmlDocGetRootElement(plistdoc); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Find the root node.
+    xmlNodePtr dictnode = xmlNewChild(rootnode, NULL, BAD_CAST "dict", NULL); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Find the dict.
+
     for ( i=0; i<sf->glyphcnt; ++i ) if ( SCWorthOutputting(sc=sf->glyphs[i]) && sc->kerns!=NULL )
-	KerningPListOutputGlyph(plist,sc->name,sc->kerns);
-return( PListOutputTrailer(plist));
+	KerningPListAddGlyph(dictnode,sc->name,sc->kerns);
+
+    char *fname = buildname(basedir, "kerning.plist"); // Build the file name.
+    xmlSaveFormatFileEnc(fname, plistdoc, "UTF-8", 1); // Store the document.
+    free(fname); fname = NULL;
+    xmlFreeDoc(plistdoc); // Free the memory.
+    xmlCleanupParser();
+    return true;
 }
 
-static int UFOOutputVKerning(char *basedir,SplineFont *sf) {
-    FILE *plist;
+static int UFOOutputVKerning(const char *basedir, const SplineFont *sf) {
     SplineChar *sc;
     int i;
 
-    for ( i=sf->glyphcnt-1; i>=0; --i ) if ( SCWorthOutputting(sc=sf->glyphs[i]) && sc->vkerns!=NULL )
-    break;
-    if ( i<0 )
-return( true );
+    xmlDocPtr plistdoc = PlistInit(); if (plistdoc == NULL) return false; // Make the document.
+    xmlNodePtr rootnode = xmlDocGetRootElement(plistdoc); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Find the root node.
+    xmlNodePtr dictnode = xmlNewChild(rootnode, NULL, BAD_CAST "dict", NULL); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Find the dict.
 
-    plist = PListCreate( basedir, "vkerning.plist" );
-    if ( plist==NULL )
-return( false );
+    for ( i=sf->glyphcnt-1; i>=0; --i ) if ( SCWorthOutputting(sc=sf->glyphs[i]) && sc->vkerns!=NULL ) break;
+    if ( i<0 ) return( true );
     for ( i=0; i<sf->glyphcnt; ++i ) if ( (sc=sf->glyphs[i])!=NULL && sc->vkerns!=NULL )
-	KerningPListOutputGlyph(plist,sc->name,sc->vkerns);
-return( PListOutputTrailer(plist));
+	KerningPListAddGlyph(dictnode,sc->name,sc->vkerns);
+
+    char *fname = buildname(basedir, "vkerning.plist"); // Build the file name.
+    xmlSaveFormatFileEnc(fname, plistdoc, "UTF-8", 1); // Store the document.
+    free(fname); fname = NULL;
+    xmlFreeDoc(plistdoc); // Free the memory.
+    xmlCleanupParser();
+    return true;
 }
 
-static int UFOOutputLib(char *basedir,SplineFont *sf) {
-    if ( sf->python_persistent!=NULL && PyMapping_Check(sf->python_persistent) ) {
-	FILE *plist = PListCreate( basedir, "lib.plist" );
+static int UFOOutputLib(const char *basedir, const SplineFont *sf) {
+#ifndef _NO_PYTHON
+    if ( sf->python_persistent==NULL || PyMapping_Check(sf->python_persistent) == 0) return true;
 
-	if ( plist==NULL )
-return( false );
-	DumpPythonLib(plist,sf->python_persistent,NULL);
-return( PListOutputTrailer(plist));
-    }
+    xmlDocPtr plistdoc = PlistInit(); if (plistdoc == NULL) return false; // Make the document.
+    xmlNodePtr rootnode = xmlDocGetRootElement(plistdoc); if (rootnode == NULL) return false; // Find the root node.
+
+    xmlNodePtr dictnode = PythonLibToXML(sf->python_persistent,NULL);
+    xmlAddChild(rootnode, dictnode);
+
+    char *fname = buildname(basedir, "lib.plist"); // Build the file name.
+    xmlSaveFormatFileEnc(fname, plistdoc, "UTF-8", 1); // Store the document.
+    free(fname); fname = NULL;
+    xmlFreeDoc(plistdoc); // Free the memory.
+    xmlCleanupParser();
+#endif
 return( true );
 }
 
-static int UFOOutputFeatures(char *basedir,SplineFont *sf) {
+static int UFOOutputFeatures(const char *basedir, SplineFont *sf) {
     char *fname = buildname(basedir,"features.fea");
     FILE *feats = fopen( fname, "w" );
     int err;
 
+    free(fname);
     if ( feats==NULL )
 return( false );
     FeatDumpFontLookups(feats,sf);
@@ -737,8 +1000,8 @@ return( false );
 return( !err );
 }
 
-int WriteUFOFont(char *basedir,SplineFont *sf,enum fontformat ff,int flags,
-	EncMap *map,int layer) {
+int WriteUFOFont(const char *basedir, SplineFont *sf, enum fontformat ff,int flags,
+	const EncMap *map,int layer) {
     char *foo = malloc( strlen(basedir) +20 ), *glyphdir, *gfname;
     int err;
     FILE *plist;
@@ -748,6 +1011,7 @@ int WriteUFOFont(char *basedir,SplineFont *sf,enum fontformat ff,int flags,
     /* Clean it out, if it exists */
     sprintf( foo, "rm -rf %s", basedir );
     system( foo );
+    free( foo );
 
     /* Create it */
     GFileMkDir( basedir );
@@ -763,15 +1027,16 @@ int WriteUFOFont(char *basedir,SplineFont *sf,enum fontformat ff,int flags,
     if ( err )
 return( false );
 
+    xmlDocPtr plistdoc = PlistInit(); if (plistdoc == NULL) return false; // Make the document.
+    xmlNodePtr rootnode = xmlDocGetRootElement(plistdoc); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Find the root node.
+    xmlNodePtr dictnode = xmlNewChild(rootnode, NULL, BAD_CAST "dict", NULL); if (rootnode == NULL) { xmlFreeDoc(plistdoc); return false; } // Make the dict.
+
     glyphdir = buildname(basedir,"glyphs");
     GFileMkDir( glyphdir );
 
-    plist = PListCreate(glyphdir,"contents.plist");
-    if ( plist==NULL )
-return( false );
-
     for ( i=0; i<sf->glyphcnt; ++i ) if ( SCWorthOutputting(sc=sf->glyphs[i]) ) {
-	char *start, *gstart;
+	const char *start;
+        char *gstart;
 	gstart = gfname = malloc(2*strlen(sc->name)+20);
 	start = sc->name;
 	if ( *start=='.' ) {
@@ -792,10 +1057,18 @@ return( false );
 	        *gstart++ = '_';
 	}
 	strcpy(gstart,".glif");
-	PListOutputString(plist,sc->name,gfname);
+	PListAddString(dictnode,sc->name,gfname); // Add the glyph to the table of contents.
 	err |= !GlifDump(glyphdir,gfname,sc,layer);
+	free(gfname);
     }
-    err |= !PListOutputTrailer(plist);
+
+    char *fname = buildname(glyphdir, "contents.plist"); // Build the file name.
+    xmlSaveFormatFileEnc(fname, plistdoc, "UTF-8", 1); // Store the document.
+    free(fname); fname = NULL;
+    xmlFreeDoc(plistdoc); // Free the memory.
+    xmlCleanupParser();
+
+    free( glyphdir );
 return( !err );
 }
 
@@ -838,6 +1111,7 @@ char **NamesReadUFO(char *filename) {
     char buffer[1024];
     char **ret;
 
+    free(fn);
     if ( info==NULL )
 return( NULL );
     while ( get_thingy(info,buffer,"key")!=NULL ) {
@@ -856,7 +1130,6 @@ return( NULL );
 return( NULL );
 }
 
-#undef extended			/* used in xlink.h */
 #include <libxml/parser.h>
 
 static int libxml_init_base() {
@@ -872,6 +1145,7 @@ return( kids );
 return( NULL );
 }
 
+#ifndef _NO_PYTHON
 static PyObject *XMLEntryToPython(xmlDocPtr doc,xmlNodePtr entry);
 
 static PyObject *LibToPython(xmlDocPtr doc,xmlNodePtr dict) {
@@ -898,6 +1172,7 @@ static PyObject *LibToPython(xmlDocPtr doc,xmlNodePtr dict) {
 			if ( temp==NULL ) break;
 			else if ( xmlStrcmp(temp->name,(const xmlChar *) "key")!=0 ) keys = temp->next;
 			// If and only if the parsing succeeds, jump over any entries we read when searching for a text block.
+			free(keyname);
 		}
     }
 return( pydict );
@@ -952,19 +1227,24 @@ return( ret );
     contents = (char *) xmlNodeListGetString(doc,entry->children,true);
     if ( xmlStrcmp(entry->name,(const xmlChar *) "integer")==0 ) {
 	long val = strtol(contents,NULL,0);
+	free(contents);
 return( Py_BuildValue("i",val));
     }
     if ( xmlStrcmp(entry->name,(const xmlChar *) "real")==0 ) {
 	double val = strtod(contents,NULL);
+	free(contents);
 return( Py_BuildValue("d",val));
     }
     if ( xmlStrcmp(entry->name,(const xmlChar *) "string")==0 ) {
 	PyObject *ret = Py_BuildValue("s",contents);
+	free(contents);
 return( ret );
     }
     LogError(_("Unknown python type <%s> when reading UFO/GLIF lib data."), (char *) entry->name);
+    free( contents );
 return( NULL );
 }
+#endif
 
 static StemInfo *GlifParseHints(xmlDocPtr doc,xmlNodePtr dict,char *hinttype) {
     StemInfo *head=NULL, *last=NULL, *h;
@@ -975,6 +1255,7 @@ static StemInfo *GlifParseHints(xmlDocPtr doc,xmlNodePtr dict,char *hinttype) {
 	if ( xmlStrcmp(keys->name,(const xmlChar *) "key")== 0 ) {
 	    char *keyname = (char *) xmlNodeListGetString(doc,keys->children,true);
 	    int found = strcmp(keyname,hinttype)==0;
+	    free(keyname);
 	    if ( found ) {
 		for ( array=keys->next; array!=NULL; array=array->next ) {
 		    if ( xmlStrcmp(array->name,(const xmlChar *) "array")==0 )
@@ -989,6 +1270,7 @@ static StemInfo *GlifParseHints(xmlDocPtr doc,xmlNodePtr dict,char *hinttype) {
 				    char *keyname2 = (char *) xmlNodeListGetString(doc,poswidth->children,true);
 				    int ispos = strcmp(keyname2,"position")==0, iswidth = strcmp(keyname2,"width")==0;
 				    double value;
+				    free(keyname2);
 				    for ( temp=poswidth->next; temp!=NULL; temp=temp->next ) {
 					if ( xmlStrcmp(temp->name,(const xmlChar *) "text")!=0 )
 				    break;
@@ -1001,6 +1283,7 @@ static StemInfo *GlifParseHints(xmlDocPtr doc,xmlNodePtr dict,char *hinttype) {
 					    value = strtod(valname,NULL);
 					else
 					    ispos = iswidth = false;
+					free(valname);
 					if ( ispos )
 					    pos = value;
 					else if ( iswidth )
@@ -1010,7 +1293,7 @@ static StemInfo *GlifParseHints(xmlDocPtr doc,xmlNodePtr dict,char *hinttype) {
 				}
 			    }
 			    if ( pos!=-88888888 && width!=0 ) {
-				h = XZALLOC(StemInfo);
+				h = chunkalloc(sizeof(StemInfo));
 			        h->start = pos;
 			        h->width = width;
 			        if ( width==-20 || width==-21 )
@@ -1047,8 +1330,10 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
 	    (format!=NULL && xmlStrcmp(format,(xmlChar *) "1")!=0)) {
 		LogError(_("Expected glyph file with format==1"));
 		xmlFreeDoc(doc);
+		free(format);
 		return( NULL );
     }
+	free(format);
 	tmpname = (char *) xmlGetProp(glyph,(xmlChar *) "name");
 	if (glyphname != NULL) {
 		// We use the provided name from the glyph listing since the specification says to trust that one more.
@@ -1056,11 +1341,12 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
 		// But we still fetch the internally listed name for verification and fail on a mismatch.
 		if ((name == NULL) || ((name != NULL) && (tmpname != NULL) && (strcmp(glyphname, name) != 0))) {
 			LogError(_("Bad glyph name."));
-			tmpname = name = NULL;
+			if ( tmpname != NULL ) { free(tmpname); tmpname = NULL; }
+			if ( name != NULL ) { free(name); name = NULL; }
 			xmlFreeDoc(doc);
 			return NULL;
 		}
-		tmpname = NULL;
+		if ( tmpname != NULL ) { free(tmpname); tmpname = NULL; }
 	} else {
 		name = tmpname;
 	}
@@ -1080,7 +1366,7 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
 	// We create a new SplineChar 
 	if (existingglyph != NULL) {
 		sc = existingglyph;
-		name = NULL;
+		free(name); name = NULL;
 	} else {
     	sc = SplineCharCreate(2);
     	sc->name = name;
@@ -1114,6 +1400,7 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
 			if ( height!=NULL )
 			sc->vwidth = strtol((char *) height,NULL,10);
 			sc->widthset = true;
+			free(width); free(height);
 		}
 	} else if ( xmlStrcmp(kids->name,(const xmlChar *) "unicode")==0 ) {
 		if ((layerdest == ly_fore) || newsc) {
@@ -1123,6 +1410,7 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
 			sc->unicodeenc = uni;
 			else
 			AltUniAdd(sc,uni);
+			free(u);
 		}
 	} else if ( xmlStrcmp(kids->name,(const xmlChar *) "outline")==0 ) {
 	    for ( contour = kids->children; contour!=NULL; contour=contour->next ) {
@@ -1157,6 +1445,7 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
 				r->next = sc->layers[layerdest].refs;
 				sc->layers[layerdest].refs = r;
 		    }
+		    free(xs); free(ys); free(xys); free(yxs); free(xo); free(yo);
 		} else if ( xmlStrcmp(contour->name,(const xmlChar *) "contour")==0 ) {
 		    xmlNodePtr npoints;
 		    SplineSet *ss;
@@ -1183,7 +1472,7 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
                 sname = (char *) xmlGetProp(points, (xmlChar *) "name");
                 if ( sname!=NULL) {
                     /* make an AP and if necessary an AC */
-                    AnchorPoint *ap = XZALLOC(AnchorPoint);
+                    AnchorPoint *ap = chunkalloc(sizeof(AnchorPoint));
                     AnchorClass *ac;
                     char *namep = *sname=='_' ? sname + 1 : sname;
                     char *xs = (char *) xmlGetProp(points, (xmlChar *) "x");
@@ -1202,6 +1491,7 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
                     ap->anchor = ac;
                     ap->next = sc->anchor;
                     sc->anchor = ap;
+                    free(xs); free(ys); free(sname);
         			continue; // We stop processing the contour at this point.
                 }
             }
@@ -1210,7 +1500,7 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
 			int wasquad = -1; // This tracks whether we identified the previous curve as quadratic. (-1 means undefined.)
 			int firstpointsaidquad = -1; // This tracks the declared order of the curve leading into the first on-curve point.
 
-		    ss = XZALLOC(SplineSet);
+		    ss = chunkalloc(sizeof(SplineSet));
 			ss->first = NULL;
 
 			for ( points = contour->children; points!=NULL; points=points->next ) {
@@ -1228,10 +1518,13 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
 			smooths = (char *) xmlGetProp(points,(xmlChar *) "smooth");
 			if (smooths != NULL) {
 				if (strcmp(smooths,"yes") == 0) smooth = 1;
-				smooths=NULL;
+				free(smooths); smooths=NULL;
 			}
 			if ( xs==NULL || ys == NULL ) {
-				xs = ys = type = pname = NULL;
+				if (xs != NULL) { free(xs); xs = NULL; }
+				if (ys != NULL) { free(ys); ys = NULL; }
+				if (type != NULL) { free(type); type = NULL; }
+				if (pname != NULL) { free(pname); pname = NULL; }
 		    	continue;
 			}
 			x = strtod(xs,NULL); y = strtod(ys,NULL);
@@ -1365,7 +1658,10 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
 			        ++precnt;
 			    }
 			}
-                        xs = ys = type = pname = NULL;
+                        if (xs != NULL) { free(xs); xs = NULL; }
+                        if (ys != NULL) { free(ys); ys = NULL; }
+                        if (type != NULL) { free(type); type = NULL; }
+                        if (pname != NULL) { free(pname); pname = NULL; }
 		    }
 			// We are finished looping, so it's time to close the curve if it is to be closed.
 		    if ( !open ) {
@@ -1409,7 +1705,7 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
 		    } else
 				last->next = ss;
 				last = ss;
-		}
+		    }
 	    }
 	} else if ( xmlStrcmp(kids->name,(const xmlChar *) "lib")==0 ) {
 	    xmlNodePtr keys, temp, dict = FindNode(kids->children,"dict");
@@ -1436,9 +1732,12 @@ static SplineChar *_UFOLoadGlyph(SplineFont *sf, xmlDocPtr doc, char *glifname, 
 			    	}
 					break;
 				}
+				free(keyname);
 		    }
 		}
+#ifndef _NO_PYTHON
 		sc->python_persistent = LibToPython(doc,dict);
+#endif
 	    }
 	}
     }
@@ -1499,6 +1798,7 @@ static void UFOLoadGlyphs(SplineFont *sf,char *glyphdir, int layerdest) {
     int tot;
 
     doc = xmlParseFile(glyphlist);
+    free(glyphlist);
     if ( doc==NULL ) {
 	LogError(_("Bad contents.plist"));
 return;
@@ -1531,6 +1831,7 @@ return;
 				if (existingglyph == NULL) newsc = 1;
 				valname = (char *) xmlNodeListGetString(doc,value->children,true);
 				glyphfname = buildname(glyphdir,valname);
+				free(valname);
 				sc = UFOLoadGlyph(sf, glyphfname, glyphname, existingglyph, layerdest);
 				if ( ( sc!=NULL ) && newsc ) {
 					sc->parent = sf;
@@ -1564,6 +1865,7 @@ static void UFOHandleKern(SplineFont *sf,char *basedir,int isv) {
 
     if ( GFileExists(fname))
 	doc = xmlParseFile(fname);
+    free(fname);
     if ( doc==NULL )
 return;
 
@@ -1582,6 +1884,7 @@ return;
 	if ( xmlStrcmp(keys->name,(const xmlChar *) "key")==0 ) {
 	    keyname = (char *) xmlNodeListGetString(doc,keys->children,true);
 	    sc = SFGetChar(sf,-1,keyname);
+	    free(keyname);
 	    if ( sc==NULL )
 	continue;
 	    keys = value;
@@ -1593,6 +1896,7 @@ return;
 		if ( xmlStrcmp(subkeys->name,(const xmlChar *) "key")==0 ) {
 		    keyname = (char *) xmlNodeListGetString(doc,subkeys->children,true);
 		    ssc = SFGetChar(sf,-1,keyname);
+		    free(keyname);
 		    if ( ssc==NULL )
 		continue;
 		    for ( kp=isv?sc->vkerns:sc->kerns; kp!=NULL && kp->sc!=ssc; kp=kp->next );
@@ -1602,7 +1906,7 @@ return;
 		    valname = (char *) xmlNodeListGetString(doc,value->children,true);
 		    offset = strtol(valname,&end,10);
 		    if ( *end=='\0' ) {
-			kp = XZALLOC(KernPair);
+			kp = chunkalloc(sizeof(KernPair));
 			kp->off = offset;
 			kp->sc = ssc;
 			if ( isv ) {
@@ -1619,6 +1923,7 @@ return;
 				isv?CHR('v','k','r','n'):CHR('k','e','r','n'),
 				script, gpos_pair);
 		    }
+		    free(valname);
 		}
 	    }
 	}
@@ -1633,7 +1938,7 @@ static void UFOAddName(SplineFont *sf,char *value,int strid) {
 
     for ( names=sf->names; names!=NULL && names->lang!=0x409; names=names->next );
     if ( names==NULL ) {
-	names = XZALLOC(struct ttflangname);
+	names = chunkalloc(sizeof(struct ttflangname));
 	names->next = sf->names;
 	names->lang = 0x409;
 	sf->names = names;
@@ -1645,7 +1950,7 @@ static void UFOAddPrivate(SplineFont *sf,char *key,char *value) {
     char *pt;
 
     if ( sf->private==NULL )
-	sf->private = XZALLOC(struct psdict);
+	sf->private = chunkalloc(sizeof(struct psdict));
     for ( pt=value; *pt!='\0'; ++pt ) {	/* Value might contain white space. turn into spaces */
 	if ( *pt=='\n' || *pt=='\r' || *pt=='\t' )
 	    *pt = ' ';
@@ -1671,6 +1976,7 @@ return;
 		strcpy(pt,valName);
 		pt += strlen(pt);
 	    }
+	    free(valName);
 	}
     }
     if ( pt!=space+1 ) {
@@ -1694,6 +2000,7 @@ return;
 	    char *valName = (char *) xmlNodeListGetString(doc,kid->children,true);
 	    if ( i<cnt )
 		array[i++] = strtol(valName,NULL,10);
+	    free(valName);
 	}
     }
 }
@@ -1708,6 +2015,7 @@ return( 0 );
 	if ( xmlStrcmp(kid->name,(const xmlChar *) "integer")==0 ) {
 	    char *valName = (char *) xmlNodeListGetString(doc,kid->children,true);
 	    mask |= 1<<strtol(valName,NULL,10);
+	    free(valName);
 	}
     }
 return( mask );
@@ -1725,6 +2033,7 @@ return;
 	    index = strtol(valName,NULL,10);
 	    if ( index < len<<5 )
 		res[index>>5] |= 1<<(index&31);
+	    free(valName);
 	}
     }
 }
@@ -1746,6 +2055,7 @@ return( NULL );
 
     temp = buildname(basedir,"fontinfo.plist");
     doc = xmlParseFile(temp);
+    free(temp);
     if ( doc==NULL ) {
 	/* Can I get an error message from libxml? */
 return( NULL );
@@ -1821,6 +2131,8 @@ return( NULL );
 		    UFOAddName(sf,(char *) valname,ttf_wwsfamily);
 		else if ( xmlStrcmp(keyname+12,(xmlChar *) "WWSSubfamilyName")==0 )
 		    UFOAddName(sf,(char *) valname,ttf_wwssubfamily);
+		else
+		    free(valname);
 	    } else if ( strncmp((char *) keyname, "openTypeHhea",12)==0 ) {
 		if ( xmlStrcmp(keyname+12,(xmlChar *) "Ascender")==0 ) {
 		    sf->pfminfo.hhead_ascent = strtol((char *) valname,&end,10);
@@ -1830,11 +2142,13 @@ return( NULL );
 		    sf->pfminfo.hheaddescent_add = false;
 		} else if ( xmlStrcmp(keyname+12,(xmlChar *) "LineGap")==0 )
 		    sf->pfminfo.linegap = strtol((char *) valname,&end,10);
+		free(valname);
 		sf->pfminfo.hheadset = true;
 	    } else if ( strncmp((char *) keyname,"openTypeVhea",12)==0 ) {
 		if ( xmlStrcmp(keyname+12,(xmlChar *) "LineGap")==0 )
 		    sf->pfminfo.vlinegap = strtol((char *) valname,&end,10);
 		sf->pfminfo.vheadset = true;
+		free(valname);
 	    } else if ( strncmp((char *) keyname,"openTypeOS2",11)==0 ) {
 		sf->pfminfo.pfmset = true;
 		if ( xmlStrcmp(keyname+11,(xmlChar *) "Panose")==0 ) {
@@ -1916,6 +2230,7 @@ return( NULL );
 		    UFOGetBitArray(doc,value,sf->pfminfo.unicoderanges,4);
 		    sf->pfminfo.hasunicoderanges = true;
 		}
+		free(valname);
 	    } else if ( strncmp((char *) keyname, "postscript",10)==0 ) {
 		if ( xmlStrcmp(keyname+10,(xmlChar *) "UnderlineThickness")==0 )
 		    sf->uwidth = strtol((char *) valname,&end,10);
@@ -1942,28 +2257,38 @@ return( NULL );
 		else if ( xmlStrcmp(keyname+10,(xmlChar *) "ForceBold")==0 )
 		    UFOAddPrivate(sf,"ForceBold",(char *) value->name);
 			/* value->name is either true or false */
+		free(valname);
 	    } else if ( strncmp((char *)keyname,"macintosh",9)==0 ) {
 		if ( xmlStrcmp(keyname+9,(xmlChar *) "FONDName")==0 )
 		    sf->fondname = (char *) valname;
+		else
+		    free(valname);
 	    } else if ( xmlStrcmp(keyname,(xmlChar *) "unitsPerEm")==0 ) {
 		em = strtol((char *) valname,&end,10);
 		if ( *end!='\0' ) em = -1;
+		free(valname);
 	    } else if ( xmlStrcmp(keyname,(xmlChar *) "ascender")==0 ) {
 		as = strtod((char *) valname,&end);
 		if ( *end!='\0' ) as = -1;
 		else sf->ufo_ascent = as;
+		free(valname);
 	    } else if ( xmlStrcmp(keyname,(xmlChar *) "descender")==0 ) {
 		ds = -strtod((char *) valname,&end);
 		if ( *end!='\0' ) ds = -1;
 		else sf->ufo_descent = -ds;
+		free(valname);
 	    } else if ( xmlStrcmp(keyname,(xmlChar *) "italicAngle")==0 ||
 		    xmlStrcmp(keyname,(xmlChar *) "postscriptSlantAngle")==0 ) {
 		sf->italicangle = strtod((char *) valname,&end);
 		if ( *end!='\0' ) sf->italicangle = 0;
+		free(valname);
 	    } else if ( xmlStrcmp(keyname,(xmlChar *) "descender")==0 ) {
 		ds = -strtol((char *) valname,&end,10);
 		if ( *end!='\0' ) ds = -1;
-	    }
+		free(valname);
+	    } else
+		free(valname);
+	    free(keyname);
 	}
     }
     if ( em==-1 && as!=-1 && ds!=-1 )
@@ -1979,6 +2304,7 @@ return( NULL );
 	xmlFreeDoc(doc);
 	setlocale(LC_NUMERIC,oldloc);
 	SplineFontFree(sf);
+	free(glyphdir);
 return( NULL );
     }
     sf->ascent = as; sf->descent = ds;
@@ -1996,6 +2322,7 @@ return( NULL );
     }
     if ( sf->familyname==NULL )
 	sf->familyname = copy(sf->fontname);
+    free(stylename);
     if ( sf->weight==NULL )
 	sf->weight = copy("Regular");
     if ( sf->version==NULL && sf->names!=NULL &&
@@ -2055,6 +2382,8 @@ return( NULL );
 									layernames[(2*layercontentslayercount)+1] = copy((char*)(layerglyphdirname));
 									if (layernames[(2*layercontentslayercount)+1])
 										layercontentslayercount++; // We increment only if both pointers are valid so as to avoid read problems later.
+									else
+										free(layernames[2*layercontentslayercount]);
 								}
 							}
 						}
@@ -2096,6 +2425,8 @@ return( NULL );
 
 										// The check is redundant, but it allows us to copy from sfd.c.
 										if (( layerdest<sf->layer_cnt ) && sf->layers) {
+											if (sf->layers[layerdest].name)
+												free(sf->layers[layerdest].name);
 											sf->layers[layerdest].name = layernames[2*lcount];
 											sf->layers[layerdest].background = bg;
 											// Fetch glyphs.
@@ -2108,12 +2439,20 @@ return( NULL );
 											if (layerdest == ly_fore) sf->grid.order2 = sf->layers[layerdest].order2;
 										}
 									}
+									free(glyphlist);
 								}
+								free(glyphdir);
 							}
 						}
 					} else {
 						LogError(_("layercontents.plist lists no valid layers."));
 					}
+					// Free layer names.
+					for (lcount = 0; lcount < layercontentslayercount; lcount++) {
+						if (layernames[2*lcount]) free(layernames[2*lcount]);
+						if (layernames[2*lcount+1]) free(layernames[2*lcount+1]);
+					}
+					free(layernames);
 				}
 			}
 			xmlFreeDoc(layercontentsdoc);
@@ -2129,7 +2468,10 @@ return( NULL );
 		    SFFindOrder(sf);
    	    	SFSetOrder(sf,sf->layers[ly_fore].order2);
 		}
+	    free(glyphlist);
+		free(glyphdir);
 	}
+	free(layercontentsname);
 
     sf->map = EncMapFromEncoding(sf,FindOrMakeEncoding("Unicode"));
 
@@ -2137,14 +2479,17 @@ return( NULL );
     temp = buildname(basedir,"features.fea");
     if ( GFileExists(temp))
 	SFApplyFeatureFilename(sf,temp);
+    free(temp);
 
     UFOHandleKern(sf,basedir,0);
     UFOHandleKern(sf,basedir,1);
 
+#ifndef _NO_PYTHON
     temp = buildname(basedir,"lib.plist");
     doc = NULL;
     if ( GFileExists(temp))
 	doc = xmlParseFile(temp);
+    free(temp);
     if ( doc!=NULL ) {
 		plist = xmlDocGetRootElement(doc);
 		dict = NULL;
@@ -2159,6 +2504,7 @@ return( NULL );
 		}
 		xmlFreeDoc(doc);
     }
+#endif
     setlocale(LC_NUMERIC,oldloc);
 return( sf );
 }
