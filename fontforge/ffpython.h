@@ -25,6 +25,9 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef FONTFORGE_FFPYTHON_H
+#define FONTFORGE_FFPYTHON_H
+
 #include "flaglist.h"
 
 /*********** PYTHON 3 **********/
@@ -106,9 +109,12 @@ extern void PyFF_Glyph_Set_Layer(SplineChar *sc,int layer);
 typedef struct ff_point {
     PyObject_HEAD
     /* Type-specific fields go here. */
-    float x,y;
+    double x,y;
     uint8 on_curve;
     uint8 selected;
+    uint8 type;
+    uint8 interpolated;
+    char *name;
 } PyFF_Point;
 static PyTypeObject PyFF_PointType;
 
@@ -246,3 +252,4 @@ typedef void (*pyFF_sendRedoIfInSession_Func_t)( void* cv );
 pyFF_sendRedoIfInSession_Func_t get_pyFF_sendRedoIfInSession_Func( void );
 void set_pyFF_sendRedoIfInSession_Func( pyFF_sendRedoIfInSession_Func_t f );
 
+#endif /* FONTFORGE_FFPYTHON_H */

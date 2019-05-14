@@ -24,10 +24,15 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "splinerefigure.h"
+
 #include "fontforge.h"
 #include <stdio.h>
 #include <math.h>
 #include "splinefont.h"
+#include "splineutil.h"
+#include "splineutil2.h"
 #ifdef HAVE_IEEEFP_H
 # include <ieeefp.h>		/* Solaris defines isnan in ieeefp rather than math.h */
 #endif
@@ -44,11 +49,13 @@ void SplineRefigure3(Spline *spline) {
     if ( spline->acceptableextrema )
 	old = *spline;
     xsp->d = from->me.x; ysp->d = from->me.y;
-    if ( from->nonextcp ) from->nextcp = from->me;
-    else if ( from->nextcp.x==from->me.x && from->nextcp.y == from->me.y ) from->nonextcp = true;
-    if ( to->noprevcp ) to->prevcp = to->me;
-    else if ( to->prevcp.x==to->me.x && to->prevcp.y == to->me.y ) to->noprevcp = true;
-    if ( from->nonextcp && to->noprevcp ) {
+    int nonextcp_effective = 0;
+    int noprevcp_effective = 0;
+    if ( from->nonextcp ) { from->nextcp = from->me; nonextcp_effective = true; }
+    else if ( from->nextcp.x==from->me.x && from->nextcp.y == from->me.y ) { nonextcp_effective = true; }
+    if ( to->noprevcp ) { to->prevcp = to->me; noprevcp_effective = true; }
+    else if ( to->prevcp.x==to->me.x && to->prevcp.y == to->me.y ) { noprevcp_effective = true; }
+    if ( nonextcp_effective && noprevcp_effective ) {
 	spline->islinear = true;
 	xsp->c = to->me.x-from->me.x;
 	ysp->c = to->me.y-from->me.y;
@@ -83,7 +90,7 @@ void SplineRefigure3(Spline *spline) {
 		spline->isquadratic = true;	/* Only likely if we read in a TTF */
 	}
     }
-    if ( !finite(ysp->a) || !finite(xsp->a) || !finite(ysp->c) || !finite(xsp->c) || !finite(ysp->d) || !finite(xsp->d))
+    if ( !isfinite(ysp->a) || !isfinite(xsp->a) || !isfinite(ysp->c) || !isfinite(xsp->c) || !isfinite(ysp->d) || !isfinite(xsp->d))
 	IError("NaN value in spline creation");
     LinearApproxFree(spline->approx);
     spline->approx = NULL;

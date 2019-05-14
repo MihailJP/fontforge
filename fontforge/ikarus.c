@@ -24,7 +24,15 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "ikarus.h"
+
 #include "fontforge.h"
+#include "namelist.h"
+#include "mem.h"
+#include "splineorder2.h"
+#include "splineutil.h"
+#include "splineutil2.h"
 #include <utype.h>
 #include <string.h>
 #include <ustring.h>
@@ -635,7 +643,7 @@ return( NULL );
 return( NULL );
     }
     if ( jlen!=12 )
-	LogError( _("Unexpected size for font info section of URW font (expected 12, got %d)\n"), ilen );
+	LogError( _("Unexpected size for font info section of URW font (expected 12, got %d)\n"), jlen );
     if ( getushort(file)!=1 ) {		/* 1=> typeface */
 	fclose(file);
 return( NULL );

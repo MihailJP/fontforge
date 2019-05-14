@@ -29,35 +29,14 @@
 /* Which are defined here: http://people.mozilla.com/~jkew/woff/woff-2009-09-16.html */
 /* Basically sfnts with compressed tables and some more metadata */
 
+#include "woff.h"
+
 #include "fontforge.h"
+#include "mem.h"
+#include "parsettf.h"
+#include "tottf.h"
 #include <math.h>
 #include <ctype.h>
-
-#ifdef _NO_LIBPNG
-
-SplineFont *_SFReadWOFF(FILE *woff,int flags,enum openflags openflags, char *filename,struct fontdict *fd) {
-    ff_post_error(_("WOFF not supported"), _("This version of fontforge cannot handle WOFF files. You need to recompile it with libpng and zlib") );
-return( NULL );
-}
-
-int _WriteWOFFFont(FILE *woff,SplineFont *sf, enum fontformat format,
-	int32 *bsizes, enum bitmapformat bf,int flags,EncMap *enc,int layer) {
-    ff_post_error(_("WOFF not supported"), _("This version of fontforge cannot handle WOFF files. You need to recompile it with libpng and zlib") );
-return( 1 );
-}
-
-int WriteWOFFFont(char *fontname,SplineFont *sf, enum fontformat format,
-	int32 *bsizes, enum bitmapformat bf,int flags,EncMap *enc,int layer) {
-    ff_post_error(_("WOFF not supported"), _("This version of fontforge cannot handle WOFF files. You need to recompile it with libpng and zlib") );
-return( 1 );
-}
-
-int CanWoff(void) {
-return( 0 );
-}
-
-#else /* ! _NO_LIBPNG */
-
 # include <zlib.h>
 
 static void copydata(FILE *to,int off_to,FILE *from,int off_from, int len) {
@@ -207,13 +186,13 @@ return( strm.total_out );
     }
 }
 
-SplineFont *_SFReadWOFF(FILE *woff,int flags,enum openflags openflags, char *filename,struct fontdict *fd) {
+SplineFont *_SFReadWOFF(FILE *woff,int flags,enum openflags openflags, char *filename,char *chosenname,struct fontdict *fd) {
     int flavour;
     int iscff;
     int len, len_stated;
     int num_tabs;
     int major, minor;
-    int metaOffset, metaLenCompressed, metaLenUncompressed;
+    uint32_t metaOffset, metaLenCompressed, metaLenUncompressed;
     int privOffset, privLength;
     int i,j,err;
     int tag, offset, compLen, uncompLen, checksum;
@@ -225,9 +204,12 @@ SplineFont *_SFReadWOFF(FILE *woff,int flags,enum openflags openflags, char *fil
     fseek(woff,0,SEEK_END);
     len = ftell(woff);
     rewind(woff);
-    if ( getlong(woff)!=CHR('w','O','F','F') ) {
-	LogError(_("Bad signature in WOFF"));
-return( NULL );
+    {
+        int signature = getlong(woff);
+        if ( signature!=CHR('w','O','F','F') ) {
+            LogError(_("Bad signature in WOFF header."));
+            return NULL;
+        }
     }
     flavour = getlong(woff);
     iscff = (flavour==CHR('O','T','T','O'));
@@ -246,9 +228,9 @@ return( NULL );
     /* total_uncompressed_sfnt_size = */ getlong(woff);
     major = getushort(woff);
     minor = getushort(woff);
-    metaOffset = getlong(woff);
-    metaLenCompressed = getlong(woff);
-    metaLenUncompressed = getlong(woff);
+    metaOffset = (uint32_t)getlong(woff);
+    metaLenCompressed = (uint32_t)getlong(woff);
+    metaLenUncompressed = (uint32_t)getlong(woff);
     privOffset = getlong(woff);
     privLength = getlong(woff);
 
@@ -332,7 +314,7 @@ return( NULL );
 	putlong(sfnt,checksum);
     }
     rewind(sfnt);
-    sf = _SFReadTTF(sfnt,flags,openflags,filename,fd);
+    sf = _SFReadTTF(sfnt,flags,openflags,filename,chosenname,fd);
     fclose(sfnt);
 
     if ( sf!=NULL ) {
@@ -341,19 +323,68 @@ return( NULL );
     }
 
     if ( sf!=NULL && metaOffset!=0 ) {
-	char *temp = malloc(metaLenCompressed+1);
+	/*
+	* Boundary/integer overflow checks:
+	*
+	* We don't want to actually dereference a null pointer (returned
+	* by asking to allocate too much RAM) and we don't want to allocate
+	* a 0-sized chunk (caused when one of the (metaLenxxx + 1) values overflows).
+	*
+	* We can safely pass sf->woffMetadata as a NULL pointer because
+	* it's never accessed anywhere else without a check for it being
+	* NULL first
+	*/
+	if(metaLenUncompressed == UINT32_MAX) {
+		LogError(_("WOFF uncompressed metadata section too large.\n"));
+		sf->woffMetadata = NULL; 
+		return( sf );
+	}
+	if(metaLenCompressed == UINT32_MAX) {
+		LogError(_("WOFF compressed metadata section too large.\n"));
+		sf->woffMetadata = NULL;
+		return( sf );
+	}
+	sf->woffMetadata = malloc(metaLenUncompressed+1);
+	if(sf->woffMetadata == NULL) { 
+		LogError(_("WOFF uncompressed metadata section too large.\n"));
+		return( sf );
+	}
+	unsigned char *temp = malloc(metaLenCompressed+1);
+	if(temp == NULL) { 
+		LogError(_("WOFF compressed metadata section too large.\n"));
+		free(sf->woffMetadata); 
+		sf->woffMetadata = NULL;
+		free(temp);
+		return( sf );
+	}
 	uLongf len = metaLenUncompressed;
 	fseek(woff,metaOffset,SEEK_SET);
 	fread(temp,1,metaLenCompressed,woff);
-	sf->woffMetadata = malloc(metaLenUncompressed+1);
 	sf->woffMetadata[metaLenUncompressed] ='\0';
-	uncompress(sf->woffMetadata,&len,temp,metaLenCompressed);
+	uncompress((unsigned char *)sf->woffMetadata,&len,temp,metaLenCompressed);
 	sf->woffMetadata[len] ='\0';
 	free(temp);
     }
 
 return( sf );
 }	
+
+typedef struct {
+    int index;
+    int offset;
+} tableOrderRec;
+
+static int
+compareOffsets(const void * lhs, const void * rhs)
+{
+    const tableOrderRec * a = (const tableOrderRec *) lhs;
+    const tableOrderRec * b = (const tableOrderRec *) rhs;
+    /* don't simply return a->offset - b->offset because these are unsigned
+       offset values; could convert to int, but possible integer overflow */
+    return a->offset > b->offset ? 1 :
+           a->offset < b->offset ? -1 :
+           0;
+}
 
 int _WriteWOFFFont(FILE *woff,SplineFont *sf, enum fontformat format,
 	int32 *bsizes, enum bitmapformat bf,int flags,EncMap *enc,int layer) {
@@ -365,7 +396,8 @@ int _WriteWOFFFont(FILE *woff,SplineFont *sf, enum fontformat format,
     int i;
     int compLen, uncompLen, newoffset;
     int tag, checksum, offset;
-    int tab_start, here;
+    int tab_start;
+    tableOrderRec *tableOrder = NULL;
 
     if ( major==woffUnset ) {
 	struct ttflangname *useng;
@@ -413,6 +445,29 @@ return( ret );
     (void) getushort(sfnt);
     (void) getushort(sfnt);
 
+    /*
+     * At this point _WriteTTFFont should have generated an sfnt file with
+     * valid checksums, correct padding and no extra gaps. However, the order
+     * of the font tables in the original sfnt font must also be preserved so
+     * that WOFF consumers can recover the original offsets as well as the
+     * original font. Hence we will compress and write the font tables into
+     * the WOFF file using the original offset order. Note that the order of
+     * tables may not be the same as the one of table directory entries.
+     * See https://github.com/fontforge/fontforge/issues/926
+     */
+    tableOrder = (tableOrderRec *) malloc(num_tabs * sizeof(tableOrderRec));
+    if (!tableOrder) {
+        fclose(sfnt);
+        return false;
+    }
+    for ( i=0; i<num_tabs; ++i ) {
+        fseek(sfnt,(3 + 4*i + 2)*sizeof(int32),SEEK_SET);
+        tableOrder[i].index = i;
+        tableOrder[i].offset = getlong(sfnt);
+    }
+    qsort(tableOrder, num_tabs, sizeof(tableOrderRec), compareOffsets);
+
+    /* Now generate the WOFF file */
     rewind(woff);
     putlong(woff,CHR('w','O','F','F'));
     putlong(woff,flavour);
@@ -433,11 +488,11 @@ return( ret );
 	putlong(woff,0);
 
     for ( i=0; i<num_tabs; ++i ) {
+	fseek(sfnt,(3 + 4*tableOrder[i].index)*sizeof(int32),SEEK_SET);
 	tag = getlong(sfnt);
 	checksum = getlong(sfnt);
 	offset = getlong(sfnt);
 	uncompLen = getlong(sfnt);
-	here = ftell(sfnt);
 	newoffset = ftell(woff);
 	compLen = compressOrNot(woff,newoffset,sfnt,offset,uncompLen,false);
 	if ( (ftell(woff)&3)!=0 ) {
@@ -447,14 +502,12 @@ return( ret );
 	    if ( ftell(woff)&2 )
 		putshort(woff,0);
 	}
-	fseek(sfnt,here,SEEK_SET);
-	fseek(woff,tab_start,SEEK_SET);
+	fseek(woff,tab_start+(5*tableOrder[i].index)*sizeof(int32),SEEK_SET);
 	putlong(woff,tag);
 	putlong(woff,newoffset);
 	putlong(woff,compLen);
 	putlong(woff,uncompLen);
 	putlong(woff,checksum);
-	tab_start = ftell(woff);
 	fseek(woff,0,SEEK_END);
     }
     fclose(sfnt);
@@ -462,9 +515,9 @@ return( ret );
     if ( sf->woffMetadata!= NULL ) {
 	int uncomplen = strlen(sf->woffMetadata);
 	uLongf complen = 2*uncomplen;
-	char *temp=malloc(complen+1);
+	unsigned char *temp=malloc(complen+1);
 	newoffset = ftell(woff);
-	compress(temp,&complen,sf->woffMetadata,uncomplen);
+	compress(temp,&complen,(unsigned char *)sf->woffMetadata,uncomplen);
 	fwrite(temp,1,complen,woff);
 	free(temp);
 	if ( (ftell(woff)&3)!=0 ) {
@@ -485,6 +538,8 @@ return( ret );
     len = ftell(woff);
     fseek(woff,8,SEEK_SET);
     putlong(woff,len);
+
+    free(tableOrder);
 return( true );		/* No errors */
 }
 
@@ -493,23 +548,155 @@ int WriteWOFFFont(char *fontname,SplineFont *sf, enum fontformat format,
     FILE *woff;
     int ret;
 
-    if ( strstr(fontname,"://")!=NULL ) {
-	if (( woff = tmpfile())==NULL )
+    if (( woff=fopen(fontname,"wb+"))==NULL )
 return( 0 );
-    } else {
-	if (( woff=fopen(fontname,"wb+"))==NULL )
-return( 0 );
-    }
     ret = _WriteWOFFFont(woff,sf,format,bsizes,bf,flags,enc,layer);
-    if ( strstr(fontname,"://")!=NULL && ret )
-	ret = URLFromFile(fontname,woff);
     if ( fclose(woff)==-1 )
 return( 0 );
 return( ret );
 }
 
-int CanWoff(void) {
-    return( true );
+#ifdef FONTFORGE_CAN_USE_WOFF2
+
+/**
+ * Read the contents of fp into a buffer, caller must free.
+ */
+static uint8_t *ReadFileToBuffer(FILE *fp, size_t *buflen)
+{
+    if (fseek(fp, 0, SEEK_END) < 0) {
+        return NULL;
+    }
+
+    long length = ftell(fp);
+    if (length <= 0 || fseek(fp, 0, SEEK_SET) < 0) {
+        return NULL;
+    }
+
+    uint8_t *buf = calloc(length, 1);
+    if (!buf) {
+        return NULL;
+    }
+
+    *buflen = fread(buf, 1, length, fp);
+    if (fgetc(fp) != EOF) {
+        free(buf);
+        return NULL;
+    }
+    return buf;
 }
 
-#endif /* ! _NO_LIBPNG */
+/**
+ * Write the contents of buf into fp.
+ * On success, the returned file pointer is equal to fp.
+ * It will be positioned at the start of the file.
+ */
+static FILE *WriteBufferToFile(FILE *fp, const uint8_t *buf, size_t buflen)
+{
+    if (fp && fwrite(buf, 1, buflen, fp) == buflen) {
+        if (fseek(fp, 0, SEEK_SET) >= 0) {
+            return fp;
+        }
+    }
+    return NULL;
+}
+
+/**
+ * Write the contents of buf into a temporary file.
+ * On success, the returned file pointer is at the start of the file.
+ * The caller is responsible for closing it.
+ */
+static FILE *WriteBufferToTempFile(const uint8_t *buf, size_t buflen)
+{
+    FILE *fp = tmpfile();
+    if (!WriteBufferToFile(fp, buf, buflen)) {
+        fclose(fp);
+        return NULL;
+    }
+    return fp;
+}
+
+int WriteWOFF2Font(char *fontname, SplineFont *sf, enum fontformat format, int32_t *bsizes, enum bitmapformat bf, int flags, EncMap *enc, int layer)
+{
+    FILE *woff = fopen(fontname, "wb");
+    int ret = 0;
+    if (woff) {
+        ret = _WriteWOFF2Font(woff, sf, format, bsizes, bf, flags, enc, layer);
+        fclose(woff);
+    }
+    return ret;
+}
+
+int _WriteWOFF2Font(FILE *fp, SplineFont *sf, enum fontformat format, int32_t *bsizes, enum bitmapformat bf, int flags, EncMap *enc, int layer)
+{
+    FILE *tmp = tmpfile();
+    if (!tmp) {
+        return 0;
+    }
+    int ret = _WriteTTFFont(tmp, sf, format, bsizes, bf, flags, enc, layer);
+    if (!ret) {
+        fclose(tmp);
+        return 0;
+    }
+
+    size_t raw_input_length = 0;
+    uint8_t *raw_input = ReadFileToBuffer(tmp, &raw_input_length);
+    fclose(tmp);
+    if (!raw_input) {
+        return 0;
+    }
+
+    size_t comp_size = woff2_max_woff2_compressed_size(raw_input, raw_input_length);
+    uint8_t *comp_buffer = calloc(comp_size, 1);
+    if (!comp_buffer) {
+        free(raw_input);
+        return 0;
+    }
+    ret = woff2_convert_ttf_to_woff2(raw_input, raw_input_length, comp_buffer, &comp_size);
+    free(raw_input);
+    if (!ret) {
+        free(comp_buffer);
+        return 0;
+    }
+
+    ret = WriteBufferToFile(fp, comp_buffer, comp_size) != NULL;
+    free(comp_buffer);
+    return ret;
+}
+
+SplineFont *_SFReadWOFF2(FILE *fp, int flags, enum openflags openflags, char *filename,char *chosenname,struct fontdict *fd)
+{
+    size_t raw_input_length = 0;
+    if (!fp) {
+        return NULL;
+    }
+
+    uint8_t *raw_input = ReadFileToBuffer(fp, &raw_input_length);
+
+    size_t decomp_size = woff2_compute_woff2_final_size(raw_input, raw_input_length);
+    if (decomp_size > WOFF2_DEFAULT_MAX_SIZE) {
+        decomp_size = WOFF2_DEFAULT_MAX_SIZE;
+    }
+    uint8_t *decomp_buffer = calloc(decomp_size, 1);
+    if (!decomp_buffer) {
+        free(raw_input);
+        return NULL;
+    }
+    int success = woff2_convert_woff2_to_ttf(raw_input, raw_input_length, decomp_buffer, &decomp_size);
+    free(raw_input);
+    if (!success) {
+        free(decomp_buffer);
+        return NULL;
+    }
+
+    FILE *tmp = WriteBufferToTempFile(decomp_buffer, decomp_size);
+    free(decomp_buffer);
+    if (!tmp) {
+        return NULL;
+    }
+
+    SplineFont *ret = _SFReadTTF(tmp, flags, openflags, filename, chosenname, fd);
+    fclose(tmp);
+    return ret;
+}
+
+#endif // FONTFORGE_CAN_USE_WOFF2

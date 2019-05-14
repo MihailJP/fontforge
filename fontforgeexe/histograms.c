@@ -24,8 +24,11 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "autohint.h"
+#include "dumppfa.h"
 #include "fontforgeui.h"
 #include "psfont.h"
+#include "splineutil.h"
 #include <ustring.h>
 #include <gkeysym.h>
 #include <utype.h>
@@ -337,9 +340,12 @@ static char *ArrayOrder(char *old,int args,int val1,int val2) {
 	old = end;
 	while ( *old==' ' ) ++old;
     }
-    array[i++] = val1;
-    if ( args==2 )
-	array[i++] = val2;
+    if (i<40)
+        array[i++] = val1;
+    if (i<40) {
+        if ( args==2 )
+	    array[i++] = val2;
+    }
     for ( j=0; j<i; ++j ) for ( k=j+1; k<i; ++k ) if ( array[j]>array[k] ) {
 	double temp = array[j];
 	array[j] = array[k];

@@ -24,6 +24,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <gutils.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -795,8 +796,12 @@ static void DumpEpsHeader(FILE *eps, struct ttfinfo *info, int glyph,
 	fprintf(eps, " Unicode %04x", info->glyph_unicode[glyph]);
     fprintf( eps, "\n" );
     fprintf( eps, "%%%%Creator: ttf2eps\n" );
-    time(&now);
-    tm = localtime(&now);
+    now = GetTime();
+    if (!getenv("SOURCE_DATE_EPOCH")) {
+	tm = localtime(&now);
+    } else {
+	tm = gmtime(&now);
+    }
     fprintf( eps, "%%%%CreationDate: %d:%02d %d-%d-%d\n", tm->tm_hour, tm->tm_min,
 	    tm->tm_mday, tm->tm_mon+1, 1900+tm->tm_year );
     fprintf( eps, "%%%%EndComments\n" );
@@ -1093,6 +1098,7 @@ static void DumpGlyph(FILE *ttf, struct ttfinfo *info, int glyph) {
     trans[1] = trans[2] = trans[4] = trans[5] = 0;
     DoDumpGlyph(ttf, eps, info, glyph, trans, 1);
     fprintf( eps, "%%%%EOF\n" );
+    free(name);
     fclose(eps);
 }
 
@@ -1135,7 +1141,7 @@ int main(int argc, char **argv) {
 	fprintf( stderr, "Must have exactly one truetype filename argument\n" );
 return( 1 );
     }
-    ttf = fopen(filename,"r");
+    ttf = fopen(filename,"rb");
     if ( ttf==NULL ) {
 	fprintf( stderr, "Can't open %s\n", filename);
 return( 1 );

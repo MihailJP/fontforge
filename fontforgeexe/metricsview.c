@@ -25,8 +25,21 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "autotrace.h"
+#include "autowidth.h"
+#include "bitmapchar.h"
+#include "bvedit.h"
+#include "cvundoes.h"
 #include "fontforgeui.h"
+#include "fvcomposite.h"
+#include "fvfonts.h"
 #include "lookups.h"
+#include "mm.h"
+#include "splinefill.h"
+#include "splineoverlap.h"
+#include "splineutil.h"
+#include "splineutil2.h"
+#include "tottfgpos.h"
 #include <gkeysym.h>
 #include <gresource.h>
 #include <gresedit.h>
@@ -79,6 +92,47 @@ static int MVMoveToPrevInWordList(GGadget *g, GEvent *e)
     return 1;
 }
 
+static void MVMoveInTableByColumnByOffset(MetricsView *mv, int offset) {
+	int current_pos = 0;
+	// Find the currently selected record.
+	for (current_pos = 0; current_pos < mv->clen && mv->perchar[current_pos].selected == 0; current_pos ++);
+	// Return on failure.
+	if (current_pos >= mv->clen || mv->perchar[current_pos].selected == 0) return;
+	// Ensure that we can move ahead the selected number of records. Return otherwise.
+	if (current_pos + offset >= mv->clen) return;
+	// Change the selection.
+	mv->perchar[current_pos].selected = 0;
+	mv->perchar[current_pos + offset].selected = 1;
+	// Find the currently selected gadget.
+	GGadget *current_gadget = GWindowGetFocusGadgetOfWindow(mv->gw);
+	// Find which control in the current record it is.
+	int current_gadget_type = 0; // 0 is nothing, 1 is Name, 2 is Width, 3 is LBearing, 4 is RBearing, 5 is Kern.
+	// We do not currently use this value, but it seems likely to be useful.
+	GGadget *target_gadget = NULL;
+	if (current_gadget == mv->perchar[current_pos].name) {
+		current_gadget_type = 1;
+		target_gadget = mv->perchar[current_pos+offset].name;
+	} else if (current_gadget == mv->perchar[current_pos].width) {
+		current_gadget_type = 2;
+		target_gadget = mv->perchar[current_pos+offset].width;
+	} else if (current_gadget == mv->perchar[current_pos].lbearing) {
+		current_gadget_type = 3;
+		target_gadget = mv->perchar[current_pos+offset].lbearing;
+	} else if (current_gadget == mv->perchar[current_pos].rbearing) {
+		current_gadget_type = 4;
+		target_gadget = mv->perchar[current_pos+offset].rbearing;
+	} else if (current_gadget == mv->perchar[current_pos].kern) {
+		current_gadget_type = 5;
+		target_gadget = mv->perchar[current_pos+offset].kern;
+	}
+	// Abort if there is no selected control for the current record.
+	if (current_gadget_type == 0) return;
+	// Change the control focus.
+	if (target_gadget != NULL) {
+		GWidgetIndicateFocusGadget(target_gadget);
+	}
+	return;
+}
 
 /**
  * This doesn't need to be a perfect test by any means. It should
@@ -113,17 +167,20 @@ static SplineChar* getSelectedChar( MetricsView* mv ) {
 
 static void selectUserChosenWordListGlyphs( MetricsView *mv, void* userdata )
 {
-    printf("selectUserChosenWordListGlyphs(top)\n");
+//    printf("selectUserChosenWordListGlyphs(top)\n");
     MVSelectSetForAll( mv, 0 );
-    if( userdata > 0 && userdata!=-1 && userdata!=-2 )
+    // The previous check thought that userdata was in integer and wanted to verify that
+    // it was positive and not equal to -1 or to -2. Frank changed it.
+    if( userdata != NULL)
     {
-	GArray* selected = (GArray*)userdata;
-	int i = 0;
-	for (i = 0; i < selected->len; i++)
-	{
-	    int v = g_array_index (selected, gint, i);
-	    printf("selectUserChosenWordListGlyphs(iter) i:%d v:%d\n", i, v );
-	    MVSelectChar( mv, v );
+	if (userdata == (void*)(-1) || userdata == (void*)(-2))
+	  fprintf(stderr, "Possible error; see the code here.\n");
+
+	WordListLine wll = (WordListLine)userdata;
+	for( ; wll->sc; wll++ ) {
+	    if( wll->isSelected ) {
+		MVSelectChar( mv, wll->currentGlyphIndex );
+	    }
 	}
     }
 }
@@ -699,6 +756,7 @@ static void MVRefreshValues(MetricsView *mv, int i) {
 if( !mv->perchar[i].width )
 return;
 
+    //printf("MVRefreshValues() **** setting width to %d\n", sc->width );
     sprintf(buf,"%d",mv->vertical ? sc->vwidth : sc->width);
     GGadgetSetTitle8(mv->perchar[i].width,buf);
 
@@ -908,7 +966,7 @@ static void MVRemetric(MetricsView *mv) {
 
     anysc = goodsc = NULL; goodpos = -1;
     // We recurse through all of the characters in the metrics view.
-    for ( i=0; mv->chars[i] && i<mv->clen; ++i ) {
+    for ( i=0; i<mv->clen && mv->chars[i] ; ++i ) {
         // We assign the first splinechar to anysc.
 	if ( anysc==NULL ) anysc = mv->chars[i];
         // We assign the first splinechar of a non-default script to goodsc.
@@ -1080,6 +1138,14 @@ static real GGadgetToReal(GGadget *g)
     return val;
 }
 
+static void MV_handle_collabclient_maybeSnapshot( MetricsView *mv, SplineChar *sc ) {
+    if ( collabclient_inSessionFV(&mv->fv->b) ) {
+	int dohints = 0;
+	SCPreserveState( sc, dohints );
+    }
+}
+
+
 /* If we are in a collab session, then send the redo through */
 /* to the server to update other clients to our state.	     */
 static void MV_handle_collabclient_sendRedo( MetricsView *mv, SplineChar *sc ) {
@@ -1138,6 +1204,7 @@ return( true );
 
 	    SCSynchronizeWidth(sc,val,sc->width,NULL);
 	    SCCharChangedUpdate(sc,ly_none);
+//	    printf("mv_widthChanged() sending collab\n");
 	    MV_handle_collabclient_sendRedo(mv,sc);
 
 	} else if ( mv->vertical && val!=sc->vwidth ) {
@@ -1286,7 +1353,7 @@ return( gwwv_ask(_("Use Kerning Class?"),(const char **) yesno,0,1,
 static int MV_ChangeKerning(MetricsView *mv, int which, int offset, int is_diff) {
     SplineChar *sc = mv->glyphs[which].sc;
     SplineChar *psc = mv->glyphs[which-1].sc;
-    KernPair *kp;
+    KernPair *kp = 0;
     KernClass *kc; int index;
     int i;
     struct lookup_subtable *sub = GGadgetGetListItemSelected(mv->subtable_list)->userdata;
@@ -1324,7 +1391,7 @@ return( true );		/* No change, don't bother user */
 	    struct subtable_data sd;
 	    memset(&sd,0,sizeof(sd));
 	    sd.flags = (mv->vertical ? sdf_verticalkern : sdf_horizontalkern ) |
-		    sdf_kernpair;
+		    sdf_kernclass;
 	    sub = SFNewLookupSubtableOfType(psc->parent,gpos_pair,&sd,mv->layer);
 	    if ( sub==NULL )
 return( false );
@@ -1356,6 +1423,14 @@ return( false );
 		break;
 		    }
 		    kpprev = kpcur;
+		}
+	    }
+
+	    // avoid dangling refrences to kp
+	    int i = 0;
+	    for( i=0; mv->glyphs[i].sc; i++ ) {
+		if( i!=which && mv->glyphs[i].kp == kp ) {
+		    mv->glyphs[i].kp = 0;
 		}
 	    }
 	    chunkfree( kp,sizeof(KernPair) );
@@ -1461,6 +1536,32 @@ return( false );
 			}
 		    }
 		}
+	    }
+	}
+    }
+
+    // refresh other kerning input boxes if they are the same characters
+    static int MV_ChangeKerning_Nested = 0;
+    int refreshOtherPairEntries = true;
+    if( !MV_ChangeKerning_Nested && refreshOtherPairEntries && mv->glyphs[0].sc )
+    {
+	int i = 1;
+	for( ; mv->glyphs[i].sc; i++ )
+	{
+	    if( i != which
+		&& sc  == mv->glyphs[i].sc
+		&& psc == mv->glyphs[i-1].sc )
+	    {
+		
+		GGadget *g = mv->perchar[i].kern;
+		unichar_t *end;
+		int val = u_strtol(_GGadgetGetTitle(g),&end,10);
+
+		MV_ChangeKerning_Nested = 1;
+		int which = (intpt) GGadgetGetUserData(g);
+		MV_ChangeKerning( mv, which, offset, is_diff );
+		GGadgetSetTitle8( g, tostr(offset) );
+		MV_ChangeKerning_Nested = 0;
 	    }
 	}
     }
@@ -1845,7 +1946,7 @@ static int WordlistEscapedInputStringToRealString_getFakeUnicodeAs_MVFakeUnicode
 
 
 static void MVTextChanged(MetricsView *mv) {
-    const unichar_t *ret, *pt, *ept, *tpt;
+    const unichar_t *ret = 0, *pt, *ept, *tpt;
     int i,ei, j, start=0, end=0;
     int missing;
     int direction_change = false;
@@ -1855,15 +1956,10 @@ static void MVTextChanged(MetricsView *mv) {
 
     // convert the slash escpae codes and the like to the real string we will use
     // for the metrics window
-    printf("MVTextChanged(top) p:%p ret:%s\n", ret, u_to_c(ret));
-    GArray* selected = 0;
-    unichar_t* retnew = WordlistEscapedInputStringToRealString(
-	mv->sf,
-	ret, &selected,
-	WordlistEscapedInputStringToRealString_getFakeUnicodeAs_MVFakeUnicodeOfSc, mv );
-    ret = retnew;
-    printf("MVTextChanged(done processing) p:%p ret:%s\n", ret, u_to_c(ret));
-
+    WordListLine wll = WordlistEscapedInputStringToParsedDataComplex(
+    	mv->sf, _GGadgetGetTitle(mv->text),
+    	WordlistEscapedInputStringToRealString_getFakeUnicodeAs_MVFakeUnicodeOfSc, mv );
+    ret = WordListLine_toustr( wll );
 
     if (( ret[0]<0x10000 && isrighttoleft(ret[0]) && !mv->right_to_left ) ||
 	    ( ret[0]<0x10000 && !isrighttoleft(ret[0]) && mv->right_to_left )) {
@@ -1947,11 +2043,8 @@ return;					/* Nothing changed */
 	if( len )
 	    gt = ti[0];
     }
-    if( selected )
-    {
-        selectUserChosenWordListGlyphs( mv, selected );
-	g_array_unref( selected );
-    }
+
+    selectUserChosenWordListGlyphs( mv, wll );
     GDrawRequestExpose(mv->v,NULL,false);
 }
 
@@ -2008,25 +2101,22 @@ static void MVFigureGlyphNames(MetricsView *mv,const unichar_t *names) {
     GDrawRequestExpose(mv->v,NULL,false);
 }
 
-static void MVLoadWordList(MetricsView *mv,int type)
-{
+static void MVLoadWordList(MetricsView *mv, int type) {
     int words_max = 1024*128;
     GTextInfo** words = WordlistLoadFileToGTextInfo( type, words_max );
-    if( !words )
-    {
-	GGadgetSetTitle8(mv->text,"");
-	return;
+    if ( !words ) {
+	    GGadgetSetTitle8(mv->text,"");
+	    return;
     }
 
-    if( words[0] )
-    {
-	GGadgetSetList(mv->text,words,true);
-	GGadgetSetTitle8(mv->text,(char *) (words[0]->text));
-	if ( type==-2 )
-	    MVFigureGlyphNames(mv,_GGadgetGetTitle(mv->text)+1);
-	GTextInfoArrayFree(words);
-	mv->word_index = 0;
+    if ( words[0] ) {
+	    GGadgetSetList(mv->text,words,true);
+	    GGadgetSetTitle8(mv->text,(char *) (words[0]->text));
+	    if ( type==-2 )
+	        MVFigureGlyphNames(mv,_GGadgetGetTitle(mv->text)+1);
+	    mv->word_index = 0;
     }
+    GTextInfoArrayFree(words);
 }
 
 static int MV_TextChanged(GGadget *g, GEvent *e) {
@@ -2234,6 +2324,15 @@ return( true );
 
 
 #define MID_Warnings	3000
+
+static void MVMenuOpen(GWindow gw, struct gmenuitem *mi, GEvent *g) {
+    MetricsView *d = (MetricsView*)GDrawGetUserData(gw);
+    FontView *fv = NULL;
+    if (d) {
+        fv = (FontView*)d->fv;
+    }
+    _FVMenuOpen(fv);
+}
 
 static void MVMenuClose(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
     GDrawDestroyWindow(gw);
@@ -3104,9 +3203,6 @@ static void MVMoveInWordListByOffset( MetricsView *mv, int offset )
 	    else
 		MVTextChanged(mv);
 	    ti = NULL;
-
-//	    GTextInfo* gt = GGadgetGetListItemSelected(mv->text);
-//	    selectUserChosenWordListGlyphs( mv, gt->userdata );
 	}
     }
 }
@@ -3443,7 +3539,7 @@ static GMenuItem2 dummyitem[] = {
 };
 static GMenuItem2 fllist[] = {
     { { (unichar_t *) N_("Font|_New"), (GImage *) "filenew.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'N' }, H_("New|No Shortcut"), NULL, NULL, MenuNew, 0 },
-    { { (unichar_t *) N_("_Open"), (GImage *) "fileopen.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'O' }, H_("Open|No Shortcut"), NULL, NULL, MenuOpen, 0 },
+    { { (unichar_t *) N_("_Open"), (GImage *) "fileopen.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'O' }, H_("Open|No Shortcut"), NULL, NULL, MVMenuOpen, 0 },
     { { (unichar_t *) N_("Recen_t"), (GImage *) "filerecent.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 't' }, NULL, dummyitem, MenuRecentBuild, NULL, MID_Recent },
     { { (unichar_t *) N_("_Close"), (GImage *) "fileclose.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'C' }, H_("Close|No Shortcut"), NULL, NULL, MVMenuClose, 0 },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
@@ -3453,7 +3549,7 @@ static GMenuItem2 fllist[] = {
     { { (unichar_t *) N_("Generate Mac _Family..."), (GImage *) "filegeneratefamily.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'F' }, H_("Generate Mac Family...|No Shortcut"), NULL, NULL, MVMenuGenerateFamily, 0 },
     { { (unichar_t *) N_("Generate TTC..."), (GImage *) "filegeneratefamily.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'F' }, H_("Generate TTC...|No Shortcut"), NULL, NULL, MVMenuGenerateTTC, 0 },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
-    { { (unichar_t *) N_("_Merge Feature Info..."), (GImage *) "filemergefeature.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Merge Kern Info...|No Shortcut"), NULL, NULL, MVMenuMergeKern, 0 },
+    { { (unichar_t *) N_("_Merge Feature Info..."), (GImage *) "filemergefeature.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Merge Feature Info...|No Shortcut"), NULL, NULL, MVMenuMergeKern, 0 },
     { { (unichar_t *) N_("Load _Word List..."), (GImage *) 0, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Load Word List...|No Shortcut"), NULL, NULL, MVMenuAddWordList, 0 },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
     { { (unichar_t *) N_("_Print..."), (GImage *) "fileprint.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'P' }, H_("Print...|No Shortcut"), NULL, NULL, MVMenuPrint, 0 },
@@ -3481,7 +3577,7 @@ static GMenuItem2 edlist[] = {
     { { (unichar_t *) N_("_Join"), (GImage *) "editjoin.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'J' }, H_("Join|No Shortcut"), NULL, NULL, MVMenuJoin, MID_Join },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
     { { (unichar_t *) N_("Select _All"), (GImage *) "editselect.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 1, 1, 0, 0, 0, 0, 1, 1, 0, 'A' }, H_("Select All|No Shortcut"), NULL, NULL, MVSelectAll, MID_SelAll },
-    { { (unichar_t *) N_("_Deselect All"), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'D' }, H_("Clear Selection|Escape"), NULL, NULL, MVClearSelection, MID_ClearSel },
+    { { (unichar_t *) N_("_Deselect All"), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'D' }, H_("Deselect All|Escape"), NULL, NULL, MVClearSelection, MID_ClearSel },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
     { { (unichar_t *) N_("U_nlink Reference"), (GImage *) "editunlink.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'U' }, H_("Unlink Reference|No Shortcut"), NULL, NULL, MVUnlinkRef, MID_UnlinkRef },
     GMENUITEM2_EMPTY
@@ -3646,10 +3742,10 @@ static void lylistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 }
 
 static GMenuItem2 gdlist[] = {
-    { { (unichar_t *) N_("_Show"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'C' }, H_("Show Grid|No Shortcut"), NULL, NULL, MVMenuShowGrid, MID_ShowGrid },
-    { { (unichar_t *) N_("_Partial"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'C' }, H_("Partial Grid|No Shortcut"), NULL, NULL, MVMenuShowGrid, MID_PartialGrid },
-    { { (unichar_t *) N_("Hide when _Moving"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'C' }, H_("Hide Grid when Moving|No Shortcut"), NULL, NULL, MVMenuShowGrid, MID_HideGridWhenMoving },
-    { { (unichar_t *) N_("_Hide"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'C' }, H_("Hide Grid|No Shortcut"), NULL, NULL, MVMenuShowGrid, MID_HideGrid },
+    { { (unichar_t *) N_("_Show"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'C' }, H_("Show|No Shortcut"), NULL, NULL, MVMenuShowGrid, MID_ShowGrid },
+    { { (unichar_t *) N_("_Partial"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'C' }, H_("Partial|No Shortcut"), NULL, NULL, MVMenuShowGrid, MID_PartialGrid },
+    { { (unichar_t *) N_("Hide when _Moving"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'C' }, H_("Hide when Moving|No Shortcut"), NULL, NULL, MVMenuShowGrid, MID_HideGridWhenMoving },
+    { { (unichar_t *) N_("_Hide"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'C' }, H_("Hide|No Shortcut"), NULL, NULL, MVMenuShowGrid, MID_HideGrid },
     GMENUITEM2_EMPTY
 };
 
@@ -3721,7 +3817,7 @@ static void MVMenuContextualHelp(GWindow UNUSED(base), struct gmenuitem *UNUSED(
 
 static GMenuItem2 tylist[] = {
     { { (unichar_t *) N_("_Kerning only"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'C' }, H_("Kerning only|No Shortcut"), NULL, NULL, MVMenuWindowType, MID_KernOnly },
-    { { (unichar_t *) N_("_Advance Width only"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'T' }, H_("Advance Width Only|No Shortcut"), NULL, NULL, MVMenuWindowType, MID_WidthOnly },
+    { { (unichar_t *) N_("_Advance Width only"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'T' }, H_("Advance Width only|No Shortcut"), NULL, NULL, MVMenuWindowType, MID_WidthOnly },
     { { (unichar_t *) N_("_Both"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'T' }, H_("Both|No Shortcut"), NULL, NULL, MVMenuWindowType, MID_BothKernWidth },
     GMENUITEM2_EMPTY
 };
@@ -3751,7 +3847,7 @@ static void MVMenuSetWidth(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) 
     if ( mi->mid == MID_SetVWidth && !mv->sf->hasvmetrics )
 return;
     SplineChar* sc = getSelectedChar(mv);
-    printf("MVMenuSetWidth() sc:%p\n",sc);
+//    printf("MVMenuSetWidth() sc:%p\n",sc);
     if(!sc)
  	return;
 
@@ -4080,6 +4176,31 @@ return;
     GGadgetMove(mv->lbearinglab,2,mv->displayend+2+2*(mv->fh+4));
     GGadgetMove(mv->rbearinglab,2,mv->displayend+2+3*(mv->fh+4));
     GGadgetMove(mv->kernlab,2,mv->displayend+2+4*(mv->fh+4));
+
+    {
+      int newwidth = mv->width;
+      GRect scriptselector_size;
+      GRect charselector_size;
+      GRect charselectorNext_size;
+      GRect charselectorPrev_size;
+      GRect subtable_list_size;
+      GGadgetGetSize(mv->script, &scriptselector_size);
+      GGadgetGetSize(mv->text, &charselector_size);
+      GGadgetGetSize(mv->textPrev, &charselectorPrev_size);
+      GGadgetGetSize(mv->textNext, &charselectorNext_size);
+      GGadgetGetSize(mv->subtable_list, &subtable_list_size);
+      int new_charselector_width = newwidth - charselector_size.x -       charselectorNext_size.width - 2 - charselectorPrev_size.width - 2 - subtable_list_size.width - 10 - 10;
+      if (new_charselector_width < GDrawPointsToPixels(mv->gw,100))
+        new_charselector_width = GDrawPointsToPixels(mv->gw,100);
+      int new_charselectorPrev_x = charselector_size.x + new_charselector_width + 4;
+      int new_charselectorNext_x = new_charselectorPrev_x + charselectorPrev_size.width + 4;
+      int new_subtableselector_x = new_charselectorNext_x + charselectorNext_size.width + 10;
+
+      GGadgetResize(mv->text, new_charselector_width, charselector_size.height);
+      GGadgetMove(mv->textPrev, new_charselectorPrev_x, charselectorPrev_size.y);
+      GGadgetMove(mv->textNext, new_charselectorNext_x, charselectorNext_size.y);
+      GGadgetMove(mv->subtable_list, new_subtableselector_x, subtable_list_size.y);
+    }
 
     mv->vwidth = mv->dwidth-mv->xstart;
     mv->vheight = mv->displayend-mv->topend-2;
@@ -4416,6 +4537,7 @@ static void _MVSubVMouse(MetricsView *mv,GEvent *event) {
 }
 
 static void MVSubMouse(MetricsView *mv,GEvent *event) {
+    // This handles mouse events in the preview area.
     int i, x, y, j, within, ybase;
     SplineChar *sc;
     int diff;
@@ -4656,6 +4778,7 @@ return;
 	    // nothing
 	}
 
+//	printf("mvsubmouse() mv->pressedwidth:%d \n", mv->pressedwidth );
 	mv->pressed = false;
 	mv->activeoff = 0;
 	sc = mv->glyphs[i].sc;
@@ -4663,6 +4786,7 @@ return;
 	    mv->pressedwidth = false;
 	    if ( mv->right_to_left ) diff = -diff;
 	    diff = diff*(mv->sf->ascent+mv->sf->descent)/(mv->pixelsize*iscale);
+//	    printf("mvsubmouse() diff:%d \n", diff );
 	    if ( diff!=0 ) {
 		SCPreserveWidth(sc);
 		SCSynchronizeWidth(sc,sc->width+diff,sc->width,NULL);
@@ -4678,6 +4802,8 @@ return;
 		MVRefreshValues(mv,i-1);
 	    }
 	} else if ( mv->type!=mv_kernonly ) {
+//	    printf("mvsubmouse() not kern only \n" );
+	    MV_handle_collabclient_maybeSnapshot(mv,sc);
 	    real transform[6];
 	    transform[0] = transform[3] = 1.0;
 	    transform[1] = transform[2] = transform[5] = 0;
@@ -4685,6 +4811,8 @@ return;
 		    (mv->sf->ascent+mv->sf->descent)/(mv->pixelsize*iscale);
 	    if ( transform[4]!=0 )
 		FVTrans( (FontViewBase *)mv->fv,sc,transform,NULL, 0 | fvt_alllayers );
+
+	    MV_handle_collabclient_sendRedo(mv,sc);
 	}
 	mv->pressedwidth = false;
 	mv->pressedkern = false;
@@ -4704,13 +4832,16 @@ static void MVMouse(MetricsView *mv,GEvent *event) {
     int i;
 
     if ( event->u.mouse.y< mv->topend || event->u.mouse.y >= mv->displayend ) {
+    // mv->displayend > mv->topend
+    // This triggers when the mouse is in the data entry grid.
 	if ( event->u.mouse.y >= mv->displayend &&
 		event->u.mouse.y<mv->height-mv->sbh ) {
+	    // This excludes the scroll bar.
 	    event->u.mouse.x += (mv->coff*mv->mwidth);
 	    for ( i=0; i<mv->glyphcnt; ++i ) {
 		if ( event->u.mouse.x >= mv->perchar[i].mx &&
 			event->u.mouse.x < mv->perchar[i].mx+mv->perchar[i].mwidth )
-	    break;
+	    break; // This triggers only if the column has an associated character.
 	    }
 	    if ( i<mv->glyphcnt )
 		SCPreparePopup(mv->gw,mv->glyphs[i].sc,mv->fv->b.map->remap,
@@ -4780,8 +4911,10 @@ return;
     }
     cnt = i;
     free( cnames );
-    if ( cnt==0 )
+    if ( cnt==0 ) {
+        free(founds);
 return;
+    }
     if ( within<mv->glyphcnt )
 	within = mv->glyphs[within].orig_index;
     else
@@ -4882,15 +5015,36 @@ static int mv_e_h(GWindow gw, GEvent *event) {
 	    MVResize(mv);
       break;
       case et_char:
-	MVChar(mv,event);
+	if ((event->u.chr.keysym == GK_Tab || event->u.chr.keysym == GK_BackTab) && (!(event->u.chr.state&ksm_meta))) {
+	  // We want to allow somebody to move the cursor position
+	  // forwards with tab and backwards with shift + tab.
+	  // GGadget *active = GWindowGetFocusGadgetOfWindow(mv->gw); if (event->u.chr.state&ksm_shift) return 0;
+	  // For now, we just return 0 so that the default event handler takes care.
+	  return 0;
+	}
+	// MVChar(mv,event);
       break;
       case et_charup:
+	if ((event->u.chr.keysym == GK_Tab || event->u.chr.keysym == GK_BackTab) && (!(event->u.chr.state&ksm_meta))) {
+	  // We want to allow somebody to move the cursor position
+	  // forwards with tab and backwards with shift + tab.
+	  // GGadget *active = GWindowGetFocusGadgetOfWindow(mv->gw); if (event->u.chr.state&ksm_shift) return 0;
+	  // For now, we just return 0 so that the default event handler takes care.
+	  return 0;
+	} else if ((event->u.chr.keysym == GK_Return) && (!(event->u.chr.state&ksm_meta))) {
+		MVMoveInTableByColumnByOffset(mv, (event->u.chr.state&ksm_shift) ? -1 : 1);
+	} else {
+		MVChar(mv,event);
+	}
+#if 0
+	  // It is unclear to Frank why we were being so selective.
 	  if ( event->u.chr.keysym == GK_Left || event->u.chr.keysym==GK_KP_Left
 	       || event->u.chr.keysym == GK_Right || event->u.chr.keysym==GK_KP_Right ) {
 	      if( event->u.chr.state&ksm_meta ) {
 		  MVChar(mv,event);
 	      }
 	  }
+#endif // 0
       break;
       case et_mouseup: case et_mousemove: case et_mousedown:
           active = GWindowGetFocusGadgetOfWindow(mv->gw);
@@ -5042,14 +5196,24 @@ static unsigned char metricsicon_bits[] = {
    0x24, 0x10, 0x20, 0x00, 0x24, 0x10, 0x20, 0x00, 0x74, 0x10, 0x00, 0x00,
    0x55, 0x55, 0x00, 0x00, 0x04, 0x10, 0x00, 0x00};
 
-static void MetricsViewInit(void ) {
-    static int inited = false;
+static int metricsview_ready = false;
 
-    if ( !inited ) {
+static void MetricsViewFinish() {
+  if (!metricsview_ready) return;
+  mb2FreeGetText(mblist);
+}
+
+void MetricsViewFinishNonStatic() {
+  MetricsViewFinish();
+}
+
+static void MetricsViewInit(void ) {
+    // static int inited = false; // superseded by metricsview_ready.
+    if (metricsview_ready) return;
 	mv_text_init[2].text = (unichar_t *) _((char *) mv_text_init[2].text);
 	mb2DoGetText(mblist);
 	MVColInit();
-    }
+    atexit(&MetricsViewFinishNonStatic);
 }
 
 MetricsView *MetricsViewCreate(FontView *fv,SplineChar *sc,BDFFont *bdf) {
@@ -5062,7 +5226,8 @@ MetricsView *MetricsViewCreate(FontView *fv,SplineChar *sc,BDFFont *bdf) {
     FontRequest rq;
     static GWindow icon = NULL;
     extern int _GScrollBar_Width;
-    char buf[120], *pt;
+    // Max. glyphname length: 31, max. chars picked up: 15. 31*15 = 465
+    char buf[465], *pt;
     GTextInfo label;
     int i,j,cnt;
     int as,ds,ld;
@@ -5155,10 +5320,16 @@ MetricsView *MetricsViewCreate(FontView *fv,SplineChar *sc,BDFFont *bdf) {
     }
     mv->chars[mv->clen] = NULL;
 
-    for ( cnt=0; cnt<mv->clen; ++cnt )
-	pt = utf8_idpb(pt,
-		mv->chars[cnt]->unicodeenc==-1?
-		MVFakeUnicodeOfSc(mv,mv->chars[cnt]): mv->chars[cnt]->unicodeenc,0);
+    for ( cnt=0; cnt<mv->clen; ++cnt ) {
+        if ( mv->chars[cnt]->unicodeenc != -1 )
+	    pt = utf8_idpb(pt,mv->chars[cnt]->unicodeenc,0);
+        else {
+            *pt = '/'; pt++;
+            strcpy(pt, mv->chars[cnt]->name);
+            pt += strlen(mv->chars[cnt]->name);
+            *pt = ' '; pt++;
+        }
+    }
     *pt = '\0';
 
     memset(&gd,0,sizeof(gd));

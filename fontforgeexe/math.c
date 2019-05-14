@@ -26,6 +26,9 @@
  */
 
 #include "fontforgeui.h"
+#include "fvfonts.h"
+#include "mathconstants.h"
+#include "splineutil.h"
 #include <math.h>
 #include <stddef.h>
 #include <gkeysym.h>
@@ -1799,6 +1802,7 @@ static void MKDInit(MathKernDlg *mkd,SplineChar *sc) {
     mkd->dummy_sf.glyphs = mkd->chars;
     mkd->dummy_sf.glyphcnt = mkd->dummy_sf.glyphmax = 4;
     mkd->dummy_sf.pfminfo.fstype = -1;
+    mkd->dummy_sf.pfminfo.stylemap = -1;
     mkd->dummy_sf.fontname = mkd->dummy_sf.fullname = mkd->dummy_sf.familyname = "dummy";
     mkd->dummy_sf.weight = "Medium";
     mkd->dummy_sf.origname = "dummy";

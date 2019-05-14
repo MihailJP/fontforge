@@ -45,26 +45,40 @@ $(srcdir)/package.m4: $(top_srcdir)/configure.ac
 
 noinst_FILES = * fonts/* results/* results
 
+TESTSUITE = $(srcdir)/testsuite
 EXTRA_DIST = testsuite.at $(srcdir)/package.m4 $(TESTSUITE) atlocal.in
-TESTSUITE = $(builddir)/testsuite
+
+TESTSUITEFLAGS =
+if !PYTHON_SCRIPTING
+TESTSUITEFLAGS += FONTFORGE_NO_PYTHON=1
+endif !PYTHON_SCRIPTING
+if !PYTHON_EXTENSION
+TESTSUITEFLAGS += FONTFORGE_NO_PYTHON_EXTENSION=1
+endif !PYTHON_EXTENSION
 
 FONTFORGE = $(top_builddir)/fontforgeexe/fontforge
 
-check-local: $(builddir)/fonts atconfig atlocal $(TESTSUITE) $(FONTFORGE)
+check-local: $(builddir)/fonts atconfig atlocal $(TESTSUITE) $(FONTFORGE) $(GENERATED_INPUTS) $(FETCHED_INPUTS)
 	$(MKDIR_P) $(builddir)/results
 	$(SHELL) '$(TESTSUITE)' $(TESTSUITEFLAGS)
 
-installcheck-local: atconfig atlocal $(TESTSUITE)
+installcheck-local: atconfig atlocal $(TESTSUITE)  $(GENERATED_INPUTS) $(FETCHED_INPUTS)
 	$(MKDIR_P) $(builddir)/results
 	$(SHELL) '$(TESTSUITE)' AUTOTEST_PATH='$(bindir)' $(TESTSUITEFLAGS)
 
 clean-local:
-	test ! -f '$(TESTSUITE)' || $(SHELL) '$(abs_builddir)/testsuite' --clean
-	rm -fR $(builddir)/results/*
+	rm -fR $(builddir)/results/ $(builddir)/testsuite.dir/
+
+# test ! -f '$(abs_builddir)/testsuite' || bash -x '$(abs_builddir)/testsuite' --clean
+# The previous line breaks the build in parallel mode sometimes.
+# distclean-am calls clean-am which calls clean-local,
+# but it also calls distclean-generic, which removes the items listed in $(DISTCLEANFILES),
+# which includes $(TESTSUITE)
+# rm -fR $(builddir)/results/*
 
 AUTOM4TE = $(SHELL) $(srcdir)/build-aux/missing --run autom4te
 AUTOTEST = $(AUTOM4TE) --language=autotest
-$(TESTSUITE): $(srcdir)/testsuite.at $(srcdir)/package.m4 $(GENERATED_INPUTS)
+$(TESTSUITE): $(srcdir)/testsuite.at $(srcdir)/package.m4
 	$(AUTOTEST) -I '$(srcdir)' -o $@.tmp $@.at
 	mv $@.tmp $@
 
@@ -80,30 +94,62 @@ EXTRA_DIST += fonts/AddExtremaTest2.sfd fonts/AddExtremumTest.sfd	\
 	fonts/OmittedCharBugs.sfd fonts/OverlapBugs.sfd			\
 	fonts/QuadOverlapBugs.sfd fonts/QuadraticConversionBug.sfd	\
 	fonts/SimplifyBugs.sfd fonts/SplineOverlapBug1.sfd		\
-	fonts/StrokeTests.sfd fonts/VKern.sfd README
+	fonts/StrokeTests.sfd fonts/VKern.sfd fonts/MunhwaGothic-Bold \
+	fonts/NotoSans-Regular.ttc fonts/n019003l.pfb fonts/cmbsy10.pfb	\
+	fonts/test133.fea fonts/test134.fea fonts/test135.fea		\
+	fonts/test136.fea						\
+	README
 
 # generated test inputs
+FETCHED_INPUTS =							\
+	fonts/MunhwaGothic-Bold					\
+	fonts/NotoSans-Regular.ttc
+
+FETCHED_INPUTS_NONFREE =					\
+	fonts/mingliu.ttc
+
 GENERATED_INPUTS =							\
-	fonts/MunhwaGothic-Bold						\
-	fonts/mingliu.ttc						\
 	fonts/Ambrosia.pt3
 
 MAYBE_GENERATED_INPUTS =						\
 	fonts/MinionPro-Regular.fea
 
+if FONTFORGE_CAN_USE_WOFF2
+GENERATED_INPUTS += fonts/Ambrosia.woff2
+endif
+
+.PHONY: prefetch-fonts
+.PHONY: prefetch-nonfree-fonts
+
+prefetch-fonts: $(FETCHED_INPUTS)
+prefetch-nonfree-fonts: $(FETCHED_INPUTS_NONFREE)
+
 # Inputs we can generate from files in git
 fonts/Ambrosia.pt3: fonts/Ambrosia.sfd
 	$(MKDIR_P) $(builddir)/fonts
-	$(FONTFORGE) -c 'open(argv[1]).generate(argv[2])' $< $@
+	$(FONTFORGE) -lang=ff -c 'Open($$1); Generate($$2)' $< $@
 
-# Inputs we can download
+fonts/Ambrosia.woff2: fonts/Ambrosia.sfd
+	$(MKDIR_P) $(builddir)/fonts
+	$(FONTFORGE) -lang=ff -c 'Open($$1); Generate($$2)' $< $@
+
 fonts/MunhwaGothic-Bold:
 	$(MKDIR_P) $(builddir)/fonts
-	$(WGET) ftp://ftp.naist.jp/pub/NetBSD/packages/distfiles/adobe-cidfonts/MunhwaGothic-Bold -O $@
+	if [ ! -e $@ ] ; then \
+	$(WGET) https://github.com/fontforge/debugfonts/raw/master/MunhwaGothic-Bold -O $@ ; \
+	fi ;
+
+fonts/NotoSans-Regular.ttc:
+	$(MKDIR_P) $(builddir)/fonts
+	if [ ! -e $@ ] ; then \
+	$(WGET) https://github.com/fontforge/debugfonts/raw/master/NotoSans-Regular.ttc -O $@ ; \
+	fi ;
 
 fonts/mingliu.ttc:
 	$(MKDIR_P) $(builddir)/fonts
-	$(WGET) http://www.fontsupply.com/fonts/mingliu.ttc -O $@
+	if [ ! -e $@ ] ; then \
+	$(WGET) http://www.fontsupply.com/fonts/mingliu.ttc -O $@ ; \
+	fi ;
 
 # Inputs we can generate from files that aren't available
 fonts/MinionPro-Regular.fea: fonts/MinionPro-Regular.otf
@@ -121,19 +167,24 @@ EXTRA_DIST += helper107.pe helper118A.pe helper118B.pe		\
 	test114.pe test115.pe test116.pe test117.pe		\
 	test118.pe test119.pe test120.pe test121.pe		\
 	test122.pe test123.pe test124.pe test125.pe		\
-	test126.pe test127.pe
+	test126.pe test127.pe test128.pe test129.pe		\
+	test130.pe test131.pe test132.pe test133.pe		\
+	test134.pe test135.pe test136.pe test137.pe
 
 # python test scripts
 EXTRA_DIST += findoverlapbugs.py test0001.py test0101.py	\
 	test1001.py test1001a.py test1001b.py test1001c.py	\
 	test1002.py test1003.py test1004.py test1005.py		\
-	test1006.py test1007.py
+	test1006.py test1007.py test1008.py test1009.py         \
+	test1010.py test926.py test927.py test928.py test929.py \
+	test0002.py test930.py test931.py test932.py 
 
 EXTRA_DIST += link_test.c randomtest.c build-aux/missing
 
-DISTCLEANFILES = atconfig randomtest $(GENERATED_INPUTS) fonts/*.afm $(TESTSUITE)
+DISTCLEANFILES = atconfig randomtest fonts/*.afm testsuite.log $(GENERATED_INPUTS)
 
-MAINTAINERCLEANFILES = package.m4 testsuite.dir testsuite.log results
+MAINTAINERCLEANFILES = package.m4 testsuite.dir testsuite.log	\
+	results $(TESTSUITE) $(FETCHED_INPUTS) $(FETCHED_INPUTS_NONFREE)
 
 GITIGNOREFILES = $(MAYBE_GENERATED_INPUTS)			\
 	fonts/Zapfino-4.0d3.dfont				\
@@ -144,6 +195,8 @@ GITIGNOREFILES = $(MAYBE_GENERATED_INPUTS)			\
 	fonts/merged.cff					\
 	fonts/MinionPro-Regular.otf				\
 	fonts/LucidaGrande.ttc					\
-	fonts/nuvo-medium-woff-demo.woff
+	fonts/nuvo-medium-woff-demo.woff		\
+	$(FETCHED_INPUTS)						\
+	$(FETCHED_INPUTS_NONFREE)
 
 -include $(top_srcdir)/git.mk

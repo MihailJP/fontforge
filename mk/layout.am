@@ -25,31 +25,17 @@
 # OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 # ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#--------------------------------------------------------------------------
-#
-# Some variables controlling the file layout, and which you may want
-# to override when running make.
-#
-# For example, you may want to install the help system in
-# ${docdir}/html instead of in ${docdir} itself:
-#
-#      make HTDOCS_SUBDIR=/html
-#      make HTDOCS_SUBDIR=/html install
-#
-#--------------------------------------------------------------------------
-
-# Where the application's icons for internal use go. (For the
-# locations of desktop icons, see below.)
+# Where the application's icons for internal use go.
+# (Free desktop icons handled in dir desktop)
 pixmapsdir = ${pkgdatadir}/pixmaps
 
 # Where to put binaries which are really only interesting to fontforge itself.
 # For example, processes that are created to help with real time collaboration
 # but which are really not so interesting for the user to ever directly create.
-internal_bindir = ${bindir}/FontForgeInternal
+internal_bindir = ${libexecdir}/bin/FontForgeInternal
 
 # Where the FontForge help system goes.
-HTDOCS_SUBDIR =
-htdocsdir = ${docdir}$(HTDOCS_SUBDIR)
+htdocsdir = ${htmldir}
 
 # Where pkg-config files go.
 pkgconfigdir = ${libdir}/pkgconfig
@@ -66,40 +52,6 @@ hotkeysdir = $(pkgdatadir)/hotkeys
 # Where stuff that is in $top/share goes
 fontforgesharesdir = $(pkgdatadir)
 
-# Where plugin modules go.
-plugindir = ${pkglibdir}/plugins
-
 # What gets passed as macros to the C sources.
 MY_SHAREDIR = ${pkgdatadir}
 MY_DOCDIR = ${htdocsdir}
-MY_PLUGINDIR = ${plugindir}
-
-#--------------------------------------------------------------------------
-#
-# Layout of the freedesktop.org support.
-
-PACKAGEROOTDIR = ${datarootdir}
-
-# Where .desktop files go.
-DESKTOPDIR = ${PACKAGEROOTDIR}/applications
-desktopdir = ${DESKTOPDIR}
-
-# Where MIME data goes. (Support for .sfd files, for instance.)
-MIMEDIR = ${PACKAGEROOTDIR}/mime
-mimedir= ${MIMEDIR}
-mimepackagesdir = ${MIMEDIR}/packages
-
-# Where desktop icons go.
-ICONSDIR = ${PACKAGEROOTDIR}/icons
-HICOLORDIR = ${ICONSDIR}/hicolor
-iconsdir = ${ICONSDIR}
-hicolordir = ${HICOLORDIR}
-hicolor16x16dir = ${hicolordir}/16x16/apps
-hicolor22x22dir = ${hicolordir}/22x22/apps
-hicolor24x24dir = ${hicolordir}/24x24/apps
-hicolor32x32dir = ${hicolordir}/32x32/apps
-hicolor48x48dir = ${hicolordir}/48x48/apps
-hicolor256x256dir = ${hicolordir}/256x256/apps
-hicolorscalabledir = ${hicolordir}/scalable/apps
-
-#--------------------------------------------------------------------------

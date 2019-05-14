@@ -24,7 +24,19 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "cvimages.h"
+
+#include "cvundoes.h"
 #include "fontforgevw.h"
+#include "fvfonts.h"
+#include "parsepdf.h"
+#include "psread.h"
+#include "spiro.h"
+#include "splineorder2.h"
+#include "splineutil.h"
+#include "splineutil2.h"
+#include "svg.h"
 #include <math.h>
 #include <sys/types.h>
 #include <dirent.h>
@@ -211,11 +223,13 @@ return;
     break;
 	if ( ch!='(' ) {
 	    ff_post_error( _("Not a plate file"), _("This does not seem to be a plate file\nExpected left paren"));
+            free(spiros);
 return;
 	}
 	ch = getc(plate);
 	if ( ch!='v' && ch!='o' && ch!='c' && ch!='[' && ch!=']' && ch!='z' ) {
 	    ff_post_error( _("Not a plate file"), _("This does not seem to be a plate file\nExpected one of 'voc[]z'"));
+            free(spiros);
 return;
 	}
 	if ( cnt>=max )
@@ -239,6 +253,7 @@ return;
 	} else {
 	    if ( fscanf(plate,"%lg %lg )", &spiros[cnt].x, &spiros[cnt].y)!=2 ) {
 		ff_post_error( _("Not a plate file"), _("This does not seem to be a plate file\nExpected two real numbers"));
+                free(spiros);
 return;
 	    }
 	    ++cnt;

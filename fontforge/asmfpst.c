@@ -24,8 +24,15 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "asmfpst.h"
+
 #include "fontforgevw.h"
+#include "fvfonts.h"
 #include "ttf.h"
+#include "splineutil.h"
+#include "tottfaat.h"
+#include "tottfgpos.h"
 #include <chardata.h>
 #include <utype.h>
 #include <ustring.h>
@@ -803,13 +810,21 @@ static ASM *ASMFromCoverageFPST(SplineFont *sf,FPST *fpst,int ordered) {
     match_len = j;
 
     for ( i=0; i<match_len; ++i )
-	if ( tables[i]==NULL || tables[i][0]==NULL )
+	if ( tables[i]==NULL || tables[i][0]==NULL ) {
+            for ( i=0; i<match_len; ++i )
+	        free(tables[i]);
+            free(tables);
 return( NULL );
+       }
 
     glyphs = morx_cg_FigureClasses(tables,match_len,
 	    &classes,&class_cnt,&map,&gcnt,fpst,sf,ordered);
-    if ( glyphs==NULL )
+    if ( glyphs==NULL ) {
+        for ( i=0; i<match_len; ++i )
+	    free(tables[i]);
+        free(tables);
 return( NULL );
+    }
 
     for ( i=0; i<match_len; ++i )
 	free(tables[i]);
@@ -998,9 +1013,10 @@ ASM *ASMFromFPST(SplineFont *sf,FPST *fpst,int ordered) {
 	    TreeFree(tree);
 	} else
 	    sm = NULL;
-	if ( tempfpst!=fpst )
-	    FPSTFree(tempfpst);
     }
+
+    if ( tempfpst!=fpst )
+	FPSTFree(tempfpst);
 	/* This is a temporary value. It should be replaced if we plan to */
 	/*  retain this state machine */
     if ( sm!=NULL )

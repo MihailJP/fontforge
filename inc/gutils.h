@@ -27,8 +27,11 @@
 #ifndef _GUTILS_H
 #define _GUTILS_H
 
-extern int16 div_tables[257][2];
+#include <time.h>
+#include <sys/stat.h>
 
 extern const char *GetAuthor(void);
+extern time_t GetTime(void);
+extern time_t GetST_MTime(struct stat s);
 
 #endif

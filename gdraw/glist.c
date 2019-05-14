@@ -138,7 +138,7 @@ static void GListOrderIt(GList *gl) {
 static void GListClearSel(GList *gl) {
     int i;
 
-    for ( i=0; i<gl->ltot; ++i )
+    for ( i=0; (i<gl->ltot && gl->ti[i]!=NULL); ++i )
 	gl->ti[i]->selected = false;
 }
 
@@ -1056,6 +1056,9 @@ return( &gl->g );
 
 static int popup_eh(GWindow popup,GEvent *event) {
     GGadget *owner = GDrawGetUserData(popup);
+    if (owner == NULL) {
+        return true;
+    }
 
     if ( event->type == et_controlevent ) {
 	GList *gl = (GList *) (event->u.control.g);
@@ -1070,6 +1073,7 @@ static int popup_eh(GWindow popup,GEvent *event) {
     } else if ( event->type == et_close ) {
 	GGadget *g = GWindowGetFocusGadgetOfWindow(popup);
 	void (*inform)(GGadget *,int) = (void (*) (GGadget *,int)) GGadgetGetUserData(g);
+	GDrawSetUserData(popup, NULL);
 	GDrawDestroyWindow(popup);
 	_GWidget_ClearPopupOwner(owner);
 	_GWidget_ClearGrabGadget(owner);

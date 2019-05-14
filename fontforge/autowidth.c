@@ -25,12 +25,19 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "autowidth.h"
+
+#include "autohint.h"
+#include "cvundoes.h"
 #include "fontforgevw.h"
+#include "fvfonts.h"
+#include "lookups.h"
+#include "splinesaveafm.h"
+#include "splineutil.h"
 #include <math.h>
 #include <ustring.h>
 #include <utype.h>
-
-#include "autowidth.h"
 
 SplineFont *aw_old_sf=NULL;
 int aw_old_spaceguess;
@@ -1114,7 +1121,6 @@ return( false );
     fclose(file);
     if ( !figurekernsets(wi,&ks)) {
 	ff_post_error(_("No Kern Pairs"), _("No kerning pairs found in %.200s"), fn );
-	free( filename );
 	kernsetsfree(&ks);
 return( false );
     }

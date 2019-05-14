@@ -26,7 +26,25 @@
  */
 #include <fontforge-config.h>
 
+#include "savefont.h"
+
+#include "autohint.h"
+#include "cvundoes.h"
+#include "dumpbdf.h"
+#include "dumppfa.h"
 #include "fontforgevw.h"
+#include "fvfonts.h"
+#include "macbinary.h"
+#include "namelist.h"
+#include "palmfonts.h"
+#include "splinefill.h"
+#include "splineoverlap.h"
+#include "splinesaveafm.h"
+#include "splineutil.h"
+#include "svg.h"
+#include "tottf.h"
+#include "winfonts.h"
+#include "woff.h"
 #include "ustring.h"
 #include "gfile.h"
 #include "gresource.h"
@@ -36,8 +54,6 @@
 #include <math.h>
 #include <string.h>
 #include "psfont.h"
-#include "savefont.h"
-#include "cvundoes.h"
 
 int old_sfnt_flags = ttf_flag_otmode;
 int old_ps_flags = ps_flag_afm|ps_flag_round;
@@ -50,16 +66,30 @@ const char *savefont_extensions[] = { ".pfa", ".pfb", ".res", "%s.pfb", ".pfa", 
 	".cid", ".cff", ".cid.cff",
 	".t42", ".t11",
 	".ttf", ".ttf", ".suit", ".ttc", ".dfont", ".otf", ".otf.dfont", ".otf",
-	".otf.dfont", ".svg", ".ufo", ".woff", NULL };
+	".otf.dfont", ".svg", ".ufo", ".ufo2", ".ufo3", ".woff",
+#ifdef FONTFORGE_CAN_USE_WOFF2
+	".woff2",
+#else
+        NULL,
+#endif
+	NULL };
 const char *bitmapextensions[] = { "-*.bdf", ".ttf", ".dfont", ".ttf", ".otb", ".bmap", ".dfont", ".fon", "-*.fnt", ".pdb", "-*.pt3", ".none", NULL };
 #else
+// NOTE: The order here must match the fontformat enum
 const char *savefont_extensions[] = { ".pfa", ".pfb", ".bin", "%s.pfb", ".pfa", ".pfb", ".pt3", ".ps",
 	".cid", ".cff", ".cid.cff",
 	".t42", ".t11",
 	".ttf", ".ttf", ".ttf.bin", ".ttc", ".dfont", ".otf", ".otf.dfont", ".otf",
 	".otf.dfont", ".svg",
 	".ufo",
+	".ufo2",
+	".ufo3",
 	".woff",
+#ifdef FONTFORGE_CAN_USE_WOFF2
+	".woff2",
+#else
+        NULL,
+#endif
 NULL };
 const char *bitmapextensions[] = { "-*.bdf", ".ttf", ".dfont", ".ttf", ".otb", ".bmap.bin", ".fon", "-*.fnt", ".pdb", "-*.pt3", ".none", NULL };
 #endif
@@ -86,17 +116,12 @@ static int WriteAfmFile(char *filename,SplineFont *sf, int formattype,
 	strcpy(pt,".afm");
     ff_progress_change_line1(_("Saving AFM File"));
     ff_progress_change_line2(buf);
-    if ( strstr(buf,"://")==NULL )
-	afm = fopen(buf,"w");
-    else
-	afm = tmpfile();
+    afm = fopen(buf,"w");
     if ( afm==NULL ) {
 	free(buf);
 return( false );
     }
     ret = AfmSplineFont(afm,sf,subtype,map,flags&ps_flag_afmwithmarks,fullsf,layer);
-    if ( ret && strstr(buf,"://")!=NULL )
-	ret = URLFromFile(buf,afm);
     free(buf);
     if ( fclose(afm)==-1 )
 return( false );
@@ -296,16 +321,18 @@ static int WriteFontLog(char *filename,SplineFont *sf) {
     char *buf = malloc(strlen(filename)+12), *pt;
     FILE *flog;
 
-    if ( sf->fontlog==NULL || *sf->fontlog=='\0' )
+    if ( sf->fontlog==NULL || *sf->fontlog=='\0' ) {
+      free(buf);
 return( true );
+    }
 
     strcpy(buf,filename);
     pt = strrchr(buf,'/');
     if ( pt==NULL )
-	strcat(buf,"FontLog.txt");
+	strcat(buf,"FONTLOG.txt");
     else
-	strcpy(pt+1,"FontLog.txt");
-    flog = fopen(buf,"w");
+	strcpy(pt+1,"FONTLOG.txt");
+    flog = fopen(buf,"a"); // We changed this to append if the file exists.
     free(buf);
     if ( flog==NULL )
 return( false );
@@ -766,6 +793,7 @@ int _DoSave(SplineFont *sf,char *newname,int32 *sizes,int res,
     int iscid = oldformatstate==ff_cid || oldformatstate==ff_cffcid ||
 	    oldformatstate==ff_otfcid || oldformatstate==ff_otfciddfont;
     int flags = 0;
+    int tmpstore = 0;
 
     if ( oldformatstate == ff_multiple )
 return( WriteMultiplePSFont(sf,newname,sizes,subfontdefinition,map,layer));
@@ -791,6 +819,8 @@ return( WriteMultiplePSFont(sf,newname,sizes,subfontdefinition,map,layer));
 		  oldformatstate==ff_mma || oldformatstate==ff_mmb ?_("Saving multi-master font") :
 		  oldformatstate==ff_svg ?_("Saving SVG font") :
 		  oldformatstate==ff_ufo ?_("Saving Unified Font Object") :
+		  oldformatstate==ff_ufo2 ?_("Saving Unified Font Object 2") :
+		  oldformatstate==ff_ufo3 ?_("Saving Unified Font Object 3") :
 		 _("Saving PostScript Font"),
 	    path,sf->glyphcnt,1);
     free(path);
@@ -798,15 +828,6 @@ return( WriteMultiplePSFont(sf,newname,sizes,subfontdefinition,map,layer));
 	int oerr = 0;
 	int bmap = oldbitmapstate;
 	if ( bmap==bf_otb ) bmap = bf_none;
-	if ( strstr(newname,"://")!=NULL ) {
-	    if ( oldformatstate==ff_pfbmacbin || oldformatstate==ff_ttfmacbin ) {
-		ff_post_error(_("Mac Resource Not Remote"),_("You may not save a mac resource file to a remote location"));
-		oerr = true;
-	    } else if ( oldformatstate==ff_ufo ) {
-		ff_post_error(_("Directory Not Remote"),_("You may not save ufo directory to a remote location"));
-		oerr = true;
-	    }
-	}
 	if ( !oerr ) switch ( oldformatstate ) {
 	  case ff_mma: case ff_mmb:
 	    sf = sf->mm->instances[0];
@@ -826,6 +847,12 @@ return( true );
 	    oerr = !WriteWOFFFont(newname,sf,oldformatstate,sizes,bmap,
 		flags,map,layer);
 	  break;
+#ifdef FONTFORGE_CAN_USE_WOFF2
+	  case ff_woff2:
+	    oerr = !WriteWOFF2Font(newname,sf,oldformatstate,sizes,bmap,
+		flags,map,layer);
+	  break;
+#endif
 	  case ff_pfbmacbin:
 	    oerr = !WriteMacPSFont(newname,sf,oldformatstate,flags,map,layer);
 	  break;
@@ -836,8 +863,19 @@ return( true );
 	  case ff_svg:
 	    oerr = !WriteSVGFont(newname,sf,oldformatstate,flags,map,layer);
 	  break;
+	  case ff_ufo2:
+	    tmpstore = sf->preferred_kerning; // We toggle this flag in order to force native kerning output.
+	    if (flags & ttf_native_kern) sf->preferred_kerning = 1; // 1 flags native kerning.
+	    sf->preferred_kerning |= 4; // 4 flags old-style naming for the starting name in UFONameKerningClasses.
+	    oerr = !WriteUFOFont(newname,sf,oldformatstate,flags,map,layer,2);
+	    if (flags & ttf_native_kern) sf->preferred_kerning = tmpstore;
+	  break;
 	  case ff_ufo:
-	    oerr = !WriteUFOFont(newname,sf,oldformatstate,flags,map,layer);
+	  case ff_ufo3:
+	    tmpstore = sf->preferred_kerning; // We toggle this flag in order to force native kerning output.
+	    if (flags & ttf_native_kern) sf->preferred_kerning = 1; // 1 flags native kerning.
+	    oerr = !WriteUFOFont(newname,sf,oldformatstate,flags,map,layer,3);
+	    if (flags & ttf_native_kern) sf->preferred_kerning = tmpstore;
 	  break;
 	  default:
 	  break;
@@ -951,7 +989,10 @@ void PrepareUnlinkRmOvrlp(SplineFont *sf,const char *filename,int layer) {
 	    refnext = ref->next;
 	    SCRefToSplines(sc,ref,layer);
 	}
+#if 0
+	// We await testing on the necessity of this operation.
 	SCRoundToCluster(sc,layer,false,.03,.12);
+#endif // 0
 	sc->layers[layer].splines = SplineSetRemoveOverlap(sc,sc->layers[layer].splines,over_remove);
 	no_windowing_ui = false;
 	if ( !sc->manualhints )
@@ -1102,29 +1143,29 @@ int GenerateScript(SplineFont *sf,char *filename,const char *bitmaptype, int fmf
     if ( fmflags==-1 ) {
 	/* Default to what we did last time */
     } else {
-	if ( oldformatstate==ff_ttf && (fmflags&0x2000))
+	if ( oldformatstate==ff_ttf && (fmflags&fm_flag_symbol))
 	    oldformatstate = ff_ttfsym;
 	if ( oldformatstate<=ff_cffcid ) {
 	    old_ps_flags = 0;
-	    if ( fmflags&1 ) old_ps_flags |= ps_flag_afm;
-	    if ( fmflags&2 ) old_ps_flags |= ps_flag_pfm;
-	    if ( fmflags&0x10000 ) old_ps_flags |= ps_flag_tfm;
-	    if ( fmflags&0x20000 ) old_ps_flags |= ps_flag_nohintsubs;
-	    if ( fmflags&0x40000 ) old_ps_flags |= ps_flag_noflex;
-	    if ( fmflags&0x80000 ) old_ps_flags |= ps_flag_nohints;
-	    if ( fmflags&0x100000 ) old_ps_flags |= ps_flag_restrict256;
-	    if ( fmflags&0x200000 ) old_ps_flags |= ps_flag_round;
-	    if ( fmflags&0x400000 ) old_ps_flags |= ps_flag_afmwithmarks;
+	    if ( fmflags&fm_flag_afm ) old_ps_flags |= ps_flag_afm;
+	    if ( fmflags&fm_flag_pfm ) old_ps_flags |= ps_flag_pfm;
+	    if ( fmflags&fm_flag_tfm ) old_ps_flags |= ps_flag_tfm;
+	    if ( fmflags&fm_flag_nohintsubs ) old_ps_flags |= ps_flag_nohintsubs;
+	    if ( fmflags&fm_flag_noflex ) old_ps_flags |= ps_flag_noflex;
+	    if ( fmflags&fm_flag_nopshints ) old_ps_flags |= ps_flag_nohints;
+	    if ( fmflags&fm_flag_restrict256 ) old_ps_flags |= ps_flag_restrict256;
+	    if ( fmflags&fm_flag_round ) old_ps_flags |= ps_flag_round;
+	    if ( fmflags&fm_flag_afmwithmarks ) old_ps_flags |= ps_flag_afmwithmarks;
 	    if ( i==bf_otb ) {
 		old_sfnt_flags = 0;
-		switch ( fmflags&0x90 ) {
-		  case 0x80:
+		switch ( fmflags&(fm_flag_apple|fm_flag_opentype) ) {
+		  case fm_flag_opentype:
 		    old_sfnt_flags |= ttf_flag_applemode|ttf_flag_otmode;
 		  break;
-		  case 0x90:
+		  case fm_flag_apple|fm_flag_opentype:
 		    /* Neither */;
 		  break;
-		  case 0x10:
+		  case fm_flag_apple:
 		    old_sfnt_flags |= ttf_flag_applemode;
 		  break;
 		  case 0x00:
@@ -1133,39 +1174,40 @@ int GenerateScript(SplineFont *sf,char *filename,const char *bitmaptype, int fmf
 		  default:
 		  break;
 		}
-		if ( fmflags&4 ) old_sfnt_flags |= ttf_flag_shortps;
-		if ( fmflags&0x20 ) old_sfnt_flags |= ttf_flag_pfed_comments;
-		if ( fmflags&0x40 ) old_sfnt_flags |= ttf_flag_pfed_colors;
-		if ( fmflags&0x200 ) old_sfnt_flags |= ttf_flag_TeXtable;
-		if ( fmflags&0x400 ) old_sfnt_flags |= ttf_flag_ofm;
-		if ( (fmflags&0x800) && !(old_sfnt_flags&ttf_flag_applemode) )
+		if ( fmflags&fm_flag_shortps ) old_sfnt_flags |= ttf_flag_shortps;
+		if ( fmflags&fm_flag_pfed_comments ) old_sfnt_flags |= ttf_flag_pfed_comments;
+		if ( fmflags&fm_flag_pfed_colors ) old_sfnt_flags |= ttf_flag_pfed_colors;
+		if ( fmflags&fm_flag_TeXtable ) old_sfnt_flags |= ttf_flag_TeXtable;
+		if ( fmflags&fm_flag_ofm ) old_sfnt_flags |= ttf_flag_ofm;
+		if ( (fmflags&fm_flag_applemode) && !(old_sfnt_flags&ttf_flag_applemode) )
 		    old_sfnt_flags |= ttf_flag_oldkern;
-		if ( fmflags&0x1000 ) old_sfnt_flags |= ttf_flag_brokensize;
-		if ( fmflags&0x2000 ) old_sfnt_flags |= ttf_flag_symbol;
-		if ( fmflags&0x4000 ) old_sfnt_flags |= ttf_flag_dummyDSIG;
-		if ( fmflags&0x800000 ) old_sfnt_flags |= ttf_flag_pfed_lookupnames;
-		if ( fmflags&0x1000000 ) old_sfnt_flags |= ttf_flag_pfed_guides;
-		if ( fmflags&0x2000000 ) old_sfnt_flags |= ttf_flag_pfed_layers;
+		if ( fmflags&fm_flag_symbol ) old_sfnt_flags |= ttf_flag_symbol;
+		if ( fmflags&fm_flag_dummyDSIG ) old_sfnt_flags |= ttf_flag_dummyDSIG;
+		if ( fmflags&fm_flag_pfed_lookups ) old_sfnt_flags |= ttf_flag_pfed_lookupnames;
+		if ( fmflags&fm_flag_pfed_guides ) old_sfnt_flags |= ttf_flag_pfed_guides;
+		if ( fmflags&fm_flag_pfed_layers ) old_sfnt_flags |= ttf_flag_pfed_layers;
+		if ( fmflags&fm_flag_winkern ) old_sfnt_flags |= ttf_flag_oldkernmappedonly;
+		if ( fmflags&fm_flag_nomacnames ) old_sfnt_flags |= ttf_flag_nomacnames;
 	    }
 	} else {
 	    old_sfnt_flags = 0;
 		/* Applicable postscript flags */
-	    if ( fmflags&1 ) old_sfnt_flags |= ps_flag_afm;
-	    if ( fmflags&2 ) old_sfnt_flags |= ps_flag_pfm;
-	    if ( fmflags&0x20000 ) old_sfnt_flags |= ps_flag_nohintsubs;
-	    if ( fmflags&0x40000 ) old_sfnt_flags |= ps_flag_noflex;
-	    if ( fmflags&0x80000 ) old_sfnt_flags |= ps_flag_nohints;
-	    if ( fmflags&0x200000 ) old_sfnt_flags |= ps_flag_round;
-	    if ( fmflags&0x400000 ) old_sfnt_flags |= ps_flag_afmwithmarks;
+	    if ( fmflags&fm_flag_afm ) old_sfnt_flags |= ps_flag_afm;
+	    if ( fmflags&fm_flag_pfm ) old_sfnt_flags |= ps_flag_pfm;
+	    if ( fmflags&fm_flag_nohintsubs ) old_sfnt_flags |= ps_flag_nohintsubs;
+	    if ( fmflags&fm_flag_noflex ) old_sfnt_flags |= ps_flag_noflex;
+	    if ( fmflags&fm_flag_nopshints ) old_sfnt_flags |= ps_flag_nohints;
+	    if ( fmflags&fm_flag_round ) old_sfnt_flags |= ps_flag_round;
+	    if ( fmflags&fm_flag_afmwithmarks ) old_sfnt_flags |= ps_flag_afmwithmarks;
 		/* Applicable truetype flags */
-	    switch ( fmflags&0x90 ) {
-	      case 0x80:
+	    switch ( fmflags&(fm_flag_apple|fm_flag_opentype) ) {
+	      case fm_flag_opentype:
 		old_sfnt_flags |= ttf_flag_applemode|ttf_flag_otmode;
 	      break;
-	      case 0x90:
+	      case fm_flag_apple|fm_flag_opentype:
 		/* Neither */;
 	      break;
-	      case 0x10:
+	      case fm_flag_apple:
 		old_sfnt_flags |= ttf_flag_applemode;
 	      break;
 	      case 0x00:
@@ -1174,21 +1216,22 @@ int GenerateScript(SplineFont *sf,char *filename,const char *bitmaptype, int fmf
               default:
 	      break;
 	    }
-	    if ( fmflags&4 ) old_sfnt_flags |= ttf_flag_shortps;
-	    if ( fmflags&8 ) old_sfnt_flags |= ttf_flag_nohints;
-	    if ( fmflags&0x20 ) old_sfnt_flags |= ttf_flag_pfed_comments;
-	    if ( fmflags&0x40 ) old_sfnt_flags |= ttf_flag_pfed_colors;
-	    if ( fmflags&0x100 ) old_sfnt_flags |= ttf_flag_glyphmap;
-	    if ( fmflags&0x200 ) old_sfnt_flags |= ttf_flag_TeXtable;
-	    if ( fmflags&0x400 ) old_sfnt_flags |= ttf_flag_ofm;
-	    if ( (fmflags&0x800) && !(old_sfnt_flags&ttf_flag_applemode) )
+	    if ( fmflags&fm_flag_shortps ) old_sfnt_flags |= ttf_flag_shortps;
+	    if ( fmflags&fm_flag_nottfhints ) old_sfnt_flags |= ttf_flag_nohints;
+	    if ( fmflags&fm_flag_pfed_comments ) old_sfnt_flags |= ttf_flag_pfed_comments;
+	    if ( fmflags&fm_flag_pfed_colors ) old_sfnt_flags |= ttf_flag_pfed_colors;
+	    if ( fmflags&fm_flag_glyphmap ) old_sfnt_flags |= ttf_flag_glyphmap;
+	    if ( fmflags&fm_flag_TeXtable ) old_sfnt_flags |= ttf_flag_TeXtable;
+	    if ( fmflags&fm_flag_ofm ) old_sfnt_flags |= ttf_flag_ofm;
+	    if ( (fmflags&fm_flag_applemode) && !(old_sfnt_flags&ttf_flag_applemode) )
 		old_sfnt_flags |= ttf_flag_oldkern;
-	    if ( fmflags&0x1000 ) old_sfnt_flags |= ttf_flag_brokensize;
-	    if ( fmflags&0x2000 ) old_sfnt_flags |= ttf_flag_symbol;
-	    if ( fmflags&0x4000 ) old_sfnt_flags |= ttf_flag_dummyDSIG;
-	    if ( fmflags&0x800000 ) old_sfnt_flags |= ttf_flag_pfed_lookupnames;
-	    if ( fmflags&0x1000000 ) old_sfnt_flags |= ttf_flag_pfed_guides;
-	    if ( fmflags&0x2000000 ) old_sfnt_flags |= ttf_flag_pfed_layers;
+	    if ( fmflags&fm_flag_symbol ) old_sfnt_flags |= ttf_flag_symbol;
+	    if ( fmflags&fm_flag_dummyDSIG ) old_sfnt_flags |= ttf_flag_dummyDSIG;
+	    if ( fmflags&fm_flag_pfed_lookups ) old_sfnt_flags |= ttf_flag_pfed_lookupnames;
+	    if ( fmflags&fm_flag_pfed_guides ) old_sfnt_flags |= ttf_flag_pfed_guides;
+	    if ( fmflags&fm_flag_pfed_layers ) old_sfnt_flags |= ttf_flag_pfed_layers;
+	    if ( fmflags&fm_flag_winkern ) old_sfnt_flags |= ttf_flag_oldkernmappedonly;
+	    if ( fmflags&fm_flag_nomacnames ) old_sfnt_flags |= ttf_flag_nomacnames;
 	}
     }
 

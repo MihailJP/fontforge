@@ -25,15 +25,18 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define GTimer GTimer_GTK
-#define GList  GList_Glib
-#include <glib.h>
-#include <glib-object.h>
-#undef GTimer
-#undef GList
+#include <ffglib.h>
+#include <ffgdk.h>
 
 #include <fontforge-config.h>
+#include "autosave.h"
+#include "bitmapchar.h"
+#include "clipnoui.h"
+#include "encoding.h"
 #include "fontforgeui.h"
+#include "lookups.h"
+#include "start.h"
+
 #ifndef _NO_LIBUNICODENAMES
 #include <libunicodenames.h>	/* need to open a database when we start */
 extern uninm_names_db names_db; /* Unicode character names and annotations database */
@@ -42,7 +45,6 @@ extern uninm_blocks_db blocks_db;
 #include <gfile.h>
 #include <gresource.h>
 #include <ustring.h>
-#include <ltdl.h>
 #include <time.h>
 #include <sys/time.h>
 #include <locale.h>
@@ -53,12 +55,6 @@ extern uninm_blocks_db blocks_db;
 #include <sys/types.h>
 #include "../gdraw/hotkeys.h"
 #include "gutils/prefs.h"
-
-
-#define GTimer GTimer_GTK
-#include <glib.h>
-#include <glib-object.h>
-#undef GTimer
 
 #ifdef __Mac
 extern void setup_cocoa_app();
@@ -81,9 +77,19 @@ extern void setup_cocoa_app();
 /* For reasons obscure to me RunApplicationEventLoop is not defined in */
 /*  the mac header files if we are in 64 bit mode. Strangely it seems to */
 /*  be in the libraries and functional */
-#  if __LP64__
-extern void RunApplicationEventLoop(void);
-#  endif
+/*
+ * It was found in Dec 2014 that using RunApplicationEventLoop() could induce strange
+ * and extremely frustrating pausing issues on osx. The main generic event handling
+ * seems to work just fine, so there doesn't seem to be a need for this specialized
+ * Application Event Loop.
+ * 
+ * See this issue bringing back Breakpad usage and the issues linked in comments 2,3
+ * by adrientetar:
+ * https://github.com/fontforge/fontforge/issues/2120
+ */
+//#  if __LP64__
+//extern void RunApplicationEventLoop(void);
+//#  endif
 #endif
 
 #if defined(__MINGW32__)
@@ -92,12 +98,26 @@ extern void RunApplicationEventLoop(void);
 #endif
 
 #include "collabclientui.h"
+#include "scripting.h"
 
 extern int AutoSaveFrequency;
 int splash = 1;
 static int localsplash;
 static int unique = 0;
-static int listen_to_apple_events = false;
+
+/**
+ * In osx versions prior to 10.9.x a special -psn_ flag was supplied
+ * when fontforge was run by osx in some cases. For opening an sfd
+ * file from finder we need to register the openWith event in order to
+ * get the name of the file to open. So it makes sense to always
+ * register for Apple events on OSX so that we can get those file
+ * names as they come through.
+ */
+#if defined(__Mac)
+    static int listen_to_apple_events = true; // This was once true, but Apple broke it.
+#else
+    static int listen_to_apple_events = false;
+#endif
 static bool ProcessPythonInitFiles = 1;
 
 static void _dousage(void) {
@@ -235,14 +255,15 @@ static void SplashLayout() {
 
     pt += u_strlen(pt);
     lines[linecnt++] = pt;
-    uc_strcpy(pt,"  git hash: ");;
+    uc_strcpy(pt,"  git hash: ");
     pt += u_strlen(pt);
     lines[linecnt++] = pt;
+    uc_strcat(pt, " ");
     uc_strcat(pt, FONTFORGE_GIT_VERSION);
 
     pt += u_strlen(pt);
     lines[linecnt++] = pt;
-    uc_strcpy(pt,"  Version: ");;
+    uc_strcpy(pt,"  Version: ");
     uc_strcat(pt,FONTFORGE_MODTIME_STR);
 
     pt += u_strlen(pt);
@@ -258,6 +279,15 @@ static void SplashLayout() {
 #endif
 #ifdef FONTFORGE_CONFIG_USE_DOUBLE
     uc_strcat(pt,"-D");
+#endif
+#ifdef FONTFORGE_CAN_USE_GDK
+#  if GDK_MAJOR_VERSION >= 3
+    uc_strcat(pt,"-GDK3");
+#  else
+    uc_strcat(pt,"-GDK2");
+#  endif
+#else
+    uc_strcat(pt,"-X11");
 #endif
     uc_strcat(pt,")");
     pt += u_strlen(pt);
@@ -375,44 +405,49 @@ static FILE *logfile;
 
 /* These are the four apple events to which we currently respond */
 static pascal OSErr OpenApplicationAE( const AppleEvent * theAppleEvent,
-	AppleEvent * reply, SInt32 handlerRefcon) {
+	AppleEvent * reply, SRefCon handlerRefcon) {
  fprintf( logfile, "OPENAPP event received.\n" ); fflush( logfile );
     if ( localsplash )
 	start_splash_screen();
+#ifndef FONTFORGE_CAN_USE_GDK
     system( "DYLD_LIBRARY_PATH=\"\"; osascript -e 'tell application \"X11\" to activate'" );
+#endif // FONTFORGE_CAN_USE_GDK
     if ( fv_list==NULL )
-	MenuOpen(NULL,NULL,NULL);
+	_FVMenuOpen(NULL);
  fprintf( logfile, " event processed %d.\n", noErr ); fflush( logfile );
 return( noErr );
 }
 
 static pascal OSErr ReopenApplicationAE( const AppleEvent * theAppleEvent,
-	AppleEvent * reply, SInt32 handlerRefcon) {
+	AppleEvent * reply, SRefCon handlerRefcon) {
  fprintf( logfile, "ReOPEN event received.\n" ); fflush( logfile );
     if ( localsplash )
 	start_splash_screen();
+#ifndef FONTFORGE_CAN_USE_GDK
     system( "DYLD_LIBRARY_PATH=\"\"; osascript -e 'tell application \"X11\" to activate'" );
+#endif // FONTFORGE_CAN_USE_GDK
     if ( fv_list==NULL )
-	MenuOpen(NULL,NULL,NULL);
+	_FVMenuOpen(NULL);
  fprintf( logfile, " event processed %d.\n", noErr ); fflush( logfile );
 return( noErr );
 }
 
 static pascal OSErr ShowPreferencesAE( const AppleEvent * theAppleEvent,
-	AppleEvent * reply, SInt32 handlerRefcon) {
+	AppleEvent * reply, SRefCon handlerRefcon) {
  fprintf( logfile, "PREFS event received.\n" ); fflush( logfile );
     if ( localsplash )
 	start_splash_screen();
+#ifndef FONTFORGE_CAN_USE_GDK
     system( "DYLD_LIBRARY_PATH=\"\"; osascript -e 'tell application \"X11\" to activate'" );
+#endif // FONTFORGE_CAN_USE_GDK
     DoPrefs();
  fprintf( logfile, " event processed %d.\n", noErr ); fflush( logfile );
 return( noErr );
 }
 
 static pascal OSErr OpenDocumentsAE( const AppleEvent * theAppleEvent,
-	AppleEvent * reply, SInt32 handlerRefcon) {
+	AppleEvent * reply, SRefCon handlerRefcon) {
     AEDescList  docList;
-    FSRef       theFSRef;
     long        index;
     long        count = 0;
     OSErr       err;
@@ -426,14 +461,32 @@ static pascal OSErr OpenDocumentsAE( const AppleEvent * theAppleEvent,
                          typeAEList, &docList);
     err = AECountItems(&docList, &count);
     for(index = 1; index <= count; index++) {
-        err = AEGetNthPtr(&docList, index, typeFSRef,
-                        NULL, NULL, &theFSRef,
-                        sizeof(theFSRef), NULL);// 4
-	err = FSRefMakePath(&theFSRef,(unsigned char *) buffer,sizeof(buffer));
+        AEDesc aDoc;
+        size_t bytecount;
+        void *pathPtr;
+        CFURLRef url;
+        err = AEGetNthDesc(&docList, index, typeFileURL, NULL, &aDoc);
+        if (err != noErr) {
+            continue;
+        }
+        bytecount = AEGetDescDataSize(&aDoc);
+        pathPtr = malloc(bytecount);
+        err = AEGetDescData(&aDoc, pathPtr, bytecount);
+        if (err != noErr) {
+            free(pathPtr);
+            continue;
+        }
+        url = CFURLCreateWithBytes(nil, pathPtr, bytecount,
+                                   kCFStringEncodingUTF8, nil);
+        free(pathPtr);
+        CFURLGetFileSystemRepresentation(url, true, (UInt8*)buffer, sizeof(buffer));
+        CFRelease(url);
 	ViewPostScriptFont(buffer,0);
  fprintf( logfile, " file: %s\n", buffer );
     }
+#ifndef FONTFORGE_CAN_USE_GDK
     system( "DYLD_LIBRARY_PATH=\"\"; osascript -e 'tell application \"X11\" to activate'" );
+#endif // FONTFORGE_CAN_USE_GDK
     AEDisposeDesc(&docList);
  fprintf( logfile, " event processed %d.\n", err ); fflush( logfile );
 
@@ -489,23 +542,23 @@ static  OSErr install_apple_event_handlers(void) {
 
     err     = AEInstallEventHandler(kCoreEventClass, kAEOpenApplication,
                 NewAEEventHandlerUPP(OpenApplicationAE), 0, false);
-    require_noerr(err, CantInstallAppleEventHandler);
+    __Require_noErr(err, CantInstallAppleEventHandler);
 
     err     = AEInstallEventHandler(kCoreEventClass, kAEReopenApplication,
                 NewAEEventHandlerUPP(ReopenApplicationAE), 0, false);
-    require_noerr(err, CantInstallAppleEventHandler);
+    __Require_noErr(err, CantInstallAppleEventHandler);
 
     err     = AEInstallEventHandler(kCoreEventClass, kAEOpenDocuments,
                 NewAEEventHandlerUPP(OpenDocumentsAE), 0, false);
-    require_noerr(err, CantInstallAppleEventHandler);
+    __Require_noErr(err, CantInstallAppleEventHandler);
 
     err     = AEInstallEventHandler(kCoreEventClass, kAEQuitApplication,
                 NewAEEventHandlerUPP(QuitApplicationAE), 0, false);
-    require_noerr(err, CantInstallAppleEventHandler);
+    __Require_noErr(err, CantInstallAppleEventHandler);
 
     err     = AEInstallEventHandler(kCoreEventClass, kAEShowPreferences,
                 NewAEEventHandlerUPP(ShowPreferencesAE), 0, false);
-    require_noerr(err, CantInstallAppleEventHandler);
+    __Require_noErr(err, CantInstallAppleEventHandler);
 
  /* some debugging code, for now */
  if ( getenv("HOME")!=NULL ) {
@@ -622,7 +675,7 @@ return( true );
 	    if ( strcmp(arg,"-new")==0 || strcmp(arg,"--new")==0 )
 		FontNew();
 	    else if ( strcmp(arg,"-open")==0 || strcmp(arg,"--open")==0 )
-		MenuOpen(NULL,NULL,NULL);
+		_FVMenuOpen(NULL);
 	    else if ( strcmp(arg,"-quit")==0 || strcmp(arg,"--quit")==0 )
 		MenuExit(NULL,NULL,NULL);
 	    else
@@ -658,18 +711,21 @@ static int ReopenLastFonts(void) {
     FILE *old;
     int any = 0;
 
-    if ( ffdir==NULL )
-return( false );
+    if ( ffdir==NULL ) return false;
+
     sprintf( buffer, "%s/FontsOpenAtLastQuit", ffdir );
     old = fopen(buffer,"r");
-    if ( old==NULL )
-return( false );
+    if ( old==NULL ) {
+        free(ffdir);
+        return false;
+    }
     while ( fgets(buffer,sizeof(buffer),old)!=NULL ) {
-	if ( ViewPostScriptFont(g_strchomp(buffer),0)!=0 )
-	    any = 1;
+    if ( ViewPostScriptFont(g_strchomp(buffer),0)!=0 )
+        any = 1;
     }
     fclose(old);
-return( any );
+    free(ffdir);
+    return any;
 }
 
 #if defined(__Mac)
@@ -681,19 +737,22 @@ static int get_mac_x11_prop(char *keystr) {
     CFStringRef key, appID;
     int val;
 
-    appID = CFStringCreateWithBytes(NULL,(uint8 *) "com.apple.x11",strlen("com.apple.x11"), kCFStringEncodingISOLatin1, 0);
+    appID = CFSTR("com.apple.x11");
     key   = CFStringCreateWithBytes(NULL,(uint8 *) keystr,strlen(keystr), kCFStringEncodingISOLatin1, 0);
     ret = CFPreferencesCopyAppValue(key,appID);
     if ( ret==NULL ) {
 	/* Sigh. Apple uses a different preference file under 10.5.6 I really */
 	/*  wish they'd stop making stupid, unnecessary changes */
-	appID = CFStringCreateWithBytes(NULL,(uint8 *) "org.x.X11",strlen("org.x.X11"), kCFStringEncodingISOLatin1, 0);
+	appID = CFSTR("org.x.X11");
 	ret = CFPreferencesCopyAppValue(key,appID);
     }
+    CFRelease(key);
     if ( ret==NULL )
 return( -1 );
-    if ( CFGetTypeID(ret)!=CFBooleanGetTypeID())
+    if ( CFGetTypeID(ret)!=CFBooleanGetTypeID()) {
+    CFRelease(ret);
 return( -2 );
+    }
     val = CFBooleanGetValue(ret);
     CFRelease(ret);
 return( val );
@@ -766,11 +825,7 @@ static void ffensuredir( const char* basedir, const char* dirname, mode_t mode )
 
     snprintf(buffer,buffersz,"%s/%s", basedir, dirname );
     // ignore errors, this is just to help the user aftre all.
-#if !defined(__MINGW32__)
     mkdir( buffer, mode );
-#else
-    mkdir( buffer );
-#endif
 }
 
 static void ensureDotFontForgeIsSetup() {
@@ -780,6 +835,7 @@ static void ensureDotFontForgeIsSetup() {
     }
     ffensuredir( basedir, "",       S_IRWXU );
     ffensuredir( basedir, "python", S_IRWXU );
+    free(basedir);
 }
 
 static void DoAutoRecoveryPostRecover_PromptUserGraphically(SplineFont *sf)
@@ -876,7 +932,7 @@ int fontforge_main( int argc, char **argv ) {
     }
 
     if (!quiet) {
-        fprintf( stderr, "Copyright (c) 2000-2014 by George Williams. See AUTHORS for Contributors.\n" );
+        fprintf( stderr, "Copyright (c) 2000-2018 by George Williams. See AUTHORS for Contributors.\n" );
         fprintf( stderr, " License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n" );
         fprintf( stderr, " with many parts BSD <http://fontforge.org/license.html>. Please read LICENSE.\n" );
         fprintf( stderr, " Based on sources from %s"
@@ -890,12 +946,21 @@ int fontforge_main( int argc, char **argv ) {
 #ifdef FONTFORGE_CONFIG_USE_DOUBLE
 	        "-D"
 #endif
+#ifdef BUILT_WITH_GDK2
+            "-GDK2"
+#endif
+#ifdef BUILT_WITH_GDK3
+            "-GDK3"
+#endif
+#ifdef BUILT_WITH_XORG
+            "-Xorg"
+#endif
 	        ".\n",
 	        FONTFORGE_MODTIME_STR );
-        fprintf( stderr, " Based on source from git with hash:%s\n", FONTFORGE_GIT_VERSION );
+        fprintf( stderr, " Based on source from git with hash: %s\n", FONTFORGE_GIT_VERSION );
     }
 
-#if defined(__Mac)
+#if defined(__Mac) && !defined(FONTFORGE_CAN_USE_GDK)
     /* Start X if they haven't already done so. Well... try anyway */
     /* Must be before we change DYLD_LIBRARY_PATH or X won't start */
     /* (osascript depends on a libjpeg which isn't found if we look in /sw/lib first */
@@ -913,6 +978,8 @@ int fontforge_main( int argc, char **argv ) {
     } else if ( local_x==1 && *getenv("DISPLAY")!='/' && strcmp(getenv("DISPLAY"),":0.0")!=0 && strcmp(getenv("DISPLAY"),":0")!=0 )
 	/* 10.5.7 uses a named socket or something "/tmp/launch-01ftWX:0" */
 	local_x = 0;
+#elif defined (FONTFORGE_CAN_USE_GDK)
+    int local_x = 1;
 #endif
 
 #if defined(__MINGW32__)
@@ -1009,6 +1076,7 @@ int fontforge_main( int argc, char **argv ) {
 	char shareDir[PATH_MAX];
 	char* sd = getShareDir();
 	strncpy( shareDir, sd, PATH_MAX );
+    shareDir[PATH_MAX-1] = '\0';
 	if(!sd) {
 	    strcpy( shareDir, SHAREDIR );
 	}
@@ -1031,13 +1099,14 @@ int fontforge_main( int argc, char **argv ) {
     if ( default_encoding==NULL )
 	default_encoding=&custom;	/* In case iconv is broken */
 
-    // This check also starts the embedded python,
-    // we must call PythonUI_Init() before CheckIsScript()
-    // to allow GUI code to potentially add extra methods to the
-    // python objects.
+    // This no longer starts embedded Python unless control passes to the Python executors,
+    // which exit independently rather than returning here.
     CheckIsScript(argc,argv); /* Will run the script and exit if it is a script */
 					/* If there is no UI, there is always a script */
 			                /*  and we will never return from the above */
+#ifdef FONTFORGE_CAN_USE_GDK
+    gdk_init(&argc, &argv);
+#endif
     if ( load_prefs==NULL ||
 	    (strcasecmp(load_prefs,"Always")!=0 &&	/* Already loaded */
 	     strcasecmp(load_prefs,"Never")!=0 ))
@@ -1077,6 +1146,8 @@ int fontforge_main( int argc, char **argv ) {
 	    /* already checked for this earlier, no need to do it again */;
 	else if ( strcmp(pt,"-unique")==0 )
 	    unique = 1;
+	else if ( strcmp(pt,"-forceuihidden")==0 )
+	    cmdlinearg_forceUIHidden = 0;
 	else if ( strcmp(pt,"-recover")==0 && i<argc-1 ) {
 	    ++i;
 	    if ( strcmp(argv[i],"none")==0 )
@@ -1116,7 +1187,7 @@ int fontforge_main( int argc, char **argv ) {
 	    /* structure, and the current directory was (shudder) "/" */
 	    /* (however, we changed to HOME earlier in main routine). */
 	    unique = 1;
-	    listen_to_apple_events = true;
+	    listen_to_apple_events = true; // This has been problematic on Mavericks and later.
 	}
 #endif
     }
@@ -1146,7 +1217,10 @@ int fontforge_main( int argc, char **argv ) {
         }
     }
 #endif
+    InitImageCache(); // This is in gtextinfo.c. It zeroes imagecache for us.
+    atexit(&ClearImageCache); // We register the destructor, which is also in gtextinfo.c.
     GDrawCreateDisplays(display,argv[0]);
+    atexit(&GDrawDestroyDisplays); // We register the destructor so that it runs even if we call exit without finishing this function.
     default_background = GDrawGetDefaultBackground(screen_display);
     InitToolIconClut(default_background);
     InitToolIcons();
@@ -1157,7 +1231,6 @@ int fontforge_main( int argc, char **argv ) {
      * wanted to skip loading these python init files.
      */
     for ( i=1; i<argc; ++i ) {
-	char buffer[1025];
 	char *pt = argv[i];
 
 	if ( !strcmp(pt,"-SkipPythonInitFiles")) {
@@ -1165,6 +1238,12 @@ int fontforge_main( int argc, char **argv ) {
 	}
     }
     
+#ifndef _NO_PYTHON
+/*# ifndef GWW_TEST*/
+    FontForge_InitializeEmbeddedPython(); /* !!!!!! debug (valgrind doesn't like python) */
+/*# endif*/
+#endif
+
 #ifndef _NO_PYTHON
     if( ProcessPythonInitFiles )
 	PyFF_ProcessInitFiles();
@@ -1182,7 +1261,11 @@ int fontforge_main( int argc, char **argv ) {
     wattrs.utf8_window_title = "FontForge";
     wattrs.border_width = 2;
     wattrs.background_color = 0xffffff;
+#ifdef FONTFORGE_CAN_USE_GDK
+    wattrs.is_dlg = true;
+#else
     wattrs.is_dlg = !listen_to_apple_events;
+#endif
     pos.x = pos.y = 200;
     pos.width = splashimage.u.image->width;
     pos.height = splashimage.u.image->height-56;		/* 54 */
@@ -1258,11 +1341,12 @@ exit( 0 );
 		if ( ViewPostScriptFont(RecentFiles[next_recent++],openflags))
 		    any = 1;
 	} else if ( strcmp(pt,"-sync")==0 || strcmp(pt,"-memory")==0 ||
-		strcmp(pt,"-nosplash")==0 || strcmp(pt,"-recover=none")==0 ||
-		strcmp(pt,"-recover=clean")==0 || strcmp(pt,"-recover=auto")==0 ||
-		strcmp(pt,"-dontopenxdevices")==0 || strcmp(pt,"-unique")==0 ||
-		strncmp(pt,"-usecairo",strlen("-usecairo"))==0 ||
-		strcmp(pt,"-home")==0 || strcmp(pt,"-quiet")==0 )
+		    strcmp(pt,"-nosplash")==0 || strcmp(pt,"-recover=none")==0 ||
+		    strcmp(pt,"-recover=clean")==0 || strcmp(pt,"-recover=auto")==0 ||
+		    strcmp(pt,"-dontopenxdevices")==0 || strcmp(pt,"-unique")==0 ||
+		    strncmp(pt,"-usecairo",strlen("-usecairo"))==0 ||
+		    strcmp(pt,"-home")==0 || strcmp(pt,"-quiet")==0
+		    || strcmp(pt,"-forceuihidden")==0 )
 	    /* Already done, needed to be before display opened */;
 	else if ( strncmp(pt,"-psn_",5)==0 )
 	    /* Already done */;
@@ -1277,12 +1361,9 @@ exit( 0 );
 	else if ( strcmp(pt,"-open")==0 )
 	    doopen = true;
 	else {
-	    if ( strstr(argv[i],"://")!=NULL ) {		/* Assume an absolute URL */
-		strncpy(buffer,argv[i],sizeof(buffer));
-		buffer[sizeof(buffer)-1]= '\0';
-	    } else
-		GFileGetAbsoluteName(argv[i],buffer,sizeof(buffer));
-	    if ( GFileIsDir(buffer) || (strstr(buffer,"://")!=NULL && buffer[strlen(buffer)-1]=='/')) {
+//	    printf("else argv[i]:%s\n", argv[i] );
+	    GFileGetAbsoluteName(argv[i],buffer,sizeof(buffer));
+	    if ( GFileIsDir(buffer) ) {
 		char *fname;
 		fname = malloc(strlen(buffer)+strlen("/glyphs/contents.plist")+1);
 		strcpy(fname,buffer); strcat(fname,"/glyphs/contents.plist");
@@ -1321,31 +1402,50 @@ exit( 0 );
 
     collabclient_ensureClientBeacon();
     collabclient_sniffForLocalServer();
-
+#ifndef _NO_PYTHON
     PythonUI_namedpipe_Init();
-    
+#endif
 
 #if defined(__Mac)
     if ( listen_to_apple_events ) {
 	install_apple_event_handlers();
+#ifndef FONTFORGE_CAN_USE_GDK
 	install_mac_timer();
 	setup_cocoa_app();
-	RunApplicationEventLoop();
+	
+	// WARNING: See declaration of RunApplicationEventLoop() above as to
+	// why you might not want to call that function anymore.
+	// RunApplicationEventLoop();
     } else
-#endif
+#else
+    }
+#endif // FONTFORGE_CAN_USE_GDK
+#endif // __Mac
     if ( doopen || !any )
-	MenuOpen(NULL,NULL,NULL);
+	_FVMenuOpen(NULL);
     GDrawEventLoop(NULL);
+    GDrawDestroyDisplays();
 
-    hotkeysSave();
+#ifndef _NO_PYTHON
+/*# ifndef GWW_TEST*/
+    FontForge_FinalizeEmbeddedPython(); /* !!!!!! debug (valgrind doesn't like python) */
+/*# endif*/
+#endif
+
+    // These free menu translations, mostly.
+    BitmapViewFinishNonStatic();
+    MetricsViewFinishNonStatic();
+    CharViewFinishNonStatic();
+    FontViewFinishNonStatic();
+
+    ClearImageCache(); // This frees the contents of imagecache.
+    // hotkeysSave();
     LastFonts_Save();
 
 #ifndef _NO_LIBUNICODENAMES
     uninm_names_db_close(names_db);	/* close this database before exiting */
     uninm_blocks_db_close(blocks_db);
 #endif
-
-    lt_dlexit();
 
 return( 0 );
 }

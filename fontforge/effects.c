@@ -24,7 +24,16 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "effects.h"
+
+#include "autohint.h"
+#include "cvundoes.h"
 #include "fontforgevw.h"
+#include "splineoverlap.h"
+#include "splinestroke.h"
+#include "splineutil.h"
+#include "splineutil2.h"
 #include <ustring.h>
 #include <gkeysym.h>
 #include <utype.h>
@@ -123,9 +132,10 @@ static SplineSet *SpMove(SplinePoint *sp,real offset,
     new->prevcp.x += offset;
     new->prev = new->next = NULL;
 
-    if ( cur->first==NULL )
+    if ( cur->first==NULL ) {
 	cur->first = new;
-    else
+	cur->start_offset = 0;
+    } else
 	SplineMake(cur->last,new,sp->next->order2);
     cur->last = new;
 
@@ -409,7 +419,7 @@ static bigreal IntersectLine(Spline *spline1,Spline *spline2) {
     if ( !SplinesIntersect(spline1,spline2,pts,t1s,t2s))
 return( -1 );
     for ( i=0; i<10 && t1s[i]!=-1; ++i ) {
-	if ( t1s[i]<.001 && t1s[i]>.999 )
+	if ( t1s[i]<.001 || t1s[i]>.999 )
 	    /* Too close to end point, ignore it */;
 	else if ( t1s[i]<mint )
 	    mint = t1s[i];
@@ -533,9 +543,11 @@ static int MidLineCompetes(Spline *s,bigreal t,bigreal shadow_length,SplineSet *
     int ret;
 
     ret = ClipLineTo3D(line,spl);
-    SplinePointFree(line->to);		/* This might not be the same as to */
-    SplinePointFree(line->from);	/* This will be the same as from */
-    SplineFree(line);
+    if ( ret == false ) {
+        SplinePointFree(line->to);		/* This might not be the same as to */
+        SplinePointFree(line->from);	/* This will be the same as from */
+        SplineFree(line);
+    }
 return( !ret );
 }
 
@@ -583,6 +595,7 @@ static SplineSet *MergeLinesToBottoms(SplineSet *bottoms,SplineSet *lines) {
 		prev->next = l->next;
 	    SplineMake(l->first,bottoms->first,l->first->next->order2);
 	    bottoms->first = l->first;
+	    bottoms->start_offset = 0;
 	    SplineFree(l->last->prev);
 	    SplinePointFree(l->last);
 	    chunkfree(l,sizeof(*l));

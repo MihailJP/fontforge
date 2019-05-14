@@ -24,7 +24,26 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "cvundoes.h"
+
+#include "autohint.h"
+#include "bitmapchar.h"
+#include "bvedit.h"
+#include "config.h"
+#include "cvexport.h"
+#include "cvimages.h"
 #include "fontforgevw.h"
+#include "fvfonts.h"
+#include "namelist.h"
+#include "sfd.h"
+#include "spiro.h"
+#include "splinefill.h"
+#include "splineorder2.h"
+#include "splineutil.h"
+#include "splineutil2.h"
+#include "svg.h"
+#include "tottfgpos.h"
 #include "views.h"
 #include <math.h>
 #include <ustring.h>
@@ -33,8 +52,8 @@
 #include "inc/gfile.h"
 #include "psfont.h"
 
-#if defined(__MINGW32__)||defined(__CYGWIN__)
-// no backtrace on windows yet
+#ifndef HAVE_EXECINFO_H
+// no backtrace available
 #else
     #include <execinfo.h>
 #endif
@@ -51,9 +70,6 @@ int export_clipboard = 0;
 int export_clipboard = 1;
 #endif
 
-extern void *UHintCopy(SplineChar *sc,int docopy);
-extern void ExtractHints(SplineChar *sc,void *hints,int docopy);
-extern void UndoesFreeButRetainFirstN( Undoes** undopp, int retainAmount );
 
 /* ********************************* Undoes ********************************* */
 
@@ -657,6 +673,9 @@ return( undo );
 Undoes *SCPreserveHints(SplineChar *sc,int layer) {
     Undoes *undo;
 
+    if ( layer<0 || layer>=sc->layer_cnt )
+        return( NULL );
+
     if ( no_windowing_ui || maxundoes==0 )		/* No use for undoes in scripting */
 return(NULL);
     if ( !preserve_hint_undoes )
@@ -686,6 +705,7 @@ return(NULL);
     undo = chunkalloc(sizeof(Undoes));
 
     undo->undotype = ut_state;
+    undo->layer = dm_fore;
     undo->was_modified = sc->changed;
     undo->was_order2 = sc->layers[layer].order2;
     undo->u.state.width = sc->width;
@@ -843,6 +863,7 @@ return(NULL);
     undo->was_modified = sc->changed;
     undo->was_order2 = sc->layers[ly_fore].order2;
     undo->u.state.width = sc->width;
+    undo->layer = dm_fore;
 
     Undoes* ret = AddUndo(undo,&sc->layers[ly_fore].undoes,&sc->layers[ly_fore].redoes);
 
@@ -930,11 +951,18 @@ static void SCUndoAct(SplineChar *sc,int layer, Undoes *undo) {
 	Layer *head = layer==ly_grid ? &sc->parent->grid : &sc->layers[layer];
 	SplinePointList *spl = head->splines;
 
+//	printf("SCUndoAct() ut_state case, layer:%d sc:%p scn:%s scw:%d uw:%d\n",
+//	       layer, sc, sc->name, sc->width, undo->u.state.width );
+	
 	if ( layer==ly_fore ) {
 	    int width = sc->width;
 	    int vwidth = sc->vwidth;
 	    if ( sc->width!=undo->u.state.width )
+	    {
+//		printf("SCUndoAct() sc:%p scn:%s scw:%d uw:%d\n",
+//		       sc, sc->name, sc->width, undo->u.state.width );
 		SCSynchronizeWidth(sc,undo->u.state.width,width,NULL);
+	    }
 	    sc->vwidth = undo->u.state.vwidth;
 	    undo->u.state.width = width;
 	    undo->u.state.vwidth = vwidth;
@@ -997,7 +1025,7 @@ static void SCUndoAct(SplineChar *sc,int layer, Undoes *undo) {
 void CVDoUndo(CharViewBase *cv) {
     Undoes *undo = cv->layerheads[cv->drawmode]->undoes;
 
-    printf("CVDoUndo() undo:%p u->next:%p\n", undo, ( undo ? undo->next : 0 ) );
+//    printf("CVDoUndo() undo:%p u->next:%p\n", undo, ( undo ? undo->next : 0 ) );
     if ( undo==NULL )		/* Shouldn't happen */
 	return;
 
@@ -1414,7 +1442,7 @@ return( copy(""));
 
     for ( lcnt = ly_fore; lcnt<dummy.layer_cnt; ++lcnt )
 	RefCharsFree(dummy.layers[lcnt].refs);
-    if ( dummy.layer_cnt!=2 )
+    if ( dummy.layer_cnt!=2 && dummy.layers != layers )
 	free( dummy.layers );
 
     fseek(svg,0,SEEK_END);
@@ -2465,7 +2493,10 @@ static void _PasteToSC(SplineChar *sc,Undoes *paster,FontViewBase *fv,int pastei
 	    }
 	}
 	if ( paster->u.state.refs!=NULL ) {
-	    RefChar *last=NULL;
+	    RefChar *last = sc->layers[layer].refs;
+	    while ( last != NULL && last->next != NULL) {
+	       last = last->next;
+	    }
 	    RefChar *new, *refs;
 	    SplineChar *rsc;
 	    double scale = PasteFigureScale(sc->parent,paster->copied_from);
@@ -2661,7 +2692,7 @@ static void APInto(SplineChar *sc,AnchorPoint *ap,AnchorPoint *fromap,
     }
     if ( fromap->yadjust.corrections!=NULL ) {
 	ap->yadjust.corrections = malloc(ap->yadjust.last_pixel_size-ap->yadjust.first_pixel_size+1);
-	memcpy(ap->yadjust.corrections,fromap->yadjust.corrections,ap->yadjust.last_pixel_size-ap->xadjust.first_pixel_size+1);
+	memcpy(ap->yadjust.corrections,fromap->yadjust.corrections,ap->yadjust.last_pixel_size-ap->yadjust.first_pixel_size+1);
     }
 }
 

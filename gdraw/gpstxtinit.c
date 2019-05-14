@@ -24,12 +24,15 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "fontforge-config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
 
-#ifndef X_DISPLAY_MISSING
+#if !defined(FONTFORGE_CAN_USE_GDK) && !defined(X_DISPLAY_MISSING)
 # include <X11/Xatom.h>
 #else
 # define XA_X_HEIGHT	1
@@ -503,6 +506,7 @@ return( true );
 	}
     }
     fonts->names_loaded = true;
+    free(path);
 return( fonts->names_loaded );
 }
 

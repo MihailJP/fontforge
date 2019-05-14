@@ -25,8 +25,19 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "autohint.h"
+#include "cvundoes.h"
 #include "fontforgeui.h"
+#include "fvfonts.h"
+#include "namelist.h"
 #include "ttf.h"
+#include "splineorder2.h"
+#include "splineoverlap.h"
+#include "splinesaveafm.h"
+#include "splineutil.h"
+#include "splineutil2.h"
+#include "tottf.h"
+#include "tottfgpos.h"
 #include <gwidget.h>
 #include <ustring.h>
 #include <math.h>
@@ -2637,7 +2648,7 @@ return( false );
 
     for ( pst=sc->possub; pst!=NULL; pst=pst->next ) if ( pst->subtable!=NULL )
 	found |= LookupFeaturesMissScript(p,pst->subtable->lookup,NULL,script,sf,sc->name);
-    for ( ap=sc->anchor; ap!=NULL; ap=ap->next )
+    for ( ap=sc->anchor; ap!=NULL; ap=ap->next ) if ( ap->anchor->subtable!=NULL )
 	found |= LookupFeaturesMissScript(p,ap->anchor->subtable->lookup,NULL,script,sf,sc->name);
 
 return( found );
@@ -3338,7 +3349,7 @@ void FindProblems(FontView *fv,CharView *cv, SplineChar *sc) {
     pagcd[3].gd.pos.x = 3; pagcd[3].gd.pos.y = pagcd[2].gd.pos.y+17; 
     pagcd[3].gd.flags = gg_visible | gg_enabled | gg_utf8_popup;
     if ( direction ) pagcd[3].gd.flags |= gg_cb_on;
-    pagcd[3].gd.popup_msg = (unichar_t *) _("PostScript and TrueType require that paths be drawn\nin a clockwise direction. This lets you check that they\nare.\n Before doing this test insure that\nno paths self-intersect");
+    pagcd[3].gd.popup_msg = (unichar_t *) _("FontForge internally uses paths drawn in a\nclockwise direction. This lets you check that they are.\nBefore doing this test insure that\nno paths self-intersect.");
     pagcd[3].gd.cid = CID_Direction;
     pagcd[3].creator = GCheckBoxCreate;
     paarray[3] = &pagcd[3];

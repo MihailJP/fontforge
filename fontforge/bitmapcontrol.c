@@ -24,7 +24,14 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "bitmapcontrol.h"
+
+#include "autohint.h"
+#include "bvedit.h"
 #include "fontforgevw.h"
+#include "splinefill.h"
+#include "splinesaveafm.h"
 #include "ustring.h"
 #include <math.h>
 #include "bitmapcontrol.h"
@@ -234,10 +241,10 @@ return( false );
 	if ( bdfsf->subfontcnt!=0 && bd->which==bd_all ) {
 	    for ( j=0 ; j<bdfsf->subfontcnt; ++j ) {
 		subsf = bdfsf->subfonts[j];
+	        if ( usefreetype && freetypecontext==NULL )
+		    freetypecontext = FreeTypeFontContext(subsf,NULL, selfv, bd->layer);
 		for ( i=0; i<subsf->glyphcnt; ++i ) {
 		    if ( SCWorthOutputting(subsf->glyphs[i])) {
-			if ( usefreetype && freetypecontext==NULL )
-			    freetypecontext = FreeTypeFontContext(subsf,NULL, selfv, bd->layer);
 			ReplaceBDFC(subsf,sizes,i,freetypecontext,usefreetype, bd->layer);
 		    }
 		}
@@ -246,10 +253,10 @@ return( false );
 		freetypecontext = NULL;
 	    }
 	} else {
+	    if ( usefreetype && freetypecontext==NULL )
+	        freetypecontext = FreeTypeFontContext(sf,NULL, selfv, bd->layer);
 	    for ( i=0; i<fv->map->enccount; ++i ) {
 		if ( fv->selected[i] || bd->which == bd_all ) {
-		    if ( usefreetype && freetypecontext==NULL )
-			freetypecontext = FreeTypeFontContext(sf,NULL, selfv, bd->layer);
 		    ReplaceBDFC(sf,sizes,fv->map->map[i],freetypecontext,usefreetype, bd->layer);
 		}
 	    }

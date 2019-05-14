@@ -35,15 +35,18 @@ GITIGNOREFILES = \
 	config/ \
 	gnulib/ \
 	lib/ \
-	libltdl/
+	uthash/ \
+	'**/*.gcno' \
+	'**/*.gcda'
 
+@CODE_COVERAGE_RULES@
 
 #--------------------------------------------------------------------------
 
 AM_CPPFLAGS =
 AM_LDFLAGS =
 
-BUILT_SOURCES =
+BUILT_SOURCES = uthash/src
 EXTRA_DIST =
 CLEANFILES =
 MOSTLYCLEANFILES =
@@ -59,7 +62,7 @@ include $(top_srcdir)/mk/layout.am
 
 #--------------------------------------------------------------------------
 
-SUBDIRS = inc lib libltdl Unicode gutils
+SUBDIRS = inc lib Unicode gutils
 
 if LIBZMQ
 SUBDIRS += collab
@@ -81,15 +84,18 @@ if MACINTOSH
 SUBDIRS += mackeys osx
 endif MACINTOSH
 
-if XDG_DESKTOP
+if THE_PROGRAMS
+if GRAPHICAL_USER_INTERFACE
+
 SUBDIRS += desktop
-endif XDG_DESKTOP
+
+endif GRAPHICAL_USER_INTERFACE
+endif THE_PROGRAMS
 
 SUBDIRS += \
 	contrib \
 	doc \
 	nodejs \
-	plugins \
 	po \
 	pycontrib \
 	share \
@@ -106,20 +112,18 @@ EXTRA_DIST += \
 	bootstrap.conf \
 	COPYING.gplv3 \
 	LICENSE \
-	doc/README-Mac.html \
-	doc/README-MS.html \
-	doc/README-unix	\
-	doc/README-Unix.html \
 	Packaging/FontForge-doc.spec \
 	Packaging/FontForge.spec \
 	Packaging/FontForge.static.spec \
+	README \
+	uthash/src \
 	$(NULL)
 
 #--------------------------------------------------------------------------
 
 DISTCHECK_CONFIGURE_FLAGS = --enable-theme-2012 --enable-debug
 
-#	\
+#	--enable-fontforge-extras				\
 #	--disable-native-scripting --disable-python-scripting	\
 #	--without-giflib --without-libjpeg --without-libpng	\
 #	--without-libtiff --without-libxml --without-libspiro	\
@@ -128,5 +132,19 @@ DISTCHECK_CONFIGURE_FLAGS = --enable-theme-2012 --enable-debug
 
 
 #--------------------------------------------------------------------------
+uthash/src:
+	if [ ! -e uthash/src ]; then \
+	if [ -e uthash ] ; then rm -r uthash ; fi ; \
+	git clone https://github.com/troydhanson/uthash ; \
+	fi ;
+
+# We import a selection of targets from Frank's standard packaging Makefile.
+
+# automake can't parse certain parts of Makefile syntax,
+# and there isn't an easy way to make it copy things that it doesn't
+# understand without grouching, so we use a sneaky trick, specifically
+# a blank macro from configure.ac so as to bypass evaluation.
+
+@BLANK2@-include $(top_srcdir)/pkg.mk
 
 -include $(top_srcdir)/git.mk

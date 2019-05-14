@@ -26,12 +26,10 @@
  */
 /*			   Python Interface to FontForge		      */
 
-#define GTimer GTimer_GTK
-#define GList  GList_Glib
-#include <glib.h>
-#include <glib-object.h>
-#undef GTimer
-#undef GList
+// to get asprintf() defined from stdio.h on GNU platforms
+#define _GNU_SOURCE 1
+
+#include <ffglib.h>
 
 #include <fontforge-config.h>
 
@@ -39,9 +37,9 @@
 #include "Python.h"
 #include "structmember.h"
 
+#include "cvundoes.h"
 #include "fontforgeui.h"
 #include "ttf.h"
-#include "plugins.h"
 #include "ustring.h"
 #include "scripting.h"
 #include "scriptfuncs.h"
@@ -49,7 +47,9 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <dirent.h>
+#include <errno.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <fcntl.h>
 #include "ffpython.h"
 
@@ -79,10 +79,10 @@ static void py_tllistcheck(struct gmenuitem *mi,PyObject *owner,
 	struct python_menu_info *menu_data, int menu_cnt) {
     PyObject *arglist, *result;
 
-    if ( menu_data==NULL )
+    if ( menu_data==NULL || mi == NULL )
 return;
 
-    for ( mi = mi->sub; mi->ti.text!=NULL || mi->ti.line ; ++mi ) {
+    for ( mi = mi->sub; mi !=NULL && (mi->ti.text!=NULL || mi->ti.line); ++mi ) {
 	if ( mi->mid==-1 )		/* Submenu */
     continue;
 	if ( mi->mid<0 || mi->mid>=menu_cnt ) {
@@ -286,10 +286,12 @@ static void InsertSubMenus(PyObject *args,GMenuItem2 **mn, int is_cv) {
 	    if ( i!=cnt-1 )
 		mn = &mmn[j].sub;
 	    else {
+		char *temp = u2utf8_copy(submenuu);
 		mmn[j].shortcut = shortcut_str;
 		mmn[j].invoke = is_cv ? cvpy_menuactivate : fvpy_menuactivate;
 		mmn[j].mid = MenuDataAdd(func,check,data,is_cv);
-		fprintf( stderr, "Redefining menu item %s\n", u2utf8_copy(submenuu) );
+		fprintf( stderr, "Redefining menu item %s\n", temp );
+		free(temp);
 		free(submenuu);
 	    }
 	}
@@ -438,7 +440,7 @@ static void* pyFF_maybeCallCVPreserveState( PyFF_Glyph *self ) {
 	collabclient_CVPreserveStateCalled( &cv->b );
 
 	no_windowing_ui = old_no_windowing_ui;
-	printf("called CVPreserveState()\n");
+//	printf("called CVPreserveState()\n");
     }
 
     return cv;
@@ -452,7 +454,7 @@ static void pyFF_sendRedoIfInSession_Func_Real( void* cvv )
     if( inPythonStartedCollabSession && cv )
     {
 	collabclient_sendRedo( &cv->b );
-	printf("collabclient_sendRedo()...\n");
+//	printf("collabclient_sendRedo()...\n");
     }
 #endif
 }
@@ -530,10 +532,10 @@ static PyObject *PyFFFont_CollabSessionRunMainLoop(PyFF_Font *self, PyObject *ar
 
     if( originalSeq < collabclient_getCurrentSequenceNumber( self->fv->collabClient ))
     {
-	printf("***********************\n");
-	printf("*********************** calling python updated function!!\n");
-	printf("***********************\n");
-	printf("***********************\n");
+//	printf("***********************\n");
+//	printf("*********************** calling python updated function!!\n");
+//	printf("***********************\n");
+//	printf("***********************\n");
 	InvokeCollabSessionSetUpdatedCallback( self );
     }
 #endif
@@ -796,17 +798,37 @@ static void python_ui_setup_callback( bool makefifo )
 #ifndef __MINGW32__
     int fd = 0;
     int err = 0;
-    char path[ PATH_MAX + 1 ];
-    snprintf( path, PATH_MAX, "%s/python-socket", getFontForgeUserDir(Cache));
-    
-    if( makefifo )
-    {
-	err = mkfifo( path, 0600 );
+    char *userCacheDir, *sockPath;
+
+    userCacheDir = getFontForgeUserDir(Cache);
+    if ( userCacheDir==NULL ) {
+        LogError("PythonUISetup: failed to discover user cache dir path");
+        return;
     }
-    
+
+    asprintf(&sockPath, "%s/python-socket", userCacheDir);
+    free(userCacheDir);
+
+    if( makefifo ) {
+        err = mkfifo( sockPath, 0600 );
+        if ( err==-1  &&  errno!=EEXIST) {
+            LogError("PythonUISetup: unable to mkfifo('%s'): errno %d\n", sockPath, errno);
+            free(sockPath);
+            return;
+        }
+    }
+
+    fd = open( sockPath, O_RDONLY | O_NDELAY );
+    if ( fd==-1) {
+        LogError("PythonUISetup: unable to open socket '%s': errno %d\n", sockPath, errno);
+        free(sockPath);
+        return;
+    }
+    free(sockPath);
+
     void* udata = 0;
-    fd = open( path, O_RDONLY | O_NDELAY );
     GDrawAddReadFD( 0, fd, udata, python_ui_fd_callback );
+    return;
 #endif   
 }
 

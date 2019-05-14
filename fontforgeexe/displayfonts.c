@@ -24,10 +24,17 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include "ffglib.h"
+#include <ffglib.h>
 
+#include "autotrace.h"
+#include "cvundoes.h"
 #include "fontforgeui.h"
+#include "lookups.h"
+#include "print.h"
 #include "sftextfieldP.h"
+#include "splinesaveafm.h"
+#include "splineutil2.h"
+#include "tottfgpos.h"
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>

@@ -24,7 +24,17 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "autotrace.h"
+
+#include "cvundoes.h"
 #include "fontforgevw.h"
+#include "fvimportbdf.h"
+#include "psread.h"
+#include "splineorder2.h"
+#include "splinestroke.h"
+#include "splineutil.h"
+#include "splineutil2.h"
 #include <math.h>
 #include <ustring.h>
 #include <utype.h>
@@ -42,7 +52,7 @@
 #include <errno.h>		/* for errors */
 #include <dirent.h>		/* for opendir,etc. */
 
-#include "ffglib.h"
+#include <ffglib.h>
 
 int preferpotrace = false;
 
@@ -826,6 +836,7 @@ return( NULL );
 	ff_post_error(_("Can't run mf"),_("Can't run mf"));
     free(arglist[1]);
     cleantempdir(tempdir);
+    free(tempdir);
 return( sf );
 #endif
 }

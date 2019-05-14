@@ -25,7 +25,16 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "encoding.h"
 #include "fontforgeui.h"
+#include "macbinary.h"
+#include "mm.h"
+#include "namelist.h"
+#include "splinefill.h"
+#include "splinesaveafm.h"
+#include "splineutil.h"
+#include "tottf.h"
+#include "woff.h"
 #include <ustring.h>
 #include <locale.h>
 #include <gfile.h>
@@ -43,8 +52,6 @@
 #include <time.h>
 
 int ask_user_for_resolution = true;
-char *oflib_username = NULL;
-char *oflib_password = NULL;
 int old_fontlog=false;
 
 static int nfnt_warned = false, post_warned = false;
@@ -53,27 +60,6 @@ static int nfnt_warned = false, post_warned = false;
 #define CID_TTC_CFF	101
 #define CID_Family	2000
 
-#define CID_OFLibUpload	300
-#define CID_OFLibName	301
-#define CID_OFLibTags	302
-#define CID_OFLibDescription	303
-#define CID_OFLibArtists	304
-#define CID_OFLibNotSafe	305
-#define CID_OFLibUsername	306
-#define CID_OFLibPassword	307
-#define CID_OFLibRememberMe	308
-#define CID_OFLibOFL		309
-#define CID_OFLibPD		310
-#define CID_OFLibLine1		312
-#define CID_OFLibLine2		313
-#define CID_OFLibGenPreview	314
-#define CID_OFLibNoPreview	315
-#define CID_OFLibDiskPreview	316
-#define CID_OFLibPreviewText	317
-#define CID_OFLibPreviewBrowse	318
-#define CID_UploadLicense	319
-#define CID_UploadFontLog	320
-#define CID_OFLibLabOffset	30
 #define CID_AppendFontLog	400
 #define CID_FontLogBit		401
 #define CID_Layers		402
@@ -101,12 +87,14 @@ static int nfnt_warned = false, post_warned = false;
 #define CID_TTF_OldKern		1109
 #define CID_TTF_GlyphMap	1110
 #define CID_TTF_OFM		1111
-/*#define CID_TTF_BrokenSize	1112*/
+#define CID_TTF_NoMacNames	1112
 #define CID_TTF_PfEdLookups	1113
 #define CID_TTF_PfEdGuides	1114
 #define CID_TTF_PfEdLayers	1115
 #define CID_FontLog		1116
 #define CID_TTF_DummyDSIG	1117
+#define CID_NativeKern		1118
+#define CID_TTF_OldKernMappedOnly 1119
 
 struct gfc_data {
     int done;
@@ -169,8 +157,11 @@ static GTextInfo formattypes[] = {
     { (unichar_t *) N_("OpenType CID"), NULL, 0, 0, NULL, NULL, 1, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("OpenType CID (dfont)"), NULL, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("SVG font"), NULL, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
-    { (unichar_t *) N_("Unified Font Object"), NULL, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
-    { (unichar_t *) N_("Web Open Font"), NULL, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
+    { (unichar_t *) N_("Unified Font Object (UFO3)"), NULL, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
+    { (unichar_t *) N_("Unified Font Object 2"), NULL, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
+    { (unichar_t *) N_("Unified Font Object 3"), NULL, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
+    { (unichar_t *) N_("Web Open Font (WOFF)"), NULL, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
+    { (unichar_t *) N_("Web Open Font (WOFF2)"), NULL, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("No Outline Font"), NULL, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     GTEXTINFO_EMPTY
 };
@@ -210,11 +201,9 @@ int32 *ParseBitmapSizes(GGadget *g,char *msg,int *err) {
     const unichar_t *val = _GGadgetGetTitle(g), *pt; unichar_t *end, *end2;
     int i;
     int32 *sizes;
-    char oldloc[25];
 
-    strncpy( oldloc,setlocale(LC_NUMERIC,NULL),24 );
-    oldloc[24]=0;
-    setlocale(LC_NUMERIC,"C");
+    locale_t tmplocale; locale_t oldlocale; // Declare temporary locale storage.
+    switch_to_c_locale(&tmplocale, &oldlocale); // Switch to the C locale temporarily and cache the old locale.
 
     *err = false;
     end2 = NULL;
@@ -246,7 +235,7 @@ int32 *ParseBitmapSizes(GGadget *g,char *msg,int *err) {
 	while ( *end==' ' || *end==',' ) ++end;
 	pt = end;
     }
-    setlocale(LC_NUMERIC,oldloc);
+    switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
     if ( *err )
 return( NULL );
     sizes[i] = 0;
@@ -374,6 +363,12 @@ return( false );
 
 		if ( GGadgetIsChecked(GWidgetGetControl(gw,CID_FontLog)) )
 		    d->sfnt_flags |= ps_flag_outputfontlog;
+		if ( GGadgetIsChecked(GWidgetGetControl(gw,CID_NativeKern)) )
+		    d->sfnt_flags |= ttf_native_kern; // This applies mostly to U. F. O. right now.
+		if ( GGadgetIsChecked(GWidgetGetControl(gw,CID_TTF_OldKernMappedOnly)) )
+		    d->sfnt_flags |= ttf_flag_oldkernmappedonly;
+		if ( GGadgetIsChecked(GWidgetGetControl(gw,CID_TTF_NoMacNames)) )
+		    d->sfnt_flags |= ttf_flag_nomacnames;
 	    } else {				/* PS + OpenType Bitmap */
 		d->ps_flags = d->psotb_flags = 0;
 		if ( GGadgetIsChecked(GWidgetGetControl(gw,CID_PS_AFMmarks)) )
@@ -409,6 +404,8 @@ return( false );
 		    d->psotb_flags |= ttf_flag_glyphmap;
 		if ( GGadgetIsChecked(GWidgetGetControl(gw,CID_TTF_OFM)) )
 		    d->psotb_flags |= ttf_flag_ofm;
+		if ( GGadgetIsChecked(GWidgetGetControl(gw,CID_TTF_NoMacNames)) )
+		    d->psotb_flags |= ttf_flag_nomacnames;
 	    }
 	    d->sod_invoked = true;
 	}
@@ -468,6 +465,9 @@ static void OptSetDefaults(GWindow gw,struct gfc_data *d,int which,int iscid) {
 	    (flags&ttf_flag_oldkern) && !GGadgetIsChecked(GWidgetGetControl(gw,CID_TTF_AppleMode)));
     GGadgetSetChecked(GWidgetGetControl(gw,CID_TTF_DummyDSIG),flags&ttf_flag_dummyDSIG);
     GGadgetSetChecked(GWidgetGetControl(gw,CID_FontLog),flags&ps_flag_outputfontlog);
+    GGadgetSetChecked(GWidgetGetControl(gw,CID_NativeKern),flags&ttf_native_kern);
+    GGadgetSetChecked(GWidgetGetControl(gw,CID_TTF_OldKernMappedOnly),flags&ttf_flag_oldkernmappedonly);
+    GGadgetSetChecked(GWidgetGetControl(gw,CID_TTF_NoMacNames),flags&ttf_flag_nomacnames);
 
     GGadgetSetEnabled(GWidgetGetControl(gw,CID_PS_Hints),which!=1);
     GGadgetSetEnabled(GWidgetGetControl(gw,CID_PS_Flex),which!=1);
@@ -488,9 +488,6 @@ static void OptSetDefaults(GWindow gw,struct gfc_data *d,int which,int iscid) {
     GGadgetSetEnabled(GWidgetGetControl(gw,CID_TTF_OpenTypeMode),which!=0 && which!=3);
     GGadgetSetEnabled(GWidgetGetControl(gw,CID_TTF_OldKern),which!=0 );
     GGadgetSetEnabled(GWidgetGetControl(gw,CID_TTF_DummyDSIG),which!=0 );
-#if 0
-    GGadgetSetEnabled(GWidgetGetControl(gw,CID_TTF_BrokenSize),which!=0 );
-#endif
 
     GGadgetSetEnabled(GWidgetGetControl(gw,CID_TTF_PfEd),which!=0);
     GGadgetSetEnabled(GWidgetGetControl(gw,CID_TTF_PfEdComments),which!=0);
@@ -502,6 +499,9 @@ static void OptSetDefaults(GWindow gw,struct gfc_data *d,int which,int iscid) {
     GGadgetSetEnabled(GWidgetGetControl(gw,CID_TTF_TeXTable),which!=0);
     GGadgetSetEnabled(GWidgetGetControl(gw,CID_TTF_GlyphMap),which!=0);
     GGadgetSetEnabled(GWidgetGetControl(gw,CID_TTF_OFM),which!=0);
+    
+    GGadgetSetEnabled(GWidgetGetControl(gw,CID_TTF_OldKernMappedOnly),which!=0 );
+    GGadgetSetEnabled(GWidgetGetControl(gw,CID_TTF_NoMacNames),which!=0 );
 
     d->optset[which] = true;
 }
@@ -513,11 +513,11 @@ static void SaveOptionsDlg(struct gfc_data *d,int which,int iscid) {
     int k,fontlog_k,group,group2;
     GWindow gw;
     GWindowAttrs wattrs;
-    GGadgetCreateData gcd[32];
-    GTextInfo label[32];
+    GGadgetCreateData gcd[35];
+    GTextInfo label[35];
     GRect pos;
-    GGadgetCreateData *hvarray1[21], *hvarray2[42], *harray[7], *varray[11];
-    GGadgetCreateData boxes[5];
+    GGadgetCreateData *hvarray1[21], *hvarray2[42], *hvarray3[8], *harray[7], *varray[11];
+    GGadgetCreateData boxes[6];
 
     d->sod_done = false;
     d->sod_which = which;
@@ -835,19 +835,59 @@ static void SaveOptionsDlg(struct gfc_data *d,int which,int iscid) {
 
     fontlog_k = k;
     gcd[k].gd.flags = gg_visible | gg_enabled | gg_utf8_popup;
-    label[k].text = (unichar_t *) _("Output Font Log");
+    label[k].text = (unichar_t *) _("Output FONTLOG.txt");
     label[k].text_is_1byte = true;
     gcd[k].gd.popup_msg = (unichar_t *) _(
-	"The FONTLOG is a text file containing pertinent information\n"
-	"about the font including such things as its change history.\n"
-	"The SIL Open Font License highly recommends its use.\n\n"
-	"If your font contains a FONTLOG (see the Element->Font Info)\n"
-	"and you check this box, then the internal FONTLOG will be\n"
-	"written to the file \"FONTLOG.txt\" in the same directory\n"
+	"The FONTLOG is a text file containing relevant information\n"
+	"about the font including such things as its changelog.\n"
+	"(A general template is available in the OFL FAQ on http://scripts.sil.org/OFL-FAQ_web)\n"
+	"Usage within an open font project is highly recommended but not required.\n"
+	"If your font already contains a fontlog table (see the Element->Font Info)\n"
+	"and you check this box, then the internal fontlog information will be\n"
+	"appended to the file \"FONTLOG.txt\" in the same directory\n"
 	"as the font itself.");
     gcd[k].gd.label = &label[k];
     gcd[k].gd.cid = CID_FontLog;
     gcd[k++].creator = GCheckBoxCreate;
+    hvarray3[0] = &gcd[k-1];
+
+    gcd[k].gd.pos.y = gcd[k-1].gd.pos.y; gcd[k].gd.pos.x = gcd[k-2].gd.pos.x;
+    gcd[k].gd.flags = gg_visible | gg_enabled | gg_utf8_popup;
+    label[k].text = (unichar_t *) _("Prefer native kerning");
+    label[k].text_is_1byte = true;
+    gcd[k].gd.popup_msg = (unichar_t *) _(
+	"Use native kerning structures (instead of a feature file) even when this might lose information.\n");
+    gcd[k].gd.label = &label[k];
+    gcd[k].gd.cid = CID_NativeKern;
+    gcd[k++].creator = GCheckBoxCreate;
+    hvarray3[1] = &gcd[k-1]; hvarray3[2]=NULL;
+    
+    gcd[k].gd.pos.x = gcd[k-1].gd.pos.x; gcd[k].gd.pos.y = gcd[k-1].gd.pos.y;
+    gcd[k].gd.flags = gg_visible | gg_enabled | gg_utf8_popup;
+    label[k].text = (unichar_t *) _("Windows-compatible \'kern\'");
+    label[k].text_is_1byte = true;
+    gcd[k].gd.popup_msg = (unichar_t *) _("If the old-style \'kern\' table contains unencoded glyphs\n(or glyphs encoded outside of the BMP), many Windows applications\nwon't have any kerning at all. This option excludes such\nproblematic glyphs from the old-style \'kern\' table.");
+    gcd[k].gd.label = &label[k];
+    gcd[k].gd.cid = CID_TTF_OldKernMappedOnly;
+    gcd[k++].creator = GCheckBoxCreate;
+    hvarray3[3] = &gcd[k-1]; hvarray3[4] = NULL;
+
+    gcd[k].gd.pos.x = gcd[k-1].gd.pos.x; gcd[k].gd.pos.y = gcd[k-1].gd.pos.y;
+    gcd[k].gd.flags = gg_visible | gg_enabled | gg_utf8_popup;
+    label[k].text = (unichar_t *) _("No Mac Names");
+    label[k].text_is_1byte = true;
+    gcd[k].gd.popup_msg = (unichar_t *) _("Do not add duplicated name entries for legacy Mac platform. These name entries are only needed for some legacy Mac applications.");
+    gcd[k].gd.label = &label[k];
+    gcd[k].gd.cid = CID_TTF_NoMacNames;
+    gcd[k++].creator = GCheckBoxCreate;
+    hvarray3[5] = &gcd[k-1];
+
+    hvarray3[6] = NULL; hvarray3[7] = NULL;
+
+    boxes[4].gd.flags = gg_enabled|gg_visible;
+    boxes[4].gd.u.boxelements = hvarray3;
+    boxes[4].gd.label = NULL;
+    boxes[4].creator = GHVGroupCreate;
 
     gcd[k].gd.pos.x = 30-3; gcd[k].gd.pos.y = gcd[group2].gd.pos.y+gcd[group2].gd.pos.height+10-3;
     gcd[k].gd.pos.width = -1;
@@ -871,15 +911,15 @@ static void SaveOptionsDlg(struct gfc_data *d,int which,int iscid) {
     harray[3] = GCD_Glue; harray[4] = &gcd[k-1]; harray[5] = GCD_Glue;
     harray[6] = NULL;
 
-    boxes[4].gd.flags = gg_enabled|gg_visible;
-    boxes[4].gd.u.boxelements = harray;
-    boxes[4].creator = GHBoxCreate;
+    boxes[5].gd.flags = gg_enabled|gg_visible;
+    boxes[5].gd.u.boxelements = harray;
+    boxes[5].creator = GHBoxCreate;
 
     varray[0] = &boxes[2]; varray[1] = NULL;
     varray[2] = &boxes[3]; varray[3] = NULL;
-    varray[4] = &gcd[fontlog_k];; varray[5] = NULL;
+    varray[4] = &boxes[4]; varray[5] = NULL;
     varray[6] = GCD_Glue; varray[7] = NULL;
-    varray[8] = &boxes[4]; varray[9] = NULL;
+    varray[8] = &boxes[5]; varray[9] = NULL;
     varray[10] = NULL;
 
     boxes[0].gd.pos.x = boxes[0].gd.pos.y = 2;
@@ -1236,68 +1276,6 @@ return( true );
 return( false );
 }
 
-static int OFLibUploadGather(struct gfc_data *d,unichar_t *path) {
-    OFLibData oflib;
-    int ret;
-    char *pt;
-    int gendefaultimage=GGadgetIsChecked(GWidgetGetControl(d->gw,CID_OFLibGenPreview));
-
-    memset(&oflib,0,sizeof(oflib));
-    oflib.sf = d->sf;
-    oflib.pathspec = u2utf8_copy(path);
-    oflib.username = GGadgetGetTitle8(GWidgetGetControl(d->gw,CID_OFLibUsername));
-    oflib.password = GGadgetGetTitle8(GWidgetGetControl(d->gw,CID_OFLibPassword));
-    oflib.name     = GGadgetGetTitle8(GWidgetGetControl(d->gw,CID_OFLibName));
-    oflib.description = GGadgetGetTitle8(GWidgetGetControl(d->gw,CID_OFLibDescription));
-    oflib.tags     = GGadgetGetTitle8(GWidgetGetControl(d->gw,CID_OFLibTags));
-    oflib.artists  = GGadgetGetTitle8(GWidgetGetControl(d->gw,CID_OFLibArtists));
-    oflib.notsafeforwork = GGadgetIsChecked(GWidgetGetControl(d->gw,CID_OFLibNotSafe));
-    oflib.oflicense = GGadgetIsChecked(GWidgetGetControl(d->gw,CID_OFLibOFL));
-    oflib.upload_license = GGadgetIsChecked(GWidgetGetControl(d->gw,CID_UploadLicense));
-    oflib.upload_fontlog = GGadgetIsChecked(GWidgetGetControl(d->gw,CID_UploadFontLog));
-    if ( gendefaultimage )
-	oflib.previewimage = SFDefaultImage(d->sf,NULL);
-    else if ( GGadgetIsChecked(GWidgetGetControl(d->gw,CID_OFLibNoPreview)) )
-	oflib.previewimage = NULL;
-    else {
-	oflib.previewimage = GGadgetGetTitle8(GWidgetGetControl(d->gw,CID_OFLibPreviewText));
-	if ( *oflib.previewimage=='\0' ) {
-	    free(oflib.previewimage);
-	    oflib.previewimage = NULL;
-	}
-    }
-
-    ret = OFLibUploadFont( &oflib );
-    if ( oflib.upload_id!=NULL ) {
-	char *baseurl = "http://openfontlibrary.org/media/files/";
-	char *uploadcontrol = malloc(strlen(baseurl) + strlen(oflib.upload_id) + 1 );
-	strcpy(uploadcontrol,baseurl);
-	strcat(uploadcontrol,oflib.upload_id);
-	help(uploadcontrol);
-	free(uploadcontrol);
-    }
-
-    if ( ret && GGadgetIsChecked(GWidgetGetControl(d->gw,CID_OFLibRememberMe))) {
-	free(oflib_username); free(oflib_password);
-	oflib_username = copy( oflib.username );
-	oflib_password = copy( oflib.password );
-	for ( pt=oflib_password; *pt!='\0' ; ++pt )
-	    *pt ^= 0xf;		/* Simple encryption */
-    }
-
-    free( oflib.pathspec );
-    free( oflib.username );
-    free( oflib.password );
-    free( oflib.name );
-    free( oflib.description );
-    free( oflib.tags );
-    free( oflib.artists );
-    if ( gendefaultimage && oflib.previewimage!=NULL )
-	unlink(oflib.previewimage);
-    free(oflib.previewimage);
-return ( ret );
-}
-
 int will_prepend_timestamp = false;
 
 static void prepend_timestamp(struct gfc_data *d){
@@ -1439,7 +1417,7 @@ return;
 	    psfnlenwarned = true;
 	}
     } else if ( oldformatstate!=ff_none && oldformatstate!=ff_svg &&
-	    oldformatstate!=ff_ufo ) {
+	    oldformatstate!=ff_ufo && oldformatstate!=ff_ufo2 && oldformatstate!=ff_ufo3 ) {
 	int val = d->sf->ascent+d->sf->descent;
 	int bit;
 	for ( bit=0x800000; bit!=0; bit>>=1 )
@@ -1479,7 +1457,7 @@ return;
 return;
     } else if ( oldformatstate==ff_pfbmacbin && !post_warned) {
 	post_warned = true;
-	ff_post_notice(_("The 'POST' type1 format is probably deprecated"),_("The 'POST' type1 format is probably depreciated and may not work in future version of the mac."));
+	ff_post_notice(_("The 'POST' type1 format is probably deprecated"),_("The 'POST' type1 format is probably deprecated and may not work in future version of the mac."));
     }
 
     if ( d->family ) {
@@ -1621,9 +1599,6 @@ return;
 	force_names_when_saving = rename_to;
 
     free(temp);
-    if ( !err && !d->family &&
-	    GGadgetIsChecked(GWidgetGetControl(d->gw,CID_OFLibUpload)) )
-	err = !OFLibUploadGather(d,path);
     d->done = !err;
     d->ret = !err;
 }
@@ -1658,28 +1633,6 @@ static void _GFD_SaveOk(struct gfc_data *d) {
     unichar_t *ret;
     int formatstate = GGadgetGetFirstListSelectedItem(d->pstype);
 
-    if ( !d->family && GGadgetIsChecked(GWidgetGetControl(d->gw, CID_OFLibUpload))) {
-	/* Check that we've got all the data we need for an oflib upload */
-	if ( *_GGadgetGetTitle(GWidgetGetControl(d->gw,CID_OFLibName))=='\0' ||
-		/* Can they get by without keywords? */
-		*_GGadgetGetTitle(GWidgetGetControl(d->gw,CID_OFLibTags))=='\0' ||
-		*_GGadgetGetTitle(GWidgetGetControl(d->gw,CID_OFLibDescription))=='\0' ||
-		/* Artists is definitely optional */
-		*_GGadgetGetTitle(GWidgetGetControl(d->gw,CID_OFLibUsername))=='\0' ||
-		*_GGadgetGetTitle(GWidgetGetControl(d->gw,CID_OFLibPassword))=='\0' ) {
-	    ff_post_error(_("Bad OFLib upload"),
-		    *_GGadgetGetTitle(GWidgetGetControl(d->gw,CID_OFLibPassword))=='\0' ?
-			    _("Missing OFLib password") :
-		    *_GGadgetGetTitle(GWidgetGetControl(d->gw,CID_OFLibUsername))=='\0' ?
-			    _("Missing OFLib username") :
-		    *_GGadgetGetTitle(GWidgetGetControl(d->gw,CID_OFLibDescription))=='\0' ?
-			    _("Missing OFLib description") :
-		    *_GGadgetGetTitle(GWidgetGetControl(d->gw,CID_OFLibName))=='\0' ?
-			    _("Missing OFLib name") :
-			    _("Missing OFLib keywords"));
-return;
-	}
-    }
     GFileChooserGetChildren(d->gfc,NULL,NULL,&tf);
     if ( *_GGadgetGetTitle(tf)!='\0' ) {
 	ret = GGadgetGetTitle(d->gfc);
@@ -1721,7 +1674,7 @@ static void GFD_FigureWhich(struct gfc_data *d) {
 	which = 1;		/* truetype options */ /* type42 also */
     else
 	which = 2;		/* opentype options */
-    if ( fs==ff_woff ) {
+    if ( fs==ff_woff || fs==ff_woff2 ) {
 	SplineFont *sf = d->sf;
 	int layer = d->layer;
 	if ( sf->layers[layer].order2 )
@@ -1943,76 +1896,10 @@ static int GFD_ToggleFontLog(GGadget *g, GEvent *e) {
 	    0 };
 	int i, visible = GGadgetIsChecked(g);
 
-	for ( i=0; cids[i]!=0; ++i ) {
+	for ( i=0; cids[i]!=0; ++i )
 	    GGadgetSetVisible(GWidgetGetControl(d->gw,cids[i]),visible);
-	    g = GWidgetGetControl(d->gw,cids[i]+CID_OFLibLabOffset);
-	    if ( g!=NULL )
-		GGadgetSetVisible(g,visible);
-	}
 
 	GWidgetToDesiredSize(d->gw);
-    }
-return( true );
-}
-
-static int GFD_ToggleOFLib(GGadget *g, GEvent *e) {
-    if ( e->type==et_controlevent && e->u.control.subtype == et_radiochanged ) {
-	struct gfc_data *d = GDrawGetUserData(GGadgetGetWindow(g));
-	static int cids[] = {
-	    CID_OFLibUsername, CID_OFLibPassword, CID_OFLibRememberMe,
-	    CID_OFLibOFL, CID_OFLibPD,
-	    CID_OFLibName, CID_OFLibTags, CID_OFLibDescription, CID_OFLibArtists,
-	    CID_OFLibNotSafe,
-	    CID_OFLibLine1, CID_OFLibLine2,
-	    CID_OFLibGenPreview, CID_OFLibNoPreview, CID_OFLibDiskPreview,
-	    CID_OFLibPreviewText, CID_OFLibPreviewBrowse,
-	    CID_UploadLicense, CID_UploadFontLog,
-	    0 };
-	int i, visible = GGadgetIsChecked(g);
-
-	for ( i=0; cids[i]!=0; ++i ) {
-	    GGadgetSetVisible(GWidgetGetControl(d->gw,cids[i]),visible);
-	    g = GWidgetGetControl(d->gw,cids[i]+CID_OFLibLabOffset);
-	    if ( g!=NULL )
-		GGadgetSetVisible(g,visible);
-	}
-
-	GWidgetToDesiredSize(d->gw);
-    }
-return( true );
-}
-
-static int GFD_OFLibHelp(GGadget *g, GEvent *e) {
-    if ( e->type==et_controlevent && e->u.control.subtype == et_buttonactivate ) {
-	help("http://www.openfontlibrary.org/");
-    }
-return( true );
-}
-
-static int GFD_OFLibRegister(GGadget *g, GEvent *e) {
-    if ( e->type==et_controlevent && e->u.control.subtype == et_buttonactivate ) {
-	help("http://www.openfontlibrary.org/media/register");
-    }
-return( true );
-}
-
-static int GFD_OFLibPreviewBrowse(GGadget *g, GEvent *e) {
-    if ( e->type==et_controlevent && e->u.control.subtype == et_buttonactivate ) {
-	struct gfc_data *d = GDrawGetUserData(GGadgetGetWindow(g));
-	char *filename = GGadgetGetTitle8(GWidgetGetControl(d->gw,CID_OFLibPreviewText));
-	char *newname;
-
-	GGadgetSetChecked(GWidgetGetControl(d->gw,CID_OFLibDiskPreview), true);
-
-	if ( *filename=='\0' ) {
-	    free(filename);
-	    filename = NULL;
-	}
-	newname = gwwv_open_filename(_("Browse for a preview image"), filename, "*.{png,gif,jpeg}",NULL);
-	if ( newname!=NULL )
-	    GGadgetSetTitle8(GWidgetGetControl(d->gw,CID_OFLibPreviewText), newname );
-	free(newname);
-	free(filename);
     }
 return( true );
 }
@@ -2139,8 +2026,8 @@ int SFGenerateFont(SplineFont *sf,int layer,int family,EncMap *map) {
     GRect pos;
     GWindow gw;
     GWindowAttrs wattrs;
-    GGadgetCreateData gcd[20+2*48+5+1], *varray[13], *hvarray[57], *famarray[3*52+1],
-	    *harray[10], boxes[9], *oflarray[11][5], *oflibinfo[8], *parray[3][4], *p2array[5];
+    GGadgetCreateData gcd[20+2*48+5+1], *varray[13], *hvarray[33], *famarray[3*52+1],
+	    *harray[10], boxes[7];
     GTextInfo label[20+2*48+4+1];
     struct gfc_data d;
     GGadget *pulldown, *files, *tf;
@@ -2156,9 +2043,6 @@ int SFGenerateFont(SplineFont *sf,int layer,int family,EncMap *map) {
     char **nlnames;
     int cnt, any;
     GTextInfo *namelistnames, *lynames=NULL;
-    static GBox small_blue_box;
-    extern GBox _GGadget_button_box;
-    char *oflpwd;
 
     memset(&d,'\0',sizeof(d));
     d.sf = sf;
@@ -2177,10 +2061,6 @@ int SFGenerateFont(SplineFont *sf,int layer,int family,EncMap *map) {
 	old_sfnt_flags &= ~ttf_flag_otmode;
     }
 
-    /* Let's not support broken size any more */
-    old_sfnt_flags &= ~ttf_flag_brokensize;
-    old_psotb_flags &= ~ttf_flag_brokensize;
-
     if ( family ) {
 	/* I could just disable the menu item, but I think it's a bit confusing*/
 	/*  and I want people to know why they can't generate a family */
@@ -2196,7 +2076,7 @@ int SFGenerateFont(SplineFont *sf,int layer,int family,EncMap *map) {
 	    if ( family==gf_ttc ) {
 		fc = fondcnt;
 		psstyle = 0;
-	    } else if ( family==gf_macfamily && strcmp(fv->b.sf->familyname,sf->familyname)==0 ) {
+	    } else if ( family==gf_macfamily && sf->familyname && fv->b.sf->familyname && strcmp(fv->b.sf->familyname,sf->familyname)==0 ) {
 		MacStyleCode(fv->b.sf,&psstyle);
 		if ( fv->b.sf->fondname==NULL ) {
 		    fc = 0;
@@ -2268,7 +2148,18 @@ return( 0 );
     wattrs.restrict_input_to_me = 1;
     wattrs.undercursor = 1;
     wattrs.cursor = ct_pointer;
-    wattrs.utf8_window_title = family?_("Generate Mac Family"):_("Generate Fonts");
+    {
+        const char *label = _("Generate Fonts");
+        switch (family) {
+        case gf_ttc:
+            label = _("Generate TTC");
+            break;
+        case gf_macfamily:
+            label = _("Generate Mac Family");
+            break;
+        }
+        wattrs.utf8_window_title = label;
+    }
     pos.x = pos.y = 0;
     totwid = GGadgetScale(295);
     bsbigger = 4*bs+4*14>totwid; totwid = bsbigger?4*bs+4*12:totwid;
@@ -2411,6 +2302,8 @@ return( 0 );
 	formattypes[ff_otfcid].disabled = true;
 	formattypes[ff_cffcid].disabled = true;
 	formattypes[ff_ufo].disabled = true;
+	formattypes[ff_ufo2].disabled = true;
+	formattypes[ff_ufo3].disabled = true;
 	if ( ofs!=ff_svg )
 	    ofs = ff_ptype3;
     } else if ( sf->strokedfont ) {
@@ -2419,6 +2312,8 @@ return( 0 );
 	formattypes[ff_ttfmacbin].disabled = true;
 	formattypes[ff_ttfdfont].disabled = true;
 	formattypes[ff_ufo].disabled = true;
+	formattypes[ff_ufo2].disabled = true;
+	formattypes[ff_ufo3].disabled = true;
 	if ( ofs==ff_ttf || ofs==ff_ttfsym || ofs==ff_ttfmacbin || ofs==ff_ttfdfont )
 	    ofs = ff_otf;
     }
@@ -2433,7 +2328,7 @@ return( 0 );
 	    ofs = ff_ttfmacbin;
 	else if ( ofs==ff_otf || ofs==ff_cff )
 	    ofs = ff_otfdfont;
-	else if ( ofs==ff_ufo || ofs==ff_ttc )
+	else if ( ofs==ff_ufo || ofs==ff_ufo2 || ofs==ff_ufo3 || ofs==ff_ttc )
 	    ofs = ff_ttfdfont;
 	formattypes[ff_pfa].disabled = true;
 	formattypes[ff_pfb].disabled = true;
@@ -2452,14 +2347,18 @@ return( 0 );
 	formattypes[ff_cffcid].disabled = true;
 	formattypes[ff_svg].disabled = true;
 	formattypes[ff_ufo].disabled = true;
+	formattypes[ff_ufo2].disabled = true;
+	formattypes[ff_ufo3].disabled = true;
     } else if ( family == gf_ttc ) {
 	for ( i=0; i<=ff_none; ++i )
 	    formattypes[i].disabled = true;
 	formattypes[ff_ttc].disabled = false;
 	ofs = ff_ttc;
     }
-    if ( !CanWoff())
-	formattypes[ff_woff].disabled = true;
+#ifndef FONTFORGE_CAN_USE_WOFF2
+	formattypes[ff_woff2].disabled = true;
+#endif
+
     for ( i=0; i<sizeof(formattypes)/sizeof(formattypes[0]); ++i )
 	formattypes[i].selected = false;
     formattypes[ofs].selected = true;
@@ -2653,342 +2552,9 @@ return( 0 );
 	gcd[k].gd.handle_controlevent = GFD_TogglePrependTimestamp;
 	gcd[k++].creator = GCheckBoxCreate; //???
 	hvarray[hvi++] = &gcd[k-1]; hvarray[hvi++] = GCD_ColSpan; hvarray[hvi++] = GCD_ColSpan;
-	hvarray[hvi++] = NULL;
-
-	/* And OFLib uploads of families won't work because they don't accept dfonts */
-	label[k].text = (unichar_t *) _("Upload to the");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.pos.x = 8; gcd[k].gd.pos.y = gcd[k-1].gd.pos.y+24+6;
-	gcd[k].gd.flags = (gg_enabled | gg_visible | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("Once you have a final version of your font\nand if your font is licensed under the Open\nFont License, then you might consider uploading\nit to the Open Font Library. This is a website\nof Free/Libre fonts.\n\nYou must have previously registered with OFLib\nand have a valid username/password there.\n\nObviously you must be connected to the internet\nfor this to work.");
-	gcd[k].gd.cid = CID_OFLibUpload;
-	gcd[k].gd.handle_controlevent = GFD_ToggleOFLib;
-	gcd[k++].creator = GCheckBoxCreate;
-	oflibinfo[0] = &gcd[k-1];
-
-	if ( small_blue_box.main_foreground==0 ) {
-	    extern void _GButtonInit(void);
-	    _GButtonInit();
-	    small_blue_box = _GGadget_button_box;
-	    small_blue_box.border_type = bt_box;
-	    small_blue_box.border_shape = bs_rect;
-	    small_blue_box.border_width = 0;
-	    small_blue_box.flags = box_foreground_shadow_outer;
-	    small_blue_box.padding = 0;
-	    small_blue_box.main_foreground = 0x0000ff;
-	    small_blue_box.border_darker = small_blue_box.main_foreground;
-	    small_blue_box.border_darkest = small_blue_box.border_brighter =
-		    small_blue_box.border_brightest =
-		    small_blue_box.main_background = GDrawGetDefaultBackground(NULL);
-	}
-
-	label[k].text = (unichar_t *) _("Open Font Library");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.box = &small_blue_box;
-	gcd[k].gd.flags = gg_enabled | gg_visible | gg_dontcopybox | gg_utf8_popup;
-	gcd[k].gd.handle_controlevent = GFD_OFLibHelp;
-	gcd[k].gd.popup_msg = (unichar_t *) "http://openfontlibrary.org/";
-	gcd[k++].creator = GButtonCreate;
-	oflibinfo[1] = &gcd[k-1];
-	oflibinfo[2] = GCD_HPad10;
-
-	label[k].text = (unichar_t *) _("Register");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = gg_enabled | gg_visible | gg_dontcopybox | gg_utf8_popup;
-	gcd[k].gd.box = &small_blue_box;
-	gcd[k].gd.handle_controlevent = GFD_OFLibRegister;
-	gcd[k].gd.popup_msg = (unichar_t *) "http://openfontlibrary.org/media/register";
-	gcd[k++].creator = GButtonCreate;
-	oflibinfo[3] = &gcd[k-1];
-	oflibinfo[4] = GCD_Glue;
-	oflibinfo[5] = NULL;
-
-	boxes[7].gd.flags = gg_enabled|gg_visible;
-	boxes[7].gd.u.boxelements = oflibinfo;
-	boxes[7].creator = GHBoxCreate;
-
-	hvarray[hvi++] = &boxes[7]; hvarray[hvi++] = GCD_ColSpan; hvarray[hvi++] = GCD_ColSpan;
-	hvarray[hvi++] = NULL;
-
-	gcd[k].gd.flags = gg_enabled;
-	gcd[k].gd.cid = CID_OFLibLine1;
-	gcd[k++].creator = GLineCreate;
-	hvarray[hvi++] = &gcd[k-1];
-	hvarray[hvi++] = GCD_ColSpan; hvarray[hvi++] = GCD_ColSpan; hvarray[hvi++] = NULL;
-
-	label[k].text = (unichar_t *) _("Username:");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("Username on OFLib");
-	gcd[k].gd.cid = CID_OFLibUsername + CID_OFLibLabOffset;
-	gcd[k++].creator = GLabelCreate;
-	oflarray[0][0] = &gcd[k-1];
-
-	label[k].text = (unichar_t *) oflib_username;
-	label[k].text_is_1byte = true;
-	if ( oflib_username!=NULL )
-	    gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("Username on OFLib");
-	gcd[k].gd.cid = CID_OFLibUsername;
-	gcd[k++].creator = GTextFieldCreate;
-	oflarray[0][1] = &gcd[k-1];
-
-	label[k].text = (unichar_t *) _("Password:");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("Password on OFLib");
-	gcd[k].gd.cid = CID_OFLibPassword + CID_OFLibLabOffset;
-	gcd[k++].creator = GLabelCreate;
-	oflarray[0][2] = &gcd[k-1];
-
-	label[k].text = (unichar_t *) copy(oflib_password);
-	if ( label[k].text!=NULL )
-	    for ( oflpwd = (char *) label[k].text; *oflpwd!='\0'; ++oflpwd )
-		*oflpwd ^= 0xf;		/* Simple encryption */
-	oflpwd = (char *) label[k].text;
-	label[k].text_is_1byte = true;
-	if ( oflib_password!=NULL )
-	    gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("Password on OFLib");
-	gcd[k].gd.cid = CID_OFLibPassword;
-	gcd[k++].creator = GPasswordCreate;
-	oflarray[0][3] = &gcd[k-1];
-	oflarray[0][4] = NULL;
-
-	label[k].text = (unichar_t *) _("Remember Me");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (oflib_username!=NULL && oflib_password!=NULL) ?
-		(gg_enabled  | gg_cb_on | gg_utf8_popup) :
-		(gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("FontForge will remember your username/password\nby storing them as plain text (insecurely) in your preference file");
-	gcd[k].gd.cid = CID_OFLibRememberMe;
-	gcd[k++].creator = GCheckBoxCreate;
-	oflarray[1][0] = GCD_Glue; oflarray[1][1] = &gcd[k-1];
-	oflarray[1][2] = oflarray[1][3] = GCD_ColSpan;
-	oflarray[1][4] = NULL;
-
-
-	label[k].text = (unichar_t *) _("OFLib Name:");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("Font name to display on OFLib");
-	gcd[k].gd.cid = CID_OFLibName + CID_OFLibLabOffset;
-	gcd[k++].creator = GLabelCreate;
-	oflarray[2][0] = &gcd[k-1];
-
-	label[k].text = (unichar_t *) (sf->fullname!=NULL ? sf->fullname : sf->fontname);
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("Font name to display on OFLib");
-	gcd[k].gd.cid = CID_OFLibName;
-	gcd[k++].creator = GTextFieldCreate;
-	oflarray[2][1] = &gcd[k-1];
-
-	label[k].text = (unichar_t *) _("Artists:");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("Other artists involved in the design of this font.\nCollaborators, etc.");
-	gcd[k].gd.cid = CID_OFLibArtists + CID_OFLibLabOffset;
-	gcd[k++].creator = GLabelCreate;
-	oflarray[2][2] = &gcd[k-1];
-
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("Other artists involved in the design of this font.\nCollaborators, etc.");
-	gcd[k].gd.cid = CID_OFLibArtists;
-	gcd[k++].creator = GTextFieldCreate;
-	oflarray[2][3] = &gcd[k-1];
-	oflarray[2][4] = NULL;
-
-	label[k].text = (unichar_t *) _("Keyword Tags:");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("A comma separated list of keywords that describe\nthe font to help others search for it.\nYou may use whatever keyword tags you desire.\nSuggestions: serif, sans_serif, bold, italic, oblique,\nextended, compressed, thin, demibold, black, outline, regular,\ndisplay, etc.");
-	gcd[k].gd.cid = CID_OFLibTags + CID_OFLibLabOffset;
-	gcd[k++].creator = GLabelCreate;
-	oflarray[3][0] = &gcd[k-1];
-
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("A comma separated list of keywords that describe\nthe font to help others search for it.\nYou may use whatever keyword tags you desire.\nSuggestions: serif, sans_serif, bold, italic, oblique,\nextended, compressed, thin, demibold, black, outline,\nregular, display, etc.");
-	gcd[k].gd.cid = CID_OFLibTags;
-	gcd[k++].creator = GTextFieldCreate;
-	oflarray[3][1] = &gcd[k-1]; oflarray[3][2] = oflarray[3][3] = GCD_ColSpan;
-	oflarray[3][4] = NULL;
-
-	label[k].text = (unichar_t *) _("Description:");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("A description of the font");
-	gcd[k].gd.cid = CID_OFLibDescription + CID_OFLibLabOffset;
-	gcd[k++].creator = GLabelCreate;
-	oflarray[4][0] = &gcd[k-1];
-
-	gcd[k].gd.pos.height = 4*12;
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup | gg_textarea_wrap);
-	gcd[k].gd.popup_msg = (unichar_t *) _("A description of the font");
-	gcd[k].gd.cid = CID_OFLibDescription;
-	gcd[k++].creator = GTextAreaCreate;
-	oflarray[4][1] = &gcd[k-1]; oflarray[4][2] = oflarray[4][3] = GCD_ColSpan;
-	oflarray[4][4] = NULL;
-
-	label[k].text = (unichar_t *) _("License:");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("A description of the font");
-	gcd[k].gd.cid = CID_OFLibOFL + CID_OFLibLabOffset;
-	gcd[k++].creator = GLabelCreate;
-	oflarray[5][0] = &gcd[k-1];
-
-	label[k].text = (unichar_t *) _("SIL");
-	label[k].image_precedes = false;
-	label[k].image = &OFL_logo;
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup | gg_cb_on);
-	gcd[k].gd.popup_msg = (unichar_t *) _("The SIL Open Font License\nPlease see http://scripts.sil.org/OFL");
-	gcd[k].gd.cid = CID_OFLibOFL;
-	gcd[k++].creator = GRadioCreate;
-	oflarray[5][1] = &gcd[k-1]; oflarray[5][2] = GCD_ColSpan;
-
-	label[k].text = (unichar_t *) _("Public Domain");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup );
-	gcd[k].gd.popup_msg = (unichar_t *) _("Public Domain");
-	gcd[k].gd.cid = CID_OFLibPD;
-	gcd[k++].creator = GRadioCreate;
-	oflarray[5][3] = &gcd[k-1]; oflarray[5][4] = NULL;
-
-	label[k].text = (unichar_t *) _("Upload License");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = gg_enabled  | gg_utf8_popup;
-	if ( HasLicense(sf,NULL) )
-	    gcd[k].gd.flags |= gg_cb_on;
-	gcd[k].gd.popup_msg = (unichar_t *) _("Upload the license (as found in the list of truetype names)");
-	gcd[k].gd.cid = CID_UploadLicense;
-	gcd[k++].creator = GCheckBoxCreate;
-	oflarray[6][0] = GCD_Glue; oflarray[6][1] = &gcd[k-1];
-	oflarray[6][2] = GCD_ColSpan; oflarray[6][3] = GCD_Glue;
-	oflarray[6][4] = NULL;
-
-	label[k].text = (unichar_t *) _("Upload FONTLOG");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = gg_enabled ;
-	if ( sf->fontlog )
-	    gcd[k].gd.flags |= gg_cb_on;
-	gcd[k].gd.cid = CID_UploadFontLog;
-	gcd[k++].creator = GCheckBoxCreate;
-	oflarray[7][0] = GCD_Glue; oflarray[7][1] = &gcd[k-1];
-	oflarray[7][2] = GCD_ColSpan; oflarray[7][3] = GCD_Glue;
-	oflarray[7][4] = NULL;
-
-	label[k].text = (unichar_t *) _("Preview:");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("An image of the font in use");
-	gcd[k].gd.cid = CID_OFLibGenPreview + CID_OFLibLabOffset;
-	gcd[k++].creator = GLabelCreate;
-	oflarray[8][0] = &gcd[k-1];
-
-	label[k].text = (unichar_t *) _("Generated Image");
-	label[k].image_precedes = false;
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup | gg_cb_on);
-	gcd[k].gd.popup_msg = (unichar_t *) _("FontForge will generate a sample image for you\nbefore uploading.");
-	gcd[k].gd.cid = CID_OFLibGenPreview;
-	gcd[k++].creator = GRadioCreate;
-	parray[0][0] = &gcd[k-1]; parray[0][1] = GCD_ColSpan;
-
-	label[k].text = (unichar_t *) _("No Preview");
-	label[k].image_precedes = false;
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("No image will be uploaded.");
-	gcd[k].gd.cid = CID_OFLibNoPreview;
-	gcd[k++].creator = GRadioCreate;
-	parray[0][2] = &gcd[k-1]; parray[0][3] = NULL;
-
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup | gg_rad_continueold);
-	gcd[k].gd.popup_msg = (unichar_t *) _("If you have already created a preview image of the font\nthen provide the pathspec here.");
-	gcd[k].gd.cid = CID_OFLibDiskPreview;
-	gcd[k++].creator = GRadioCreate;
-	p2array[0] = &gcd[k-1];
-
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("If you have already created a preview image of the font\nthen provide the pathspec here.");
-	gcd[k].gd.cid = CID_OFLibPreviewText;
-	gcd[k++].creator = GTextFieldCreate;
-	p2array[1] = &gcd[k-1];
-
-	label[k].text = (unichar_t *) _("...");
-	label[k].image_precedes = false;
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = (gg_enabled  | gg_utf8_popup);
-	gcd[k].gd.popup_msg = (unichar_t *) _("If you have already created a preview image of the font\nthen provide the pathspec here.");
-	gcd[k].gd.cid = CID_OFLibPreviewBrowse;
-	gcd[k].gd.handle_controlevent = GFD_OFLibPreviewBrowse;
-	gcd[k++].creator = GButtonCreate;
-	p2array[2] = &gcd[k-1]; p2array[3] = NULL;
-	boxes[8].gd.flags = gg_enabled|gg_visible;
-	boxes[8].gd.u.boxelements = p2array;
-	boxes[8].creator = GHBoxCreate;
-
-	parray[1][0] = &boxes[8];
-	parray[1][1] = parray[1][2] = GCD_ColSpan;
-	parray[1][3] = NULL;
-	parray[2][0] = NULL;
-
-	boxes[5].gd.flags = gg_enabled|gg_visible;
-	boxes[5].gd.u.boxelements = parray[0];
-	boxes[5].creator = GHVBoxCreate;
-	oflarray[8][1] = &boxes[5]; oflarray[8][2] = oflarray[8][3] = GCD_ColSpan;
-	oflarray[8][4] = NULL;
-
-	label[k].text = (unichar_t *) _("Not Safe for Work");
-	label[k].text_is_1byte = true;
-	gcd[k].gd.label = &label[k];
-	gcd[k].gd.flags = gg_enabled  | gg_utf8_popup;
-	gcd[k].gd.popup_msg = (unichar_t *) _("If for some reason the font is deemed inappropriate\nfor a work environment.");
-	gcd[k].gd.cid = CID_OFLibNotSafe;
-	gcd[k++].creator = GCheckBoxCreate;
-	oflarray[9][0] = GCD_Glue; oflarray[9][1] = &gcd[k-1];
-	oflarray[9][2] = GCD_ColSpan; oflarray[9][3] = GCD_Glue;
-	oflarray[9][4] = NULL;
-	oflarray[10][0] = NULL;
-
-	boxes[6].gd.flags = gg_enabled|gg_visible;
-	boxes[6].gd.u.boxelements = oflarray[0];
-	boxes[6].creator = GHVBoxCreate;
-	hvarray[hvi++] = &boxes[6]; hvarray[hvi++] = GCD_ColSpan; hvarray[hvi++] = GCD_ColSpan;
-	hvarray[hvi++] = NULL;
-
-	gcd[k].gd.flags = gg_enabled;
-	gcd[k].gd.cid = CID_OFLibLine2;
-	gcd[k++].creator = GLineCreate;
-	hvarray[hvi++] = &gcd[k-1];
-	hvarray[hvi++] = GCD_ColSpan; hvarray[hvi++] = GCD_ColSpan; hvarray[hvi++] = NULL; hvarray[hvi++] = NULL;
+	hvarray[hvi++] = NULL; hvarray[hvi++] = NULL;
     } else {
 	hvarray[12] = NULL;
-	oflpwd = NULL;
     }
 
     boxes[3].gd.flags = gg_enabled|gg_visible;
@@ -3116,10 +2682,6 @@ return( 0 );
     if ( family ) {
 	for ( i=13; i<k; ++i )
 	    free((unichar_t *) gcd[i].gd.popup_msg);
-    } else {
-	GHVBoxSetExpandableCol(boxes[6].ret,1);
-	GHVBoxSetExpandableCol(boxes[7].ret,gb_expandglue);
-	GHVBoxSetExpandableCol(boxes[8].ret,1);
     }
 
     GFileChooserConnectButtons(gcd[0].ret,gcd[1].ret,gcd[2].ret);
@@ -3129,11 +2691,13 @@ return( 0 );
 		master->fontname;
 	unichar_t *temp = malloc(sizeof(unichar_t)*(strlen(fn)+30));
 	uc_strcpy(temp,fn);
-	uc_strcat(temp,savefont_extensions[ofs]!=NULL?savefont_extensions[ofs]:bitmapextensions[old]);
+	if ( ofs==ff_none )
+	    uc_strcat(temp,bitmapextensions[old]);
+	else
+	    uc_strcat(temp,savefont_extensions[ofs]);
 	GGadgetSetTitle(gcd[0].ret,temp);
 	free(temp);
     }
-    free(oflpwd);
     GFileChooserGetChildren(gcd[0].ret,&pulldown,&files,&tf);
     GWidgetIndicateFocusGadget(tf);
 #if __Mac

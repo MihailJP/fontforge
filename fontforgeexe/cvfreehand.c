@@ -24,7 +24,12 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "cvundoes.h"
 #include "fontforgeui.h"
+#include "splineorder2.h"
+#include "splinestroke.h"
+#include "splineutil.h"
+#include "splineutil2.h"
 #include <math.h>
 
 #undef DEBUG_FREEHAND
@@ -666,7 +671,7 @@ return;
 	trace->first->prevcp.y = trace->first->me.y -
 		sin(hangle)*llen;
 	trace->first->nextcp = oldn;
-    } else if ( trace->first->nonextcp ) {
+    } else if ( trace->first->noprevcp ) {
 	SplineCharDefaultPrevCP(trace->first);
 	dx = trace->first->me.x-trace->first->nextcp.x;
 	dy = trace->first->me.y-trace->first->nextcp.y;

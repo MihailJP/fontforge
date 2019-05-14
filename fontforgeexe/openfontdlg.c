@@ -26,6 +26,9 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include "fontforgeui.h"
+#include "namelist.h"
+#include "scripting.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <ustring.h>
@@ -36,6 +39,13 @@
 extern NameList *force_names_when_opening;
 int default_font_filter_index=0;
 struct openfilefilters *user_font_filters = NULL;
+
+#ifdef FONTFORGE_CAN_USE_WOFF2
+/* GGadgetWildMatch is buggy... it must be woff2 then woff */
+#  define WOFF_EXT ",woff2,woff"
+#else
+#  define WOFF_EXT ",woff"
+#endif
 
 struct openfilefilters def_font_filters[] = {
     {
@@ -55,9 +65,6 @@ struct openfilefilters def_font_filters[] = {
 	   "cff,"
 	   "cef,"
 	   "gai,"
-#ifndef _NO_LIBPNG
-	   "woff,"
-#endif
 	   "svg,"
 	   "ufo,"
 	   "pf3,"
@@ -77,6 +84,7 @@ struct openfilefilters def_font_filters[] = {
 /* I used to say "*gf" but that also matched xgf (xgridfit) files -- which ff can't open */
 	   "[0-9]*gf,"
 	   "pdb"
+	   WOFF_EXT
         "}"
         /* With any of these methods of compression */
 	"{.gz,.Z,.bz2,.lzma,}"
@@ -95,9 +103,6 @@ struct openfilefilters def_font_filters[] = {
 	   "cff,"
 	   "cef,"
 	   "gai,"
-#ifndef _NO_LIBPNG
-	   "woff,"
-#endif
 	   "svg,"
 	   "ufo,"
 	   "pf3,"
@@ -109,6 +114,7 @@ struct openfilefilters def_font_filters[] = {
 	   "dfont,"
 	   "mf,"
 	   "ik"
+	   WOFF_EXT
 	"}"
 	"{.gz,.Z,.bz2,.lzma,}"
     },
@@ -132,11 +138,7 @@ struct openfilefilters def_font_filters[] = {
     { NU_("ΤεΧ Bitmap Fonts"), "*{pk,gf}" },
     { N_("PostScript"), "*.{pfa,pfb,t42,otf,cef,cff,gai,pf3,pt3,gsf,cid}{.gz,.Z,.bz,.bz2,.lzma,}" },
     { N_("TrueType"), "*.{ttf,t42,ttc}{.gz,.Z,.bz,.bz2,.lzma,}" },
-#ifdef _NO_LIBPNG
-    { N_("OpenType"), "*.{ttf,otf}{.gz,.Z,.bz,.bz2,.lzma,}" },
-#else
-    { N_("OpenType"), "*.{ttf,otf,woff}{.gz,.Z,.bz,.bz2,.lzma,}" },
-#endif
+    { N_("OpenType"), "*.{ttf,otf" WOFF_EXT "}{.gz,.Z,.bz,.bz2,.lzma,}" },
     { N_("Type1"), "*.{pfa,pfb,gsf,cid}{.gz,.Z,.bz2,.lzma,}" },
     { N_("Type2"), "*.{otf,cef,cff,gai}{.gz,.Z,.bz2,.lzma,}" },
     { N_("Type3"), "*.{pf3,pt3}{.gz,.Z,.bz2,.lzma,}" },
@@ -155,6 +157,12 @@ static GTextInfo **StandardFilters(void) {
     int k, cnt, i;
     GTextInfo **ti;
 
+    /* Make two passes thru outer loop. The first pass determines the
+     * interim count of how many entries will be generated and then
+     * allocates an array with 3 entries more than that. The second 
+     * pass ( if(k) ) accumulates the data values, then adds a trailer,
+     * to return in the GTextInfo** structure 'ti'.
+     */
     for ( k=0; k<2; ++k ) {
 	cnt = 0;
 	for ( i=0; def_font_filters[i].name!=NULL; ++i ) {
@@ -526,11 +534,8 @@ return( false );
     GFileChooserGetChildren(d->gfc,NULL, &list, NULL);
     if ( list==NULL )
 return( false );
-    GGadgetGetSize(list,&size);
-    if ( event->u.mouse.x < size.x || event->u.mouse.y <size.y ||
-	    event->u.mouse.x >= size.x+size.width ||
-	    event->u.mouse.y >= size.y+size.height )
-return( false );
+    if ( !GGadgetWithin(list,event->u.mouse.x,event->u.mouse.y) )
+        return( false );
     pos = GListIndexFromY(list,event->u.mouse.y);
     if ( pos == d->filename_popup_pos )
 return( pos!=-1 );
@@ -542,8 +547,9 @@ return( pos!=-1 );
     if ( ufile==NULL )
 return( true );
     file = u2def_copy(ufile);
+    free(ufile);
 
-    fontnames = GetFontNames(file);
+    fontnames = GetFontNames(file, 0);
     if ( fontnames==NULL || fontnames[0]==NULL )
 	msg = uc_copy( "???" );
     else {
@@ -560,6 +566,12 @@ return( true );
 	msg[len-1] = '\0';
     }
     GGadgetPreparePopup(GGadgetGetWindow(d->gfc),msg);
+    if ( fontnames!=NULL ) {
+        for ( cnt=0; fontnames[cnt]!=NULL; ++cnt ) {
+            free(fontnames[cnt]);
+        }
+        free(fontnames);
+    }
     free(file);
     free(d->lastpopupfontname);
     d->lastpopupfontname = msg;
@@ -700,7 +712,6 @@ unichar_t *FVOpenFont(char *title, const char *defaultfile, int mult) {
     }
     harray2[1] = &gcd[i]; harray2[2] = GCD_Glue; harray2[3] = NULL;
     gcd[i++].gd.u.list = namelistnames;
-    free(nlnames);
 
     boxes[3].gd.flags = gg_visible | gg_enabled;
     boxes[3].gd.u.boxelements = harray2;
@@ -777,7 +788,8 @@ unichar_t *FVOpenFont(char *title, const char *defaultfile, int mult) {
     d.gfc = gcd[0].ret;
     d.rename = gcd[renamei].ret;
 
-    GGadgetSetList(harray1[2]->ret,(filts = StandardFilters()),true);
+    filts = StandardFilters();
+    GGadgetSetList(harray1[2]->ret,filts,true);
     GHVBoxSetExpandableRow(boxes[0].ret,0);
     GHVBoxSetExpandableCol(boxes[2].ret,gb_expandglue);
     GHVBoxSetExpandableCol(boxes[3].ret,gb_expandglue);
@@ -805,5 +817,10 @@ unichar_t *FVOpenFont(char *title, const char *defaultfile, int mult) {
     GDrawSync(NULL);
     GDrawProcessPendingEvents(NULL);		/* Give the window a chance to vanish... */
     free( d.lastpopupfontname );
+    GTextInfoArrayFree(filts);
+    for ( cnt=0; nlnames[cnt]!=NULL; ++cnt) {
+	free(nlnames[cnt]);
+    }
+    free(nlnames);
 return(d.ret);
 }

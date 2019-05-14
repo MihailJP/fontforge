@@ -24,7 +24,12 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "autosave.h"
+
+#include "baseviews.h"
 #include "fontforgevw.h"
+#include "sfd.h"
 /*#include "ustring.h"*/
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -47,14 +52,15 @@ int AutoSaveFrequency=5;
 static char *getAutoDirName(char *buffer) {
     char *dir=getFontForgeUserDir(Config);
 
-    if ( dir==NULL )
-return( NULL );
-    sprintf(buffer,"%s/autosave", dir);
-    if ( access(buffer,F_OK)==-1 )
-	if ( GFileMkDir(buffer)==-1 )
-return( NULL );
-    dir = copy(buffer);
-return( dir );
+    if ( dir!=NULL ) {
+        sprintf(buffer,"%s/autosave", dir);
+        free(dir);
+        if ( access(buffer,F_OK)==-1 )
+            if ( GFileMkDir(buffer)==-1 )
+                return( NULL );
+        dir = copy(buffer);
+    }
+    return( dir );
 }
 
 static void MakeAutoSaveName(SplineFont *sf) {
@@ -71,6 +77,7 @@ return;
 	sprintf( buffer, "%s/auto%06x-%d.asfd", autosavedir, getpid(), ++cnt );
 	if ( access(buffer,F_OK)==-1 ) {
 	    sf->autosavename = copy(buffer);
+            free(autosavedir);
 return;
 	}
     }
@@ -84,13 +91,15 @@ int DoAutoRecoveryExtended(int inquire)
     DIR *dir;
     struct dirent *entry;
     int any = false;
-    SplineFont *sf;
+    SplineFont *sf = NULL;
     int inquire_state=0;
 
     if ( recoverdir==NULL )
 return( false );
-    if ( (dir = opendir(recoverdir))==NULL )
+    if ( (dir = opendir(recoverdir))==NULL ) {
+        free(recoverdir);
 return( false );
+    }
     while ( (entry=readdir(dir))!=NULL ) {
 	if ( strcmp(entry->d_name,".")==0 || strcmp(entry->d_name,"..")==0 )
     continue;
@@ -103,6 +112,7 @@ return( false );
 	    fprintf( stderr, " Done\n" );
 	}
     }
+    free(recoverdir);
     closedir(dir);
 return( any );
 }
@@ -121,8 +131,10 @@ void CleanAutoRecovery(void) {
 
     if ( recoverdir==NULL )
 return;
-    if ( (dir = opendir(recoverdir))==NULL )
+    if ( (dir = opendir(recoverdir))==NULL ) {
+        free(recoverdir);
 return;
+    }
     while ( (entry=readdir(dir))!=NULL ) {
 	if ( strcmp(entry->d_name,".")==0 || strcmp(entry->d_name,"..")==0 )
     continue;
@@ -132,11 +144,12 @@ return;
 	    perror(buffer);
 	}
     }
+    free(recoverdir);
     closedir(dir);
 }
 
 
-void _DoAutoSaves(FontViewBase *fvs) {
+static void _DoAutoSaves(FontViewBase *fvs) {
     FontViewBase *fv;
     SplineFont *sf;
 

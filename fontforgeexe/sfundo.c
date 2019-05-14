@@ -27,6 +27,9 @@
 ******************************************************************************/
 
 #include "sfundo.h"
+
+#include "fvfonts.h"
+#include "sfd.h"
 #include "views.h"
 #include <string.h>
 #include "uiinterface.h"
@@ -146,14 +149,14 @@ void SFUndoPerform( SFUndoes* undo, SplineFont* sf )
     switch(undo->type) {
     case sfut_fontinfo:
 	sfdchunk = undo->sfdchunk;
-	printf("font level undo, font info sfd:%s\n", sfdchunk );
+//	printf("font level undo, font info sfd:%s\n", sfdchunk );
 	sfd = MakeTemporaryFile();
 	fwrite( sfdchunk, strlen(sfdchunk), 1, sfd );
 	fseek( sfd, 0, SEEK_SET );
 
 	SFD_GetFontMetaDataData d;
 	SFD_GetFontMetaDataData_Init( &d );
-	visitSFDFragment( sfd, sf, SFD_GetFontMetaData, &d );
+	visitSFDFragment( sfd, sf, SFD_GetFontMetaDataVoid, &d );
 	break;
     case sfut_lookups_kerns:
     case sfut_lookups:

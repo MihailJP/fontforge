@@ -26,6 +26,14 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include "fontforgeui.h"
+#include "fvfonts.h"
+#include "glyphcomp.h"
+#include "lookups.h"
+#include "splinefill.h"
+#include "splinesaveafm.h"
+#include "splineutil.h"
+#include "tottfaat.h"
+#include "tottfgpos.h"
 #include <utype.h>
 #include <ustring.h>
 #include <gkeysym.h>
@@ -1960,7 +1968,7 @@ static void BuildTop(struct att_dlg *att) {
     do {
 	sf = _sf->subfonts==NULL ? _sf : _sf->subfonts[k];
 	for ( i=0; i<sf->glyphcnt; ++i ) if ( (sc=sf->glyphs[i])!=NULL ) {
-	    if (( sc->unicodeenc>=0x10800 && sc->unicodeenc<=0x103ff ) ||
+	    if (( sc->unicodeenc>=0x10800 && sc->unicodeenc<=0x10fff ) ||
 		    ( sc->unicodeenc!=-1 && sc->unicodeenc<0x10fff &&
 			isrighttoleft(sc->unicodeenc)) ||
 			ScriptIsRightToLeft(SCScriptFromUnicode(sc)) ) {
@@ -2989,10 +2997,10 @@ static void FCAskFilename(FontView *fv,int flags) {
     if ( filename==NULL )
 return;
     otherfv = (FontView *) ViewPostScriptFont(filename,0);
+    free(filename); filename = NULL;
     if ( otherfv==NULL )
 return;
     FontCmpDlg(fv,otherfv,flags);
-    free(filename);
 }
 
 struct mf_data {

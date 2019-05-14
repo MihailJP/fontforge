@@ -7,7 +7,7 @@
   <LINK REL="icon" href="fftype16.png">
   <LINK REL="stylesheet" TYPE="text/css" HREF="FontForge.css">
 </HEAD>
-<BODY id=framed>
+<BODY id="framed">
 <DIV id="framed-in">
   <H1 ALIGN=Center>
     Scripting functions
@@ -494,11 +494,14 @@ a[4][0] = "Nested array";
 	    <A NAME="Chr">C</A>hr(int)<BR>
 	    Chr(array)
 	  <DD>
-	    Takes an integer [0,255] and returns a single character string containing
-	    that code point. Internally FontForge interprets strings as if they were
-	    in utf8 (well really, FontForge almost always just uses ASCII-US internally).
-	    If passed an array, it should be an array of integers and the result is the
-	    string. It can execute with no current font.
+	    Takes an integer [-128,255] and returns a single character
+	    string containing that byte.  Negative numbers are treated as
+	    signed bytes in two's complement.  Internally FontForge interprets
+	    strings as if they were in UTF-8, so it is possible to construct
+	    higher code points and strings that are not valid UTF-8 by
+	    passing in appropriate values.  If passed an array, it
+	    should be an array of integers and the result is the string.  It
+	    can execute with no current font.
 	  <DT>
 	    <A NAME="CIDChangeSubFont">C</A>IDChangeSubFont(new-sub-font-name)
 	  <DD>
@@ -1611,6 +1614,10 @@ SetLBearing(lbearing)
 	  <DD>
 	    Returns whether key exists in the private dictionary.
 	  <DT>
+	    <A NAME="HasSpiro">H</A>asSpiro()
+	  <DD>
+	    Returns true if Raph Levien's spiro package is available in FontForge.
+	  <DT>
 	    <A NAME="HFlip">H</A>Flip([about-x])
 	  <DD>
 	    All selected glyphs will be horizontally flipped about the vertical line
@@ -1738,12 +1745,24 @@ SetLBearing(lbearing)
 	    Returns whether the value is finite (not infinite and not a nan). It can
 	    execute with no current font.
 	  <DT>
+	    <A NAME="IsFraction">IsFraction</A>(val)
+	  <DD>
+	    Return 1 if n is a unicode fraction (either a vulgar fraction or other
+	    fraction) as described by www.unicode.org. Return 0 if there is no
+	    fraction for this value. It can execute with no current font.
+	  <DT>
 	    <A NAME="IsHexDigit">IsHexDigit</A>(val)
 	  <DD>
 	    Returns whether val is a hex-digit. Val may be either an integer, a unicode
 	    or a string. The first two cases are treated as unicode code points, the
 	    third looks at the first (utf8) character in the string. It can execute with
 	    no current font.
+	  <DT>
+	    <A NAME="IsLigature">IsLigature</A>(val)
+	  <DD>
+	    Return 1 if n is a ligature as described by www.unicode.org. Return 0
+	    if there is no unicode ligature for this value. It can execute with no
+	    current font.
 	  <DT>
 	    <A NAME="IsLower">IsLower</A>(val)
 	  <DD>
@@ -1756,12 +1775,24 @@ SetLBearing(lbearing)
 	  <DD>
 	    Returns whether the value is a nan. It can execute with no current font.
 	  <DT>
+	    <A NAME="IsOtherFraction">IsOtherFraction</A>(val)
+	  <DD>
+	    Return 1 if n is a unicode fraction (not defined as vulgar fraction)
+	    as described by www.unicode.org. Return 0 if there is no fraction for
+	    this value. It can execute with no current font.
+	  <DT>
 	    <A NAME="IsUpper">IsUpper</A>(val)
 	  <DD>
 	    Returns whether val is an upper case letter. Val may be either an integer,
 	    a unicode or a string. The first two cases are treated as unicode code points,
 	    the third looks at the first (utf8) character in the string. It can execute
 	    with no current font.
+	  <DT>
+	    <A NAME="IsVulgarFraction">IsVulgarFraction</A>(val)
+	  <DD>
+	    Return 1 if n is a unicode vulgar fraction as described by
+	    www.unicode.org. Return 0 if there is no fraction for this value.
+	    It can execute with no current font.
 	  <DT>
 	    <A NAME="Italic">Italic</A>([angle[,[xscale[,flags[,serif[,bearings[,stems[,counters[,lcstems[,lccounters]]]]]]]]]])</DT>
 	  <DD>
@@ -1850,8 +1881,8 @@ SetLBearing(lbearing)
 	    Reads an encoding file and stores it in FontForge's list of possible encodings.
 	    See Encoding-&gt;<A HREF="encodingmenu.html#Load">LoadEncoding</A> for more
 	    info.
-	    When loading encodings in Unicode consortium format, an encname has to
-	    be specefied or the encoding will be ignored.
+	    When loading encodings in Unicode consortium format an encname has to
+	    be specified or the encoding will be ignored.
 	  <DT>
 	    <A NAME="LoadNamelist">L</A>oadNamelist(filename)
 	  <DD>
@@ -1862,25 +1893,6 @@ SetLBearing(lbearing)
 	  <DD>
 	    Searches the given directory for things that look like fontforge namelists
 	    and loads them. If directory is omitted then it will load the default directory.
-	    It can execute with no current font.
-	  <DT>
-	    <A NAME="LoadPlugin">L</A>oadPlugin(filename)
-	  <DD>
-	    Will load the <A HREF="plugins.html">fontforge plugin </A>stored in the given
-	    file (this should be a shared library). It can execute with no current font.
-	  <DT>
-	    <A NAME="LoadPluginDir">L</A>oadPluginDir([directory-name])
-	  <DD>
-	    Searches the given directory for things that look like fontforge plugins
-	    and loads them. If directory is omitted then it will load the two default
-	    directories:
-	    <UL>
-	      <LI>
-		/usr/local/share/fontforge/plugins
-	      <LI>
-		~/.FontForge/plugins
-	    </UL>
-	    <P>
 	    It can execute with no current font.
 	  <DT>
 	    <A NAME="LoadPrefs">L</A>oadPrefs()
@@ -3088,6 +3100,18 @@ SetGasp([8,2,16,1,65535,3])
 	      </DD>
 	    </DL>
 	  <DT>
+	    <A NAME="SpiroVersion">S</A>piroVersion()
+	  <DD>
+	    Returns the version of LibSpiro available to FontForge.<BR>
+	    Versions 0.1 to 0.5 do not have a method to indicate version numbers,
+	    but there is a limited method to estimate versions {'0.0'..'0.5'}.
+	    <DL>
+	    <DD>'0.0' if FontForge has no LibSpiro available.</DD>
+	    <DD>'0.1' if LibSpiro 20071029 is available.</DD>
+	    <DD>'0.2' if LibSpiro 0.2 to 0.5 is available.</DD>
+	    <DD>LibSpiro 0.6 and higher reports back it's version available.</DD>
+	    </DL>
+	  <DT>
 	    <A NAME="Sqrt">S</A>qrt(val)
 	  <DD>
 	    Returns the square root. It can execute with no current font.
@@ -3182,7 +3206,7 @@ SetGasp([8,2,16,1,65535,3])
 	  <DT>
 	    <A NAME="ToLower">ToLower</A>(val)
 	  <DD>
-	    Converts value to a lower case letter. Val may be either an integer, a unicode
+	    Returns value converted to a lower case letter. Val may be either an integer, a unicode
 	    or a string. The first two cases are treated as unicode code points, in the
 	    third the entire string will be converted. It can execute with no current
 	    font.
@@ -3202,7 +3226,7 @@ SetGasp([8,2,16,1,65535,3])
 	  <DT>
 	    <A NAME="ToUpper">ToUpper</A>(val)
 	  <DD>
-	    Converts value to an upper case letter. Val may be either an integer, a unicode
+	    Returns value converted to an upper case letter. Val may be either an integer, a unicode
 	    or a string. The first two cases are treated as unicode code points, in the
 	    third the entire string will be converted. It can execute with no current
 	    font.
@@ -3275,10 +3299,74 @@ SetGasp([8,2,16,1,65535,3])
       <TD BGCOLOR=yellow><A NAME="U">U</A></TD>
       <TD><DL>
 	  <DT>
+	    <A NAME="ucFracChartGetCnt">u</A>cFracChartGetCnt()
+	  <DD>
+	    Returns total count of Fractions found in the Unicode chart as
+	    described by www.unicode.org. It can execute with no current font.
+	    <BR>Note: Count depends on chart version built into FontForge.
+	  <DT>
+	    <A NAME="ucLigChartGetCnt">u</A>cLigChartGetCnt()
+	  <DD>
+	    Returns total count of Ligatures found in the Unicode chart as
+	    described by www.unicode.org. It can execute with no current font.
+	    <BR>Note: Count depends on chart version built into FontForge.
+	  <DT>
+	    <A NAME="ucLigChartGetLoc">u</A>cLigChartGetLoc(val)
+	  <DD>
+	    Returns n for FontForge internal table Unicode val=Ligature[n]. If
+	    val does not exist in table, then return -1. Can execute with no
+	    current font.
+	    <BR>Note: Count depends on chart version built into FontForge.
+	  <DT>
+	    <A NAME="ucLigChartGetNxt">u</A>cLigChartGetNxt(int)
+	  <DD>
+	    Returns FontForge internal table Unicode Ligature[n]. Return -1 if
+	    n<0 or n>=ucLigChartGetCnt(). It can execute with no current font.
+	    <BR>Note: Count depends on chart version built into FontForge.
+	  <DT>
 	    <A NAME="UCodePoint">U</A>CodePoint(int)
 	  <DD>
 	    Converts the argument to a unicode code point (a special type used in several
 	    commands). It can execute with no current font.
+	  <DT>
+	    <A NAME="ucOFracChartGetCnt">u</A>cOFracChartGetCnt()
+	  <DD>
+	    Returns total count of non-Vulgar Fractions found in the Unicode
+	    chart as described by www.unicode.org. It can execute with no current
+	    font.<BR>Note: Count depends on chart version built into FontForge.
+	  <DT>
+	    <A NAME="ucOFracChartGetLoc">u</A>cOFracChartGetLoc(val)
+	  <DD>
+	    Returns n for FontForge internal table Unicode val=OtherFraction[n].
+	    If val does not exist in table, then return -1. Can execute with no
+	    current font.
+	    <BR>Note: Count depends on chart version built into FontForge.
+	  <DT>
+	    <A NAME="ucOFracChartGetNxt">u</A>cOFracChartGetNxt(int)
+	  <DD>
+	    Returns FontForge internal table Unicode (non-vulgar) Fraction[n].
+	    Return -1 if n&lt;0 or n&gt;=ucOFracChartGetCnt(). Can execute with no
+	    current font.
+	    <BR>Note: Count depends on chart version built into FontForge.
+	  <DT>
+	    <A NAME="ucVulChartGetCnt">u</A>cVulChartGetCnt()
+	  <DD>
+	    Returns total count of Vulgar Fractions found in the Unicode chart
+	    as described by www.unicode.org. It can execute with no current font.
+	    <BR>Note: Count depends on chart version built into FontForge.
+	  <DT>
+	    <A NAME="ucVulChartGetLoc">u</A>cVulChartGetLoc(val)
+	  <DD>
+	    Returns n for FontForge internal table Unicode val=VulgarFraction[n].
+	    If val does not exist in table, then return -1. Can execute with no
+	    current font.
+	    <BR>Note: Count depends on chart version built into FontForge.
+	  <DT>
+	    <A NAME="ucVulChartGetNxt">u</A>cVulChartGetNxt(int)
+	  <DD>
+	    Returns FontForge internal table Unicode Vulgar Fraction[n]. Returns
+	    -1 if n<0 or n>=ucVulChartGetCnt(). Can execute with no current font.
+	    <BR>Note: Count depends on chart version built into FontForge.
 	  <DT>
 	    <A NAME="UnicodeAnnotationFromLib">U</A>nicodeAnnotationFromLib(val)
 	  <DD>
@@ -3337,6 +3425,44 @@ SetGasp([8,2,16,1,65535,3])
 	    library is recent for your script. This function currently works only for
 	    libuninameslist ver_0.3.20130501 or later, else it returns empty string "".
 	    This can execute with no current font.
+	  <DT>
+	    <A NAME="UnicodeNames2GetCntFromLib">U</A>nicodeNames2GetCntFromLib()
+	  <DD>
+	    Return the Total Count of all Names that were corrected with a new name.
+	    Errors and corrections happen, therefore names can be corrected in the
+	    next Unicode Nameslist version.
+	    If there is no libuninameslist ver 0.5 or later available, then return -1
+	  <DT>
+	    <A NAME="UnicodeNames2GetNxtFromLib">U</A>nicodeNames2GetNxtFromLib(val)
+	  <DD>
+	    Errors and corrections happen, therefore names can be corrected in the
+	    next Unicode Nameslist version. With val==unicode value, this function
+	    returns -1 if no Names2 exists, or the Nth table location for this
+	    unicode value listed in libuninameslist that was corrected to a new name.
+	    If there is no libuninameslist ver 0.5 or later, then return -1.
+	  <DT>
+	    <A NAME="UnicodeNames2NxtUniFromLib">U</A>nicodeNames2NxtUniFromLib(val)
+	  <DD>
+	    Errors and corrections happen, therefore names can be corrected in the
+	    next Unicode Nameslist version. This function returns the Next Unicode value
+	    listed in libuninameslist internal table that was corrected to a new name.
+	    The internal table of Unicode values is of size UnicodeNames2GetCntFromLib().
+	    If there is no libuninameslist ver 0.5 or later, then return -1.
+	  <DT>
+	    <A NAME="UnicodeNames2FrmTabFromLib">U</A>nicodeNames2FrmTabFromLib(val)
+	  <DD>
+	    Errors and corrections happen, therefore names can be corrected in the
+	    next Unicode Nameslist version. This function returns the Next Names2
+	    listed in libuninameslist internal table that was corrected to a new name.
+	    The internal table of Unicode values is of size UnicodeNames2GetCntFromLib().
+	    If there is no libuninameslist ver 0.5 or later, then return NULL.
+	  <DT>
+	    <A NAME="UnicodeNames2FromLib">U</A>nicodeNames2FromLib(val)
+	  <DD>
+	    Errors and corrections happen, therefore names can be corrected in the
+	    next Unicode Nameslist version. This function returns the Names2 or NULL
+	    based on the unicode value given.
+	    If there is no libuninameslist ver 0.5 or later, then return NULL.
 	  <DT>
 	    <A NAME="UnlinkReference" HREF="editmenu.html#Unlink">UnlinkReference</A>
 	  <DD>

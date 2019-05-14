@@ -26,12 +26,13 @@
  */
 
 #include "prefs.h"
-#include <glib.h>
+#include <ffglib.h>
 #include <stdio.h>
 #include "ustring.h"
 #include "fileutil.h"
 #include "gfile.h"
 
+int cmdlinearg_forceUIHidden = 0;
 
 int cv_auto_goto = 0;
 

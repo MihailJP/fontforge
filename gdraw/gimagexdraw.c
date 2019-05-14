@@ -24,6 +24,8 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "fontforge-config.h"
+#ifndef FONTFORGE_CAN_USE_GDK
 #ifndef X_DISPLAY_MISSING
 #include "gxdrawP.h"
 #include "gxcdrawP.h"
@@ -2024,7 +2026,6 @@ return;
 		x,y, src->width, src->height );
 	XSetFunction(display,gc,GXcopy);
 	gdisp->gcstate[gw->ggc->bitmap_col].fore_col = COLOR_UNKNOWN;
-	gdisp->gcstate[gw->ggc->bitmap_col].func = df_copy;
     } else { /* no mask */
 	XPutImage(display,w,gc,gdisp->gg.img,0,0,
 		x,y, src->width, src->height );
@@ -2062,7 +2063,7 @@ return;
 	int i,j;
 
 	full.x = full.y = 0; full.width = base->width; full.height = base->height;
-	pixmap = GDrawCreatePixmap((GDisplay *) gdisp,base->width,base->height);
+	pixmap = GDrawCreatePixmap((GDisplay *) gdisp,NULL,base->width,base->height);
 	_GXDraw_Image(pixmap,image,&full,0,0);
 	GDrawPushClip(_w,src,&old);
 	_GXDraw_SetClipFunc(gdisp,gw->ggc);
@@ -2090,8 +2091,8 @@ return;
 	int i,j;
 
 	full.x = full.y = 0; full.width = base->width; full.height = base->height;
-	pixmap = GDrawCreatePixmap((GDisplay *) gdisp,base->width,base->height);
-	maskmap = GDrawCreatePixmap((GDisplay *) gdisp,base->width,base->height);
+	pixmap = GDrawCreatePixmap((GDisplay *) gdisp,NULL,base->width,base->height);
+	maskmap = GDrawCreatePixmap((GDisplay *) gdisp,NULL,base->width,base->height);
 	gximage_to_ximage(gw, image, &full);
 	GDrawDestroyWindow(maskmap);
 #if FAST_BITS
@@ -2126,7 +2127,6 @@ return;
 	GDrawDestroyWindow(maskmap);
 	XSetFunction(display,gc,GXcopy);
 	gdisp->gcstate[gw->ggc->bitmap_col].fore_col = COLOR_UNKNOWN;
-	gdisp->gcstate[gw->ggc->bitmap_col].func = df_copy;
     }
 }
 
@@ -2316,9 +2316,13 @@ static GImage *xi1_to_gi1(GXDisplay *gdisp,XImage *xi) {
     struct _GImage *base;
 
     gi = calloc(1,sizeof(GImage));
-    base = malloc(sizeof(struct _GImage));
-    if ( gi==NULL || base==NULL )
+    if ( gi==NULL )
 return( NULL );
+    base = malloc(sizeof(struct _GImage));
+    if ( base==NULL ) {
+        free(gi);
+return( NULL );
+    }
     gi->u.image = base;
     base->image_type = it_mono;
     base->width = xi->width;
@@ -2354,10 +2358,19 @@ static GImage *xi8_to_gi8(GXDisplay *gdisp,XImage *xi) {
     XColor cols[256];
 
     gi = calloc(1,sizeof(GImage));
-    base = malloc(sizeof(struct _GImage));
-    clut = malloc(sizeof(GClut));
-    if ( gi==NULL || base==NULL )
+    if ( gi==NULL )
 return( NULL );
+    base = malloc(sizeof(struct _GImage));
+    if ( base ==NULL ) {
+        free(gi);
+return( NULL );
+    }
+    clut = malloc(sizeof(GClut));
+    if ( clut ==NULL ) {
+        free(base);
+        free(gi);
+return( NULL );
+    }
     gi->u.image = base;
     base->image_type = it_index;
     base->width = xi->width;
@@ -2526,3 +2539,4 @@ return( gi );
 #else	/* NO X */
 int gimagexdraw_a_file_must_define_something=3;
 #endif
+#endif // FONTFORGE_CAN_USE_GDK

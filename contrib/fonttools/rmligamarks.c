@@ -40,7 +40,7 @@
 
 static void ProcessFiles(FILE *in, FILE *out) {
     char line[1000];
-    char *match1 = "Ligature: 8", *match2 = "Ligature: 9";
+    const char *match1 = "Ligature: 8", *match2 = "Ligature: 9";
     int matchlen = strlen(match1);
 
     while ( fgets(line,sizeof(line),in)!=NULL ) {

@@ -26,14 +26,22 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "autowidth2.h"
+#include "cvundoes.h"
 #include "fontforgeui.h"
+#include "fvcomposite.h"
+#include "fvfonts.h"
+#include "lookups.h"
+#include "namelist.h"
+#include "splinefill.h"
+#include "splineutil.h"
+#include "tottfgpos.h"
 #include <ustring.h>
 #include <math.h>
 #include <utype.h>
 #include <chardata.h>
 #include "ttf.h"		/* For MAC_DELETED_GLYPH_NAME */
 #include <gkeysym.h>
-#include "is_LIGATURE.h"
 #include "gutils/unicodelibinfo.h"
 
 extern int lookup_hideunused;
@@ -1671,7 +1679,7 @@ return( true );
 }
 
 /* Generate default settings for the entries in ligature lookup
- * subtables. */
+ * TODO: expand beyond (bmp) */
 static char *LigDefaultStr(int uni, char *name, int alt_lig ) {
     const unichar_t *alt=NULL, *pt;
     char *components = NULL, *tmp;
@@ -1686,26 +1694,30 @@ static char *LigDefaultStr(int uni, char *name, int alt_lig ) {
     else if ( isdecompositionnormative(uni) &&
 		unicode_alternates[uni>>8]!=NULL &&
 		(alt = unicode_alternates[uni>>8][uni&0xff])!=NULL ) {
-	if ( alt[1]=='\0' )
+	if ( alt[1]=='\0' ||
+		Ligature_alt_getC(Ligature_find_N(uni))<=1 ||
+		Fraction_alt_getC(Fraction_find_N(uni))<=1 )
 	    alt = NULL;		/* Single replacements aren't ligatures */
 	else if ( iscombining(alt[1]) && ( alt[2]=='\0' || iscombining(alt[2]))) {
 	    if ( alt_lig != -10 )	/* alt_lig = 10 => mac unicode decomp */
 		alt = NULL;		/* Otherwise, don't treat accented letters as ligatures */
-	} else if (! is_LIGATURE_or_VULGAR_FRACTION((unsigned int) uni) &&
+	} else if (! is_LIGATURE_or_VULGAR_FRACTION((uint32)(uni)) &&
 		uni!=0x152 && uni!=0x153 &&	/* oe ligature should not be standard */
 		uni!=0x132 && uni!=0x133 &&	/* nor ij */
 		(uni<0xfb2a || uni>0xfb4f) &&	/* Allow hebrew precomposed chars */
-		uni!=0x215f &&
+		uni!=0x215f &&			/* exclude 1/ */
 		!((uni>=0x0958 && uni<=0x095f) || uni==0x929 || uni==0x931 || uni==0x934)) {
 	    alt = NULL;
 	} else if ( (tmp=unicode_name(65))==NULL ) { /* test for 'A' to see if library exists */
-	    if ( (uni>=0xbc && uni<=0xbe ) ||		/* Latin1 fractions */
-		    (uni>=0x2153 && uni<=0x215e ) ||	/* other fractions */
+	    if ( (uni>=0xbc && uni<=0xbe ) ||		/* Latin1 vulgar fractions */
+		    (uni>=0x2150 && uni<=0x215e ) ||	/* other vulgar fractions */
+		    (uni>=0x2189) ||			/* other vulgar fraction */
 		    (uni>=0xfb00 && uni<=0xfb06 ) ||	/* latin ligatures */
 		    (uni>=0xfb13 && uni<=0xfb17 ) ||	/* armenian ligatures */
-		    uni==0xfb17 ||			/* hebrew ligature */
+		    uni==0xfb1f ||			/* hebrew ligature */
 		    (uni>=0xfb2a && uni<=0xfb4f ) ||	/* hebrew precomposed chars */
-		    (uni>=0xfbea && uni<=0xfdcf ) ||	/* arabic ligatures */
+		    (uni>=0xfbea && uni<=0xfd3d ) ||	/* arabic ligatures */
+		    (uni>=0xfd50 && uni<=0xfdcf ) ||	/* arabic ligatures */
 		    (uni>=0xfdf0 && uni<=0xfdfb ) ||	/* arabic ligatures */
 		    (uni>=0xfef5 && uni<=0xfefc ))	/* arabic ligatures */
 		;	/* These are good */
@@ -1812,10 +1824,14 @@ return( NULL );
 return( components );
 }
 
+/* TODO: see what can be brought-in from is_Ligature_data.h tables, but this */
+/* also appears to run various features beyond ligatures and fractions too.  */
 uint32 LigTagFromUnicode(int uni) {
     int tag = CHR('l','i','g','a');	/* standard */
 
-    if (( uni>=0xbc && uni<=0xbe ) || (uni>=0x2153 && uni<=0x215f) )
+    if ( (uni>=0xbc && uni<=0xbe) ||	/* latin1 vulgar fractions */
+	 (uni>=0x2150 && uni<=0x215f) ||/* other vulgar fractions */
+	 (uni==0x2189) )
 	tag = CHR('f','r','a','c');	/* Fraction */
     /* hebrew precomposed characters */
     else if ( uni>=0xfb2a && uni<=0xfb4e )
@@ -3167,13 +3183,13 @@ return( NULL );
     }
     for ( i=0; i<gv->part_cnt; ++i )
 	BDFCharFree(others[i]);
-    BDFCharFree(me);
     free(others);
 
     memset(base->clut,'\0',sizeof(*base->clut));
     bg = GDrawGetDefaultBackground(NULL);
     fg = GDrawGetDefaultForeground(NULL);
     clut_scale = me->depth == 8 ? 8 : 4;
+    BDFCharFree(me);
     base->clut->clut_len = 1<<clut_scale;
     for ( l=0; l<(1<<clut_scale); ++l )
 	base->clut->clut[l] =
@@ -3251,8 +3267,13 @@ return( NULL );
 
     if ( ymax<=ICON_WIDTH ) ymax = ICON_WIDTH;
     if ( ymin>0 ) ymin = 0;
-    if ( xmax<xmin )
-return( NULL );
+    if ( xmax<xmin ) {
+        for ( i=0; i<extracnt; ++i )
+            BDFCharFree(extras[i]);
+        free(extras);
+        return( NULL );
+    }
+
     if ( xmin>0 ) xmin = 0;
 
     img = GImageCreate(it_index,xmax - xmin + 2,ymax-ymin+2);
@@ -4291,12 +4312,12 @@ return;
 	uhvarray[19] = &ugcd[11]; uhvarray[20] = NULL;
 
 	ugcd[12].gd.flags = gg_visible | gg_enabled | gg_utf8_popup;
-	ulabel[12].text = (unichar_t *) _("Mark for Unlink, Remove Overlap Before Save");
+	ulabel[12].text = (unichar_t *) _("Mark for Unlink, Remove Overlap before Generating");
 	ulabel[12].text_is_1byte = true;
 	ulabel[12].text_in_resource = true;
 	ugcd[12].gd.label = &ulabel[12];
 	ugcd[12].gd.cid = CID_UnlinkRmOverlap;
-	ugcd[12].gd.popup_msg = (unichar_t *) _("A few glyphs, like Aring, Ccedilla, Eogonek\nare composed of two overlapping references.\nOften it is desirable to retain the references\n(so that changes made to the base glyph are\nreflected in the composed glyph), but that\nmeans you are stuck with overlapping contours.\nThis flag means that just before saving the\nfont, fontforge will unlink the references,\nand run remove overlap on them, then just\nafter saving it will undo the operation\nthereby retaining the references.");
+	ugcd[12].gd.popup_msg = (unichar_t *) _("A few glyphs, like Aring, Ccedilla, Eogonek\nare composed of two overlapping references.\nOften it is desirable to retain the references\n(so that changes made to the base glyph are\nreflected in the composed glyph), but that\nmeans you are stuck with overlapping contours.\nThis flag means that just before generating\nthe font, FontForge will unlink the references\nand run remove overlap on them, while\n retaining the references in the SFD.");
 	ugcd[12].creator = GCheckBoxCreate;
 	uhvarray[21] = &ugcd[12]; uhvarray[22] = GCD_ColSpan; uhvarray[23] = NULL;
 	uhvarray[24] = GCD_Glue; uhvarray[25] = GCD_Glue; uhvarray[26] = NULL;
@@ -4568,7 +4589,7 @@ return;
 	tgcd[11].gd.flags = gg_enabled|gg_visible|gg_utf8_popup;
 	tgcd[11].gd.cid = CID_HorAccent;
 	tgcd[11].creator = GTextFieldCreate;
-	tgcd[11].gd.popup_msg = tgcd[9].gd.popup_msg;
+	tgcd[11].gd.popup_msg = tgcd[10].gd.popup_msg;
 	thvarray[16] = &tgcd[11];
 
 	tlabel[12].text = (unichar_t *) _("Guess");
@@ -4703,7 +4724,7 @@ return;
 	    vargcd[i][4].gd.pos.width = 60;
 	    vargcd[i][4].gd.cid = CID_ExtItalicCor+i*100;
 	    vargcd[i][4].creator = GTextFieldCreate;
-	    vargcd[i][4].gd.popup_msg = vargcd[i][4].gd.popup_msg;
+	    vargcd[i][4].gd.popup_msg = vargcd[i][3].gd.popup_msg;
 	    varhvarray[i][2][1] = &vargcd[i][4];
 
 	    vargcd[i][5].gd.flags = gg_enabled|gg_visible|gg_utf8_popup;

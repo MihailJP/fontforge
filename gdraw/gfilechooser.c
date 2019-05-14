@@ -138,15 +138,18 @@ return( NULL );
 return( NULL );
 	++pattern;
     }
+    if (pattern > eop) {
+        return NULL;
+    }
 return( name );
 }
 
 /* Handles *?{}[] wildcards */
 int GGadgetWildMatch(unichar_t *pattern, unichar_t *name,int ignorecase) {
-    unichar_t *eop = pattern + u_strlen(pattern);
-
     if ( pattern==NULL )
 return( true );
+
+    unichar_t *eop = pattern + u_strlen(pattern);
 
     name = SubMatch(pattern,eop,name,ignorecase);
     if ( name==NULL )
@@ -161,9 +164,6 @@ enum fchooserret GFileChooserDefFilter(GGadget *g,GDirEntry *ent,const unichar_t
     GFileChooser *gfc = (GFileChooser *) g;
     int i;
     char *mime;
-    char utf8_ent_name[PATH_MAX+1];
-    utf8_ent_name[PATH_MAX]=0;
-    strncpy( utf8_ent_name, u_to_c( ent->name ), PATH_MAX );
 
     if ( uc_strcmp(ent->name,".")==0 )	/* Don't show the current directory entry */
 	return( fc_hide );
@@ -183,38 +183,49 @@ enum fchooserret GFileChooserDefFilter(GGadget *g,GDirEntry *ent,const unichar_t
 	return( fc_hide );
     /* match the mimetypes */
     if( ent->mimetype )
-    {
-	mime = u_to_c(ent->mimetype);
-    }
-    else
-    {
-	mime = GIOGetMimeType(utf8_ent_name, false);
+	mime = copy(u_to_c(ent->mimetype));
+    else {
+	char utf8_ent_name[PATH_MAX+1];
+	strncpy(utf8_ent_name,u_to_c( ent->name ),PATH_MAX);
+	utf8_ent_name[PATH_MAX]=0;
+	mime = GIOGetMimeType(utf8_ent_name);
     }
 
-    for ( i=0; gfc->mimetypes[i]!=NULL; ++i )
-	if (strcasecmp(u_to_c(gfc->mimetypes[i]), mime) == 0)
-	    return( fc_show );
+    if ( mime ) {
+	for ( i=0; gfc->mimetypes[i]!=NULL; ++i )
+	    if ( strcasecmp(u_to_c(gfc->mimetypes[i]),mime)==0 ) {
+		free(mime);
+		return( fc_show );
+	    }
+	free(mime);
+    }
 
     return( fc_hide );
 }
 
-static GImage *GFileChooserPickIcon(GDirEntry *e)
-{
-    char mime[PATH_MAX+1];
+static GImage *GFileChooserPickIcon(GDirEntry *e) {
+    char mime[100];
     char utf8_ent_name[PATH_MAX+1];
-    mime[PATH_MAX] = utf8_ent_name[PATH_MAX] = 0;
-    strncpy( mime,          u_to_c(e->mimetype), PATH_MAX );
-    strncpy( utf8_ent_name, u_to_c( e->name ),   PATH_MAX );
+    mime[0] = mime[99] = utf8_ent_name[PATH_MAX] = 0;
+    strncpy(utf8_ent_name,u_to_c(e->name),PATH_MAX);
 
     InitChooserIcons();
 
     if ( e->isdir ) {
-	if ( !strcmp(utf8_ent_name,".."))
+	if ( !strcmp(utf8_ent_name,"..") )
 	    return( &_GIcon_updir );
 	return( &_GIcon_dir );
     }
-    if ( !e->mimetype ) {
-	strncpy( mime, GIOGetMimeType(utf8_ent_name, false), PATH_MAX );
+    if ( e->mimetype ) {
+	strncpy(mime,u_to_c(e->mimetype),99);
+    } else {
+	char *temp;
+	if ( (temp=GIOguessMimeType(utf8_ent_name)) || (temp=GIOGetMimeType(utf8_ent_name)) ) {
+	    e->mimetype=u_copy(c_to_u(temp));
+	    strncpy(mime,temp,99);
+	    free(temp);
+	} else
+	    return( &_GIcon_unknown );
     }
     if (strncasecmp("text/", mime, 5) == 0) {
 	if (strcasecmp("text/html", mime) == 0)
@@ -449,20 +460,6 @@ static void GFileChooserScanDir(GFileChooser *gfc,unichar_t *dir) {
     GGadgetSetList(&gfc->directories->g,ti,false);
     GGadgetSelectOneListItem(&gfc->directories->g,0);
 
-    /* Password management for URLs */
-    if ( (pt = uc_strstr(dir,"://"))!=NULL ) {
-	int port;
-	char proto[40];
-	char *host, *username, *password;
-	free( _GIO_decomposeURL(dir,&host,&port,&username,&password));
-	if ( username!=NULL && password==NULL ) {
-	    password = gwwv_ask_password(_("Password?"),"",_("Enter password for %s@%s"), username, host );
-	    cu_strncpy(proto,dir,pt-dir<sizeof(proto)?pt-dir:sizeof(proto));
-	    password = GIO_PasswordCache(proto,host,username,password);
-	}
-	free(host); free(username); free(password);
-    }
-
     if ( gfc->outstanding!=NULL ) {
 	GIOcancel(gfc->outstanding);
 	gfc->outstanding = NULL;
@@ -483,8 +480,10 @@ static void GFileChooserScanDir(GFileChooser *gfc,unichar_t *dir) {
 	uc_strcat(freeme,"/");
 	dir = freeme;
     }
-    if ( gfc->hpos>=gfc->hmax )
-	gfc->history = realloc(gfc->history,(gfc->hmax+20)*sizeof(unichar_t *));
+    if ( gfc->hpos+1>=gfc->hmax ) {
+	gfc->hmax = gfc->hmax+20;
+	gfc->history = realloc(gfc->history,(gfc->hmax)*sizeof(unichar_t *));
+    }
     if ( gfc->hcnt==0 ) {
 	gfc->history[gfc->hcnt++] = u_copy(dir);
     } else if ( u_strcmp(gfc->history[gfc->hpos],dir)==0 )
@@ -502,10 +501,15 @@ static int GFileChooserTextChanged(GGadget *t,GEvent *e) {
     GGadget *g = (GGadget *)GGadgetGetUserData(t);
 
     const unichar_t *pt, *spt;
-    unichar_t * pt_toFree = 0;
+    unichar_t * pt_toFree = 0, *local_toFree = 0;
     if ( e->type!=et_controlevent || e->u.control.subtype!=et_textchanged )
 return( true );
     spt = pt = _GGadgetGetTitle(t);
+#ifdef _WIN32
+    local_toFree = u_GFileNormalizePath(u_copy(spt));
+    pt = spt = local_toFree;
+#endif    
+    
     if ( pt==NULL )
 return( true );
     gfc = (GFileChooser *) GGadgetGetUserData(t);
@@ -546,6 +550,9 @@ return( true );
     free(gfc->lastname); gfc->lastname = NULL;
     if(pt_toFree)
 	free(pt_toFree);
+    
+    if (local_toFree)
+        free(local_toFree);
 
     if(gfc->inputfilenameprevchar)
 	free(gfc->inputfilenameprevchar);
@@ -873,7 +880,14 @@ static int gotten=false;
 
 static void GFCPopupMenu(GGadget *g, GEvent *e) {
     int i;
-    GFileChooser *gfc = (GFileChooser *) GGadgetGetUserData(g);
+    // The reason this casting works is a bit of a hack.
+    // If this was initiated from a right click, `g` will be the GFC GGadget.
+    // Then its userdata would be the initiator's, and NOT the GFC struct.
+    // Thus we cannot call GGadgetGetUserData.
+    // However, since in the GFC struct, its GGadget comes first, effectively
+    // the pointer to its GGadget will equal the pointer to its GFC struct.
+    // I have ensured that all calls to this function pass the GFC GGadget.
+    GFileChooser *gfc = (GFileChooser *) g;
 
     for ( i=0; gfcpopupmenu[i].ti.text!=NULL || gfcpopupmenu[i].ti.line; ++i )
 	gfcpopupmenu[i].ti.userdata = gfc;
@@ -899,7 +913,7 @@ static int GFileChooserConfigure(GGadget *g, GEvent *e) {
 	fake.w = g->base;
 	fake.u.mouse.x = pos.x;
 	fake.u.mouse.y = pos.y+pos.height;
-	GFCPopupMenu(g,&fake);
+	GFCPopupMenu((GGadget*)GGadgetGetUserData(g),&fake);
     }
 return( true );
 }
@@ -1119,11 +1133,15 @@ void GFileChooserPopupCheck(GGadget *g,GEvent *e) {
 void GFileChooserFilterIt(GGadget *g) {
     GFileChooser *gfc = (GFileChooser *) g;
     unichar_t *pt, *spt, *slashpt, *dir, *temp;
+    unichar_t *tofree = NULL;
     int wasdir;
 
     wasdir = gfc->lastname!=NULL;
 
     spt = (unichar_t *) _GGadgetGetTitle(&gfc->name->g);
+#ifdef _WIN32
+    spt = tofree = u_GFileNormalizePath(u_copy(spt));
+#endif
     if ( *spt=='\0' ) {		/* Werner tells me that pressing the Filter button with nothing should show the default filter mask */
 	if ( gfc->wildcard!=NULL )
 	    GGadgetSetTitle(&gfc->name->g,gfc->wildcard);
@@ -1159,6 +1177,7 @@ return;
     }
     GFileChooserScanDir(gfc,dir);
     free(dir);
+    free(tofree);
 }
 
 /* A function that may be connected to a filter button as its handle_controlevent */
@@ -1209,41 +1228,6 @@ int GFileChooserDefInputFilenameFunc( GGadget *g,
 				      unichar_t* oldfilename ) {
     return 0;
 }
-
-int GFileChooserSaveAsInputFilenameFunc( GGadget *g,
-					 const unichar_t ** ppt,
-					 unichar_t* oldfilename ) {
-    const unichar_t* pt = *ppt;
-    char* p = u_to_c(pt);
-    int plen = strlen(p);
-    int ew = endswithi( p, ".sfdir") || endswithi( p, ".sfd");
-
-    if( !ew ) {
-	if( endswithi( u_to_c(oldfilename), ".sfd")
-	    || endswithi( u_to_c(oldfilename), ".sfdir")) {
-	    *ppt = u_copy(oldfilename);
-	    return 1;
-	}
-    }
-
-    /**
-     * If there is not a correct extension there already, then we will
-     * add one for the user to be helpful.
-     */
-    if( pt==*ppt) {
-	char* extension = ".sfd";
-	if( *p && p[plen-1] == '.' )
-	    extension = "sfd";
-	if( !ew ) {
-	    pt = u_concat( pt, c_to_u(extension) );
-	}
-    }
-
-    int ret = (pt != *ppt);
-    *ppt = pt;
-    return(ret);
-}
-
 
 void GFileChooserSetInputFilenameFunc(GGadget *g,GFileChooserInputFilenameFuncType func) {
     GFileChooser *gfc = (GFileChooser *) g;
@@ -1359,13 +1343,16 @@ static unichar_t *GFileChooserGetTitle(GGadget *g) {
     GFileChooser *gfc = (GFileChooser *) g;
     unichar_t *spt, *curdir, *file;
 
-    spt = (unichar_t *) _GGadgetGetTitle(&gfc->name->g);
+    spt = u_GFileNormalizePath(u_copy((unichar_t *)_GGadgetGetTitle(&gfc->name->g)));
     if ( u_GFileIsAbsolute(spt) )
-	file = u_copy(spt);
+	file = spt;
     else {
 	curdir = GFileChooserGetCurDir(gfc,-1);
 	file = u_GFileAppendFile(curdir,spt,gfc->lastname!=NULL);
 	free(curdir);
+    }
+    if (file != spt) {
+        free(spt);
     }
 return( file );
 }

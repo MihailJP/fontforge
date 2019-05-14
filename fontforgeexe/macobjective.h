@@ -27,5 +27,5 @@
 
 #import <Cocoa/Cocoa.h>
 
-
+#include "fontforge-config.h"
 

@@ -24,6 +24,9 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "fontforge-config.h"
+
+#include <gutils.h>
 #include <stdio.h>
 #include <math.h>
 #include <time.h>
@@ -31,7 +34,6 @@
 #if !defined(__MINGW32__)
 #include <sys/wait.h>
 #endif
-#include "fontforge-config.h"
 #include <unistd.h>
 
 #include "gpsdrawP.h"
@@ -68,7 +70,7 @@ static GWindow PSDrawCreateSubWindow(GWindow UNUSED(w), GRect *UNUSED(pos),
 return NULL;
 }
 
-static GWindow PSDrawCreatePixmap(GDisplay *UNUSED(gdisp), uint16 UNUSED(width),
+static GWindow PSDrawCreatePixmap(GDisplay *UNUSED(gdisp), GWindow UNUSED(similar), uint16 UNUSED(width),
         uint16 UNUSED(height)) {
     fprintf( stderr, "CreatePixmap not implemented for postscript\n" );
 return NULL;
@@ -230,6 +232,11 @@ return( NULL );
 static void PSDrawSetGIC(GWindow UNUSED(w), GIC *UNUSED(gic),
         int UNUSED(x), int UNUSED(y)) {
     /* Not meaningful */
+}
+
+static int PSDrawKeyState(GWindow UNUSED(w), int UNUSED(keysym)) {
+    /* Not meaningful */
+    return 0;
 }
 
 static void PSDrawPointerUngrab(GDisplay *UNUSED(gdisp)) {
@@ -629,6 +636,10 @@ static void PSDrawPopClip(GWindow w,GRect *old) {
     ps->ggc->clip = *old;
 }
 
+static void PSDrawSetDifferenceMode(GWindow UNUSED(w)) {
+    fprintf(stderr, "PSDrawSetDifferenceMode not implemented for postscript\n" );
+}
+
 static void PSDrawDrawLine(GWindow w, int32 x,int32 y,int32 xend,int32 yend,Color col) {
     GPSWindow ps = (GPSWindow ) w;
 
@@ -930,7 +941,7 @@ static void PSInitJob(GPSWindow ps, unichar_t *title) {
 	    72.0*gdisp->lmargin, 72.0*gdisp->bmargin,
 	    72.0*(gdisp->xwidth-gdisp->rmargin), 72.0*(gdisp->yheight-gdisp->tmargin));
     fprintf( ps->init_file, "%%%%Creator: %s\n", GResourceProgramName );
-    time(&now);
+    now = GetTime();
     fprintf( ps->init_file, "%%%%CreationDate: %s", ctime(&now) );
     if ( title!=NULL )
 	fprintf( ps->init_file, "%%%%Title: %s\n", u2def_strncpy(buf,title,sizeof(buf)) );
@@ -1105,7 +1116,7 @@ static int PSFinishJob(GPSWindow ps,int cancel) {
     error |= ferror(ps->init_file);
     if ( error || cancel ) {
 	if ( !cancel )
-	    GDrawError("An error occured while saving the print job to disk.\nNot printed." );
+	    GDrawError("An error occurred while saving the print job to disk.\nNot printed." );
 	if ( gdisp->filename!=NULL )
 	    GFileUnlink(gdisp->filename);
 	fclose(ps->init_file);
@@ -1346,6 +1357,8 @@ static struct displayfuncs psfuncs = {
     PSDrawPushClip,
     PSDrawPopClip,
 
+    PSDrawSetDifferenceMode,
+
     PSDrawClear,
     PSDrawDrawLine,
     PSDrawDrawArrowLine,
@@ -1369,6 +1382,7 @@ static struct displayfuncs psfuncs = {
 
     PSDrawCreateInputContext,
     PSDrawSetGIC,
+    PSDrawKeyState,
 
     PSDrawGrabSelection,
     PSDrawAddSelectionType,
@@ -1422,8 +1436,15 @@ static struct displayfuncs psfuncs = {
     NULL,
     NULL,
     NULL,
+    NULL,
     NULL
 };
+
+void _GPSDraw_DestroyDisplay(GDisplay *gdisp) {
+  if (gdisp->fontstate != NULL) { free(gdisp->fontstate); gdisp->fontstate = NULL; }
+  free(gdisp);
+  return;
+}
 
 GDisplay *_GPSDraw_CreateDisplay() {
     GPSDisplay *gdisp;

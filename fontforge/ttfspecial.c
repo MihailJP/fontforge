@@ -24,7 +24,15 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "ttfspecial.h"
+
 #include "fontforge.h"
+#include "mem.h"
+#include "splinefill.h"
+#include "splineutil.h"
+#include "splineutil2.h"
+#include "tottf.h"
 #include <math.h>
 #include <time.h>
 #include <utype.h>
@@ -756,8 +764,10 @@ static void PfEd_Layers(SplineFont *sf, struct PfEd_subtabs *pfed,
 	if ( otherlayers[l] )
 	    ++cnt;
     cnt += has_spiro;
-    if ( cnt==0 )
+    if ( cnt==0 ) {
+    free(otherlayers);
 return;
+    }
 
     pfed->subtabs[pfed->next].tag = layr_TAG;
     pfed->subtabs[pfed->next++].data = layr = tmpfile();
@@ -1137,11 +1147,13 @@ static void pfed_read_normal_contour(FILE *ttf,SplineSet *ss,
     if ( COM_VERB(verb)!=V_MoveTo ) {
 	LogError(_("Whoops, contours must begin with a move to\n") );
 	ss->first = ss->last = SplinePointCreate(0,0);
+	ss->start_offset = 0;
 return;
     }
     offx = pfed_get_coord(ttf,COM_MOD(verb));
     offy = pfed_get_coord(ttf,COM_MOD(verb));
     ss->first = current = SplinePointCreate(offx,offy);
+    ss->start_offset = 0;
     for (;;) {
 	verb = getc(ttf);
 	v = COM_VERB(verb); m = COM_MOD(verb);
@@ -2201,6 +2213,7 @@ return;
 	    }
 	}
     }
+    free(bdfinfo);
 }
 
 

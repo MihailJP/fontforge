@@ -26,13 +26,20 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "autohint.h"
+#include "dumppfa.h"
 #include "fontforgevw.h"
+#include "mem.h"
 #include <math.h>
 #include <utype.h>
 
 #include "ttf.h"
 #include "splinefont.h"
 #include "stemdb.h"
+#include "splineutil.h"
+#include "splineutil2.h"
+#include "stemdb.h"
+#include "tottf.h"
 
 extern int autohint_before_generate;
 
@@ -533,7 +540,7 @@ static void GICImportBlues(GlobalInstrCt *gic) {
 	    if (values != NULL) {
 	        /* First pair is a bottom zone (see Type1 specification). */
 	        for (j=0; j<bluecnt; j++)
-		    if (finite(gic->blues[j].family_base))
+		    if (isfinite(gic->blues[j].family_base))
 		        continue;
 		    else if (values[1] != gic->blues[j].base &&
 		             SegmentsOverlap(gic->blues[j].base,
@@ -544,7 +551,7 @@ static void GICImportBlues(GlobalInstrCt *gic) {
 		/* Next pairs are top zones (see Type1 specification). */
 		for (i=1; i<cnt; i++) {
 		    for (j=0; j<bluecnt; j++)
-		        if (finite(gic->blues[j].family_base))
+		        if (isfinite(gic->blues[j].family_base))
 			    continue;
 			else if (values[2*i] != gic->blues[j].base &&
 			         SegmentsOverlap(gic->blues[j].base,
@@ -564,7 +571,7 @@ static void GICImportBlues(GlobalInstrCt *gic) {
 		/* All pairs are bottom zones (see Type1 specification). */
 		for (i=0; i<cnt; i++) {
 		    for (j=0; j<bluecnt; j++)
-		        if (finite(gic->blues[j].family_base))
+		        if (isfinite(gic->blues[j].family_base))
 			    continue;
 			else if (values[2*i+1] != gic->blues[j].base &&
 			         SegmentsOverlap(gic->blues[j].base,
@@ -691,7 +698,7 @@ static void init_cvt(GlobalInstrCt *gic) {
         gic->blues[i].cvtindex = cvtindex;
         memputshort(cvt, 2*cvtindex++, rint(gic->blues[i].base));
 
-	if (finite(gic->blues[i].family_base)) {
+	if (isfinite(gic->blues[i].family_base)) {
 	    gic->blues[i].family_cvtindex = cvtindex;
             memputshort(cvt, 2*cvtindex++, rint(gic->blues[i].family_base));
 	}
@@ -1677,7 +1684,7 @@ static uint8 *use_family_blues(uint8 *prep_head, GlobalInstrCt *gic) {
     int callargs[3];
 
     for (i=0; i<gic->bluecnt; i++) {
-        if (finite(gic->blues[i].family_base))
+        if (isfinite(gic->blues[i].family_base))
         {
             for (stopat=0; stopat<32768; stopat++) {
                 h1 = compute_blue_height(gic->blues[i].base, EM, bs, stopat);
@@ -3661,7 +3668,7 @@ static int get_counters_cut_in(InstrCt *ct,  int m1, int m2, int c1, int c2) {
     for (i=7; i<32768; i++) {
         swidth1 = (int)rint((rint(fabs(width1)) * i * 64.0)/EM);
         swidth2 = (int)rint((rint(fabs(width2)) * i * 64.0)/EM);
-        if ( fabs(swidth1 - swidth2) >= SNAP_THRESHOLD )
+        if ( abs(swidth1 - swidth2) >= SNAP_THRESHOLD )
             break;
     }
     return( i );
@@ -4930,7 +4937,7 @@ static int AddEdge(InstrCt *ct, StemData *stem, int is_l, struct stemedge *edgel
             ((real *) &stem->left.x)[!ct->xdir] : ((real *) &stem->right.x)[!ct->xdir];
         refidx = is_l ? stem->leftidx : stem->rightidx;
         for (i=skip=0; i<cnt; i++)
-            if (abs(coord - edgelist[i].pos) <= ct->gic->fudge ||
+            if (fabs(coord - edgelist[i].pos) <= ct->gic->fudge ||
                 edgelist[i].refpt == refidx) {
                 skip=1;
                 break;

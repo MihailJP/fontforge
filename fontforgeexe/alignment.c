@@ -25,6 +25,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "cvundoes.h"
 #include "fontforgeui.h"
 #include <math.h>
 #include "splinefont.h"
@@ -186,18 +187,18 @@ static void AlignTwoMaybeAsk(CharView *cv,SplinePoint *sp1, SplinePoint *sp2)
 
     xoff = sp1->me.x - sp2->me.x;
     yoff = sp1->me.y - sp2->me.y;
-    printf("AlignTwo() %f %f, %f %f,   xoff:%f  yoff:%f\n",
-	   sp1->me.x, sp2->me.x,
-	   sp1->me.y, sp2->me.y,
-	   xoff, yoff );
+//  printf("AlignTwo() %f %f, %f %f,   xoff:%f  yoff:%f\n",
+//	   sp1->me.x, sp2->me.x,
+//	   sp1->me.y, sp2->me.y,
+//	   xoff, yoff );
 
     if ( fabs(yoff)<fabs(xoff)/2 ) {
-	printf("average y\n");
+//	printf("average y\n");
 	/* average y */
 	HorizontalAlignment = 0;
     } else if ( fabs(xoff)<fabs(yoff)/2 ) {
 	/* average x */
-	printf("average x\n");
+//	printf("average x\n");
 	HorizontalAlignment = 1;
     }
     else {
@@ -217,7 +218,7 @@ static void AlignTwoMaybeAsk(CharView *cv,SplinePoint *sp1, SplinePoint *sp2)
     CVPreserveState((CharViewBase *) cv);
     if ( HorizontalAlignment == 0 )
     {
-	printf("average y\n");
+//	printf("average y\n");
 	/* average y */
 	ypos = rint( (sp1->me.y+sp2->me.y)/2 );
 	sp1->prevcp.y += ypos-sp1->me.y;
@@ -229,7 +230,7 @@ static void AlignTwoMaybeAsk(CharView *cv,SplinePoint *sp1, SplinePoint *sp2)
     else
     {
 	/* average x */
-	printf("average x\n");
+//	printf("average x\n");
 	xpos = rint( (sp1->me.x+sp2->me.x)/2 );
 	sp1->prevcp.x += xpos-sp1->me.x;
 	sp1->nextcp.x += xpos-sp1->me.x;

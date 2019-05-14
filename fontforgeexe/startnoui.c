@@ -25,6 +25,10 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include "fontforgevw.h"
+#include "scripting.h"
+#include "start.h"
+#include "encoding.h"
+
 #ifndef _NO_LIBUNICODENAMES
 #include <libunicodenames.h>	/* need to open a database when we start */
 extern uninm_names_db names_db; /* Unicode character names and annotations database */
@@ -32,7 +36,6 @@ extern uninm_blocks_db blocks_db;
 #endif
 #include <gfile.h>
 #include <ustring.h>
-#include <ltdl.h>
 #include <time.h>
 #include <sys/time.h>
 #include <locale.h>
@@ -79,7 +82,7 @@ int fontforge_main( int argc, char **argv ) {
     extern const char *source_version_str;
     extern const char *source_modtime_str;
 
-    fprintf( stderr, "Copyright (c) 2000-2014 by George Williams. See AUTHORS for Contributors.\n" );
+    fprintf( stderr, "Copyright (c) 2000-2018 by George Williams. See AUTHORS for Contributors.\n" );
     fprintf( stderr, " License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n" );
     fprintf( stderr, " with many parts BSD <http://fontforge.org/license.html>. Please read LICENSE.\n" );
     fprintf( stderr, " Based on sources from %s"
@@ -94,7 +97,7 @@ int fontforge_main( int argc, char **argv ) {
 #endif
 	    ".\n",
 	    FONTFORGE_MODTIME_STR );
-    fprintf( stderr, " Based on source from git with hash:%s\n", FONTFORGE_GIT_VERSION );
+    fprintf( stderr, " Based on source from git with hash: %s\n", FONTFORGE_GIT_VERSION );
 
     FindProgDir(argv[0]);
     InitSimpleStuff();
@@ -129,6 +132,5 @@ int fontforge_main( int argc, char **argv ) {
     uninm_blocks_db_close(blocks_db);
 #endif
 
-    lt_dlexit();
 return( 0 );
 }

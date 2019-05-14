@@ -24,8 +24,12 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "start.h"
+
+#include "encoding.h"
 #include "fontforgevw.h"
-#include "pluginloading.h"
+#include "namelist.h"
 #include <gfile.h>
 #include <time.h>
 #include <sys/time.h>
@@ -36,7 +40,7 @@
 # include <stdlib.h>		/* getenv,setenv */
 #endif
 
-#include <glib.h>
+#include <ffglib.h>
 
 #include "gutils/unicodelibinfo.h"
 #include "psfont.h"
@@ -68,36 +72,8 @@ static void initrand(void) {
     g_random_set_seed(tv.tv_usec);
 }
 
-/* FIXME: Is this necessary or desirable, given we now are using
- * libltdl modules? */
-static void initlibrarysearchpath(void) {
-#ifdef __Mac
-    /* If the user has not set library path, then point it at fink */
-    /*  otherwise leave alone. On the mac people often use fink to */
-    /*  install image libs. For some reason fink installs in a place */
-    /*  the dynamic loader doesn't find */
-    /* (And fink's attempts to set the PATH variables generally don't work */
-//    setenv("DYLD_LIBRARY_PATH","/sw/lib",0);
-#endif
-}
-
-static void initlibltdl(void) {
-    char buffer[2000];
-
-    if (!plugins_are_initialized()) {
-        init_plugins();
-        if (getFontForgeUserDir(Config)!=NULL ) {
-            strcpy(buffer,getFontForgeUserDir(Config));
-            strcat(buffer,"/plugins");
-            lt_dladdsearchdir(strdup(buffer));
-        }
-    }
-}
-
 void InitSimpleStuff(void) {
 
-    initlibrarysearchpath();
-    initlibltdl();
     initrand();
     initadobeenc();
 

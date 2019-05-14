@@ -25,6 +25,10 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "fontforge-config.h"
+
+#ifndef FONTFORGE_CAN_USE_GDK
+
 #if defined(__MINGW32__)
 #include <winsock2.h>
 #include <windows.h>
@@ -58,6 +62,10 @@
 
 enum cm_type { cmt_default=-1, cmt_current, cmt_copy, cmt_private };
 
+void GDrawIErrorRun(const char *fmt,...);
+void GDrawIError(const char *fmt,...);
+
+
 #ifndef X_DISPLAY_MISSING
 # include <X11/Xatom.h>
 # include <X11/keysym.h>
@@ -69,6 +77,8 @@ enum cm_type { cmt_default=-1, cmt_current, cmt_copy, cmt_private };
 #define XKEYSYM_TOP	8364
 extern int gdraw_xkeysym_2_unicode[];
 
+
+extern int cmdlinearg_forceUIHidden;
 
 static void GXDrawTransmitSelection(GXDisplay *gd,XEvent *event);
 static void GXDrawClearSelData(GXDisplay *gd,enum selnames sel);
@@ -744,161 +754,23 @@ return( XCreateWindow(gdisp->display, gdisp->root,
 	    gdisp->depth, InputOutput, gdisp->visual, wmask, &attrs));
 }
 
-
-#if defined(__MINGW32__)
-/* FIXME: Xming+WindowsWM hack */
-
-/* unichar to ActiveCodePage, this is not limited to setlocale() */
-static char*  u2acp_copy(const unichar_t* ustr){
-    if(ustr){
-	int wlen = u_strlen(ustr);
-	if(wlen > 0){
-	    WCHAR* wcs = malloc(sizeof(WCHAR) * (wlen));
-	    char*  mbs = malloc(sizeof(char) * (wlen*3));
-	    if(wcs && mbs){
-		WCHAR* w = wcs;
-		const unichar_t* u = ustr;
-		for(; *u; *w++ = (WCHAR)*u++); /* unichar(4) to WCHAR(2) */
-
-		int alen = WideCharToMultiByte(CP_ACP,0, wcs,wlen, mbs,wlen*3, 0,0);
-		if(alen<0) alen=0;
-		mbs[alen]='\0';
-
-		free(wcs);
-		return mbs;
-	    }
-	    free(wcs);
-	    free(mbs);
-	}
+#if 0
+static void _GXDraw_DestroyWindow(GXDisplay *gdisp, GWindow input) {
+  // TODO: Reconcile differences between this function (written from _GXDraw_CreateWindow)
+  // with the actual function GXDrawDestroyWindow below.
+  GXWindow inputc = (GXWindow)input;
+  if (inputc->w != NULL) { 
+    if (inputc->is_pixmap) {
+      XFreePixmap(gdisp->display, inputc->w);
+    } else {
+      XDestroyWindow(gdisp->display, inputc->w);
     }
-    return NULL;
+    inputc->w = NULL;
+  }
+  if (inputc->gc != NULL) { XFreeGC(gdisp->display, inputc->gc); inputc->gc = NULL; }
+  free(input);
 }
-
-/* SET WM Name unichar */
-static void  mingw_set_wm_name(Display* display, Window window, const unichar_t* name){
-    char* a_str = u2acp_copy(name);
-    if(a_str){
-	XTextProperty prop;
-	if( XStringListToTextProperty(&a_str, 1, &prop) >= Success ){
-	    XSetWMName(display, window, &prop);
-	    XFree(prop.value);
-	}
-    }
-}
-/* Set WM IconName unichar */
-static void  mingw_set_wm_icon_name(Display* display, Window window, const unichar_t* name){
-    char* a_str = u2acp_copy(name);
-    if(a_str){
-	XTextProperty prop;
-	if( XStringListToTextProperty(&a_str, 1, &prop) >= Success ){
-	    XSetWMIconName(display, window, &prop);
-	    XFree(prop.value);
-	}
-    }
-}
-/* SET WM Name utf8 */
-static void  mingw_set_wm_name_utf8(Display* display, Window window, const char* utf8){
-    if(utf8){
-	unichar_t* uni = utf82u_copy(utf8);
-	if(uni){
-	    mingw_set_wm_name(display, window, uni);
-	    free(uni);
-	}
-    }
-}
-/* SET WM IconName utf8 */
-static void  mingw_set_wm_icon_name_utf8(Display* display, Window window, const char* utf8){
-    if(utf8){
-	unichar_t* uni = utf82u_copy(utf8);
-	if(uni){
-	    mingw_set_wm_icon_name(display, window, uni);
-	    free(uni);
-	}
-    }
-}
-/* GET WM Name unichar */
-static unichar_t*  mingw_get_wm_name(Display* display, Window window){
-    unichar_t* result = NULL;
-    XTextProperty prop;
-    if( XGetWMName(display, window, &prop) >= Success ){
-	char** list;
-	int    count;
-	if( XTextPropertyToStringList(&prop, &list, &count) >= Success ){
-	    char      *m, *mbs;
-	    WCHAR     *w, *wcs;
-	    unichar_t *u, *ustr;
-
-	    int i, wlen, alen=0;
-	    for(i=0; i < count; i++){
-		alen += strlen(list[i]);
-	    }
-
-	    mbs  = malloc(sizeof(char)      * (alen+4));
-	    wcs  = malloc(sizeof(WCHAR)     * (alen+4));
-	    ustr = malloc(sizeof(unichar_t) * (alen+4));
-
-	    if(mbs && wcs && ustr){
-		m = mbs;
-		for(i=0; i < count; i++){
-		    strcpy(m, list[i]);
-		    m += strlen(list[i]);
-		}
-
-		wlen = MultiByteToWideChar(CP_ACP,0, mbs,alen, wcs,alen);
-		if(wlen < 0) wlen=0;
-
-		w = wcs;
-		u = ustr;
-		for(i=0; i < wlen; i++)
-		    *u++ = (unichar_t)*w++;
-		*u++ = '\0';
-
-		result = ustr;
-		ustr = 0;
-	    }
-	    free(ustr);
-	    free(wcs);
-	    free(mbs);
-	    XFreeStringList(list);
-	}
-	XFree(prop.value);
-    }
-    return result;
-}
-/* GET WM Name utf8 */
-static char*  mingw_get_wm_name_utf8(Display* display, Window window){
-    unichar_t* uni = mingw_get_wm_name(display, window);
-    if(uni){
-	char* utf8 = u2utf8_copy(uni);
-	free(uni);
-	return utf8;
-    }
-    return NULL;
-}
-
-/* translate GK_ keysyms to Virtual Keys */
-/* abort on unimplemented translations */
-int GDrawKeyToVK(int keysym) {
-    switch( keysym ) {
-      case ' ':
-return( VK_SPACE );
-      default:
-	if ( (keysym>='0' && keysym<='9') ||
-		(keysym>='A' && keysym<='Z') )
-return( keysym );
-    }
-    abort();
-return( 0 );
-}
-
-int GDrawKeyState(int keysym) {
-    if (GetAsyncKeyState(GDrawKeyToVK(keysym)) & 0x8000)
-return 1;
-    else
-return 0;
-}
-
-#endif
+#endif // 0
 
 static GWindow _GXDraw_CreateWindow(GXDisplay *gdisp, GXWindow gw, GRect *pos,
 	int (*eh)(GWindow,GEvent *), void *user_data, GWindowAttrs *wattrs) {
@@ -1037,38 +909,30 @@ return( NULL );
 	}
 	XSetWMHints(display,nw->w,&wm_hints);
 	if ( (wattrs->mask&wam_wtitle) && wattrs->window_title!=NULL ) {
-	    #if defined(__MINGW32__)
-	    mingw_set_wm_name(display, nw->w, wattrs->window_title);
-	    #else
 	    XmbSetWMProperties(display,nw->w,(pt = u2def_copy(wattrs->window_title)),NULL,NULL,0,NULL,NULL,NULL);
 	    free(pt);
-	    #endif
 	}
 	if ( (wattrs->mask&wam_ititle) && wattrs->icon_title!=NULL ) {
-	    #if defined(__MINGW32__)
-	    mingw_set_wm_icon_name(display, nw->w, wattrs->icon_title);
-	    #else
 	    XmbSetWMProperties(display,nw->w,NULL,(pt = u2def_copy(wattrs->icon_title)),NULL,0,NULL,NULL,NULL);
 	    free(pt);
-	    #endif
 	}
 	if ( (wattrs->mask&wam_utf8_wtitle) && wattrs->utf8_window_title!=NULL ) {
-	    #if defined(__MINGW32__)
-	    mingw_set_wm_name_utf8(display, nw->w, wattrs->utf8_window_title);
-	    #else
+#ifdef X_HAVE_UTF8_STRING
+        Xutf8SetWMProperties(display, nw->w, wattrs->utf8_window_title, NULL, NULL, 0, NULL, NULL, NULL);
+#else
 	    unichar_t *tit = utf82u_copy(wattrs->utf8_window_title);
 	    XmbSetWMProperties(display,nw->w,(pt = u2def_copy(tit)),NULL,NULL,0,NULL,NULL,NULL);
 	    free(pt); free(tit);
-	    #endif
+#endif
 	}
 	if ( (wattrs->mask&wam_utf8_ititle) && wattrs->utf8_icon_title!=NULL ) {
-	    #if defined(__MINGW32__)
-	    mingw_set_wm_icon_name_utf8(display, nw->w, wattrs->utf8_icon_title);
-	    #else
+#ifdef X_HAVE_UTF8_STRING
+        Xutf8SetWMProperties(display, nw->w, NULL, wattrs->utf8_icon_title, NULL, 0, NULL, NULL, NULL);
+#else
 	    unichar_t *tit = utf82u_copy(wattrs->utf8_icon_title);
 	    XmbSetWMProperties(display,nw->w,NULL,(pt = u2def_copy(tit)),NULL,0,NULL,NULL,NULL);
 	    free(pt); free(tit);
-	    #endif
+#endif
 	}
 	s_h.x = pos->x; s_h.y = pos->y;
 	s_h.base_width = s_h.width = pos->width; s_h.base_height = s_h.height = pos->height;
@@ -1165,7 +1029,7 @@ static void GXDrawSetZoom(GWindow w, GRect *pos, enum gzoom_flags flags) {
     XSetWMSizeHints(display,((GXWindow) w)->w,&zoom,XA_WM_ZOOM_HINTS);
 }
 
-static GWindow GXDrawCreatePixmap(GDisplay *gdisp, uint16 width, uint16 height) {
+static GWindow GXDrawCreatePixmap(GDisplay *gdisp, GWindow UNUSED(similar), uint16 width, uint16 height) {
     GXWindow gw = calloc(1,sizeof(struct gxwindow));
     int wamcairo = false;
 
@@ -1379,6 +1243,9 @@ static void GXDrawSetVisible(GWindow w, int visible) {
     GXWindow gw = (GXWindow) w;
     GXDisplay *gdisp = gw->display;
 
+    if( cmdlinearg_forceUIHidden )
+	visible = false;
+    
     gw->visible_request = visible;
     if ( visible ) {
 	XMapWindow(gdisp->display,gw->w);
@@ -1567,11 +1434,6 @@ static void GXDrawLower(GWindow w) {
 }
 
 static void GXDrawSetWindowTitles(GWindow w, const unichar_t *title, const unichar_t *icontit) {
-#if defined(__MINGW32__)
-    GXWindow gw = (GXWindow) w;
-    mingw_set_wm_name      (gw->display->display, gw->w, title);
-    mingw_set_wm_icon_name (gw->display->display, gw->w, icontit);
-#else
     GXWindow gw = (GXWindow) w;
     Display *display = gw->display->display;
     char *ipt, *tpt;
@@ -1580,17 +1442,14 @@ static void GXDrawSetWindowTitles(GWindow w, const unichar_t *title, const unich
 			(ipt = u2def_copy(icontit)),
 			NULL,0,NULL,NULL,NULL);
     free(ipt); free(tpt);
-#endif
 }
 
 static void GXDrawSetWindowTitles8(GWindow w, const char *title, const char *icontit) {
-#if defined(__MINGW32__)
-    GXWindow gw = (GXWindow) w;
-    mingw_set_wm_name_utf8      (gw->display->display, gw->w, title);
-    mingw_set_wm_icon_name_utf8 (gw->display->display, gw->w, icontit);
-#else
     GXWindow gw = (GXWindow) w;
     Display *display = gw->display->display;
+#ifdef X_HAVE_UTF8_STRING
+    Xutf8SetWMProperties(display, gw->w, title, icontit, NULL, 0, NULL, NULL, NULL);
+#else
     unichar_t *tit = utf82u_copy(title), *itit = utf82u_copy(icontit);
     char *ipt, *tpt;
 
@@ -1693,10 +1552,6 @@ return( NULL );
 static char *GXDrawGetWindowTitle8(GWindow w);
 
 static unichar_t *GXDrawGetWindowTitle(GWindow w) {
-#if defined(__MINGW32__)
-    GXWindow gw = (GXWindow) w;
-    return mingw_get_wm_name(gw->display->display, gw->w);
-#else
 #if X_HAVE_UTF8_STRING
     char *ret1 = GXDrawGetWindowTitle8(w);
     unichar_t *ret = utf82u_copy(ret1);
@@ -1714,14 +1569,9 @@ return( ret );
     XFree(pt);
 return( ret );
 #endif
-#endif
 }
 
 static char *GXDrawGetWindowTitle8(GWindow w) {
-#if defined(__MINGW32__)
-    GXWindow gw = (GXWindow) w;
-    return mingw_get_wm_name_utf8(gw->display->display, gw->w);
-#else
 #if X_HAVE_UTF8_STRING
     GXWindow gw = (GXWindow) w;
     Display *display = gw->display->display;
@@ -1751,7 +1601,6 @@ return( ret );
 
     free(ret1);
 return( ret );
-#endif
 #endif
 }
 
@@ -1793,11 +1642,6 @@ void _GXDraw_SetClipFunc(GXDisplay *gdisp, GGC *mine) {
 	XSetClipRectangles(gdisp->display,gcs->gc,0,0,&clip,1,YXBanded);
 	gcs->clip = mine->clip;
     }
-    if ( mine->func!=gcs->func ) {
-	vals.function = mine->func==df_copy?GXcopy:GXxor;
-	mask |= GCFunction;
-	gcs->func = mine->func;
-    }
     if ( mine->copy_through_sub_windows != gcs->copy_through_sub_windows ) {
 	vals.subwindow_mode = mine->copy_through_sub_windows?IncludeInferiors:ClipByChildren;
 	mask |= GCSubwindowMode;
@@ -1813,17 +1657,13 @@ static int GXDrawSetcolfunc(GXDisplay *gdisp, GGC *mine) {
     GCState *gcs = &gdisp->gcstate[mine->bitmap_col];
 
     _GXDraw_SetClipFunc(gdisp,mine);
-    if ( mine->fg!=gcs->fore_col || mine->func!=gcs->func || mine->func==df_xor ) {
+    if ( mine->fg!=gcs->fore_col ) {
 	if ( mine->bitmap_col ) {
 	    vals.foreground = mine->fg;
 	} else {
 	    vals.foreground = _GXDraw_GetScreenPixel(gdisp,mine->fg);
 	}
 	gcs->fore_col = mine->fg;
-	if ( mine->func==df_xor ) {
-	    vals.foreground ^= _GXDraw_GetScreenPixel(gdisp,mine->xor_base);
-	    gcs->fore_col = COLOR_UNKNOWN;
-	}
 	mask |= GCForeground;
     }
     if ( mine->bg!=gcs->back_col ) {
@@ -1857,17 +1697,13 @@ static int GXDrawSetline(GXDisplay *gdisp, GGC *mine) {
     GCState *gcs = &gdisp->gcstate[mine->bitmap_col];
 
     _GXDraw_SetClipFunc(gdisp,mine);
-    if ( mine->fg!=gcs->fore_col || mine->func!=gcs->func || mine->func==df_xor ) {
+    if ( mine->fg!=gcs->fore_col ) {
 	if ( mine->bitmap_col ) {
 	    vals.foreground = mine->fg;
 	} else {
 	    vals.foreground = _GXDraw_GetScreenPixel(gdisp,mine->fg);
 	}
 	gcs->fore_col = mine->fg;
-	if ( mine->func==df_xor ) {
-	    vals.foreground ^= _GXDraw_GetScreenPixel(gdisp,mine->xor_base);
-	    gcs->fore_col = COLOR_UNKNOWN;
-	}
 	mask |= GCForeground;
     }
     if ( mine->line_width==1 ) mine->line_width = 0;
@@ -1936,6 +1772,17 @@ static void GXDrawClipPreserve(GWindow w)
 #endif
 }
 
+static void GXDrawSetDifferenceMode(GWindow w) {
+#ifndef _NO_LIBCAIRO
+    if (((GXWindow) w)->usecairo) {
+        _GXCDraw_SetDifferenceMode((GXWindow)w);
+    } else
+#endif
+    {
+        GXDisplay *gdisp = ((GXWindow) w)->display; ;
+        XSetFunction(gdisp->display, gdisp->gcstate[((GXWindow) w)->ggc->bitmap_col].gc, GXxor);
+    }
+}
 
 static void GXDrawPushClip(GWindow w, GRect *rct, GRect *old) {
     /* return the current clip, and intersect the current clip with the desired */
@@ -1973,11 +1820,18 @@ static void GXDrawPushClip(GWindow w, GRect *rct, GRect *old) {
 }
 
 static void GXDrawPopClip(GWindow w, GRect *old) {
-    w->ggc->clip = *old;
+    if (old) {
+        w->ggc->clip = *old;
+    }
 #ifndef _NO_LIBCAIRO
     if ( ((GXWindow) w)->usecairo )
 	_GXCDraw_PopClip((GXWindow) w);
+    else
 #endif
+    {
+        GXDisplay *gdisp = ((GXWindow) w)->display; ;
+        XSetFunction(gdisp->display, gdisp->gcstate[((GXWindow) w)->ggc->bitmap_col].gc, GXcopy);
+    }
 }
 
 
@@ -1998,31 +1852,21 @@ static void GXDrawClear(GWindow gw, GRect *rect) {
 	    XClearArea(display->display,gxw->w,
 		    rect->x,rect->y,rect->width,rect->height, false );
     }
-}
+ }
 
 static void GXDrawDrawLine(GWindow w, int32 x,int32 y, int32 xend,int32 yend, Color col) {
     w->ggc->fg = col;
 
 #ifndef _NO_LIBCAIRO
-    if ( ((GXWindow) w)->usecairo && w->ggc->func==df_copy ) {
+    if ( ((GXWindow) w)->usecairo ) {
 	_GXCDraw_DrawLine((GXWindow) w,x,y,xend,yend);
-    } else {
-	if (((GXWindow) w)->usecairo )
-	    _GXCDraw_Flush((GXWindow) w);
+    } else
 #endif
     {
 	GXDisplay *display = (GXDisplay *) (w->display);
 	GXDrawSetline(display,w->ggc);
 	XDrawLine(display->display,((GXWindow) w)->w,display->gcstate[w->ggc->bitmap_col].gc,x,y,xend,yend);
     }
-#ifndef _NO_LIBCAIRO
-	if (((GXWindow) w)->usecairo ) {
-	    if ( xend<x ) { int temp = x; x = xend; xend=temp;}
-	    if ( yend<y ) { int temp = y; y = yend; yend=temp;}
-	    _GXCDraw_DirtyRect((GXWindow) w,x,y,xend-x+1,yend-y+1);
-	}
-    }
-#endif
 }
 
 static void _DrawArrow(GXWindow gxw, int32 x, int32 y, int32 xother, int32 yother ) {
@@ -2052,12 +1896,12 @@ return;
 static void GXDrawDrawArrow(GWindow gw, int32 x,int32 y, int32 xend,int32 yend, int16 arrows, Color col) {
     GXWindow gxw = (GXWindow) gw;
     GXDisplay *display = gxw->display;
+    gxw->ggc->fg = col;
 
 #ifndef _NO_LIBCAIRO
     if ( gxw->usecairo )
 	GDrawIError("DrawArrow not supported");
 #endif
-    gxw->ggc->fg = col;
     GXDrawSetline(display,gxw->ggc);
     XDrawLine(display->display,gxw->w,display->gcstate[gxw->ggc->bitmap_col].gc,x,y,xend,yend);
     if ( arrows&1 )
@@ -2071,11 +1915,9 @@ static void GXDrawDrawRect(GWindow gw, GRect *rect, Color col) {
 
     gxw->ggc->fg = col;
 #ifndef _NO_LIBCAIRO
-    if ( gxw->usecairo && gw->ggc->func==df_copy ) {
-	_GXCDraw_DrawRect(gxw,rect);
-    } else {
-	if ( gxw->usecairo )
-	    _GXCDraw_Flush(gxw);
+    if (gxw->usecairo)
+        _GXCDraw_DrawRect(gxw, rect); //Assume copy, ignore XOR?
+    else
 #endif
     {
 	GXDisplay *display = gxw->display;
@@ -2084,11 +1926,6 @@ static void GXDrawDrawRect(GWindow gw, GRect *rect, Color col) {
 	XDrawRectangle(display->display,gxw->w,display->gcstate[gxw->ggc->bitmap_col].gc,rect->x,rect->y,
 		rect->width,rect->height);
     }
-#ifndef _NO_LIBCAIRO
-	if ( gxw->usecairo )
-	    _GXCDraw_DirtyRect(gxw,rect->x,rect->y,rect->width,rect->height);
-    }
-#endif
 }
 
 static void GXDrawFillRect(GWindow gw, GRect *rect, Color col) {
@@ -2096,12 +1933,9 @@ static void GXDrawFillRect(GWindow gw, GRect *rect, Color col) {
 
     gxw->ggc->fg = col;
 #ifndef _NO_LIBCAIRO
-    if ( gxw->usecairo && gw->ggc->func==df_copy ) {
-	_GXCDraw_FillRect( gxw,rect);
-return;
-    } else {
-	if (gxw->usecairo )
-	    _GXCDraw_Flush(gxw);
+    if (gxw->usecairo)
+        _GXCDraw_FillRect(gxw,rect);
+    else
 #endif
     {
 	GXDisplay *display = gxw->display;
@@ -2110,11 +1944,6 @@ return;
 	XFillRectangle(display->display,gxw->w,display->gcstate[gxw->ggc->bitmap_col].gc,rect->x,rect->y,
 		rect->width,rect->height);
     }
-#ifndef _NO_LIBCAIRO
-	if (gxw->usecairo )
-	    _GXCDraw_DirtyRect(gxw,rect->x,rect->y,rect->width,rect->height);
-    }
-#endif
 }
 
 static void GXDrawFillRoundRect(GWindow gw, GRect *rect, int radius, Color col) {
@@ -2123,12 +1952,9 @@ static void GXDrawFillRoundRect(GWindow gw, GRect *rect, int radius, Color col) 
 
     gxw->ggc->fg = col;
 #ifndef _NO_LIBCAIRO
-    if ( gxw->usecairo && gw->ggc->func==df_copy ) {
-	_GXCDraw_FillRoundRect( gxw,rect,rr );
-return;
-    } else {
-	if (gxw->usecairo )
-	    _GXCDraw_Flush(gxw);
+    if (gxw->usecairo)
+        _GXCDraw_FillRoundRect( gxw,rect,rr );
+    else
 #endif
     {
 	GRect middle = {rect->x, rect->y + radius, rect->width, rect->height - 2 * radius};
@@ -2144,11 +1970,6 @@ return;
 	}
 	GXDrawFillRect(gw, &middle, col);
     }
-#ifndef _NO_LIBCAIRO
-	if (gxw->usecairo )
-	    _GXCDraw_DirtyRect(gxw,rect->x,rect->y,rect->width,rect->height);
-    }
-#endif
 }
 
 static void GXDrawDrawElipse(GWindow gw, GRect *rect, Color col) {
@@ -2173,10 +1994,18 @@ static void GXDrawDrawArc(GWindow gw, GRect *rect, int32 sangle, int32 tangle, C
     GXWindow gxw = (GXWindow) gw;
     GXDisplay *display = gxw->display;
     gxw->ggc->fg = col;
+#ifndef _NO_LIBCAIRO
+    if (gxw->usecairo) {
+        // Leftover from XDrawArc: sangle/tangle in degrees*64.
+        _GXCDraw_DrawArc(gxw, rect, -(sangle+tangle)*M_PI/11520., -sangle*M_PI/11520.);
+    } else
+#endif
+    {
     GXDrawSetline(display,gxw->ggc);
     XDrawArc(display->display,gxw->w,display->gcstate[gxw->ggc->bitmap_col].gc,rect->x,rect->y,
 	    rect->width,rect->height,
 	    sangle,tangle );
+    }
 }
 
 static void GXDrawFillElipse(GWindow gw, GRect *rect, Color col) {
@@ -2589,6 +2418,21 @@ static void GXDrawSetGIC(GWindow w, GIC *_gic, int x, int y) {
 	}
     }
     ((GXWindow) w)->gic = gic;
+}
+
+static int GXDrawKeyState(GWindow w, int keysym) {
+    char key_map_stat[32];
+    Display *xdisplay = ((GXDisplay *)screen_display)->display;
+    KeyCode code;
+
+    XQueryKeymap(xdisplay, key_map_stat);
+
+    code = XKeysymToKeycode(xdisplay, GDrawKeyToXK(keysym));
+    if ( !code ) {
+abort();
+return 0;
+    }
+return ((key_map_stat[code >> 3] >> (code & 7)) & 1);
 }
 
 int _GXDraw_WindowOrParentsDying(GXWindow gw) {
@@ -3534,6 +3378,15 @@ static void GXDrawSync(GDisplay *gdisp) {
     XSync(((GXDisplay *) gdisp)->display,false);
 }
 
+void dispatchError(GDisplay *gdisp) {
+    if ((gdisp->err_flag) && (gdisp->err_report)) {
+      GDrawIErrorRun("%s",gdisp->err_report);
+    }
+    if (gdisp->err_report) {
+      free(gdisp->err_report); gdisp->err_report = NULL;
+    }
+}
+
 /* Munch events until we no longer have any top level windows. That essentially*/
 /*  means no windows (even if they got reparented, we still think they are top)*/
 /*  At that point try very hard to clear out the event queue. It is conceivable*/
@@ -3548,6 +3401,7 @@ static void GXDrawEventLoop(GDisplay *gd) {
 	    GXDrawWaitForEvent(gdisp);
 	    XNextEvent(display,&event);
 	    dispatchEvent(gdisp, &event);
+	    dispatchError(gd);
 	}
 	XSync(display,false);
 	GXDrawProcessPendingEvents(gd);
@@ -3950,6 +3804,11 @@ static void GXDrawGrabSelection(GWindow w,enum selnames sel) {
 	if ( gd->selinfo[sel].owner->eh!=NULL )
 	    (gd->selinfo[sel].owner->eh)((GWindow) gd->selinfo[sel].owner, &e);
     }
+    //Only one clipboard exists on Windows. Selectively set the selection owner
+    //as otherwise the Windows clipboard will be cleared.
+#ifdef _WIN32
+    if (sel == sn_clipboard)
+#endif
     XSetSelectionOwner(gd->display,gd->selinfo[sel].sel_atom,gw->w,gd->last_event_time);
     GXDrawClearSelData(gd,sel);
     gd->selinfo[sel].owner = gw;
@@ -4417,6 +4276,8 @@ static struct displayfuncs xfuncs = {
     GXDrawPushClip,
     GXDrawPopClip,
 
+    GXDrawSetDifferenceMode,
+
     GXDrawClear,
     GXDrawDrawLine,
     GXDrawDrawArrow,
@@ -4440,6 +4301,7 @@ static struct displayfuncs xfuncs = {
 
     GXDrawCreateInputContext,
     GXDrawSetGIC,
+    GXDrawKeyState,
 
     GXDrawGrabSelection,
     GXDrawAddSelectionType,
@@ -4494,6 +4356,8 @@ static struct displayfuncs xfuncs = {
     GXDrawPathStartSubNew,
     GXDrawFillRuleSetWinding,
 
+    _GXPDraw_DoText8,
+
     GXDrawPushClipOnly,
     GXDrawClipPreserve
 };
@@ -4514,6 +4378,26 @@ static void GDrawInitXKB(GXDisplay *gdisp) {
 	XkbSelectEvents(gdisp->display,XkbUseCoreKbd,mask,mask);
     }
 #endif
+}
+
+void _GXDraw_DestroyDisplay(GDisplay * gdisp) {
+    GXDisplay* gdispc = (GXDisplay*)(gdisp);
+    if (gdispc->grey_stipple != BadAlloc && gdispc->grey_stipple != BadDrawable && gdispc->grey_stipple != BadValue) {
+      XFreePixmap(gdispc->display, gdispc->grey_stipple); gdispc->grey_stipple = BadAlloc;
+    }
+    if (gdispc->fence_stipple != BadAlloc && gdispc->fence_stipple != BadDrawable && gdispc->fence_stipple != BadValue) {
+      XFreePixmap(gdispc->display, gdispc->fence_stipple); gdispc->fence_stipple = BadAlloc;
+    }
+    if (gdispc->pango_context != NULL) {
+        g_object_unref(gdispc->pango_context); gdispc->pango_context = NULL;
+    }
+    if (gdispc->groot != NULL) {
+      if (gdispc->groot->ggc != NULL) { free(gdispc->groot->ggc); gdispc->groot->ggc = NULL; }
+      free(gdispc->groot); gdispc->groot = NULL;
+    }
+    if (gdispc->im != NULL) { XCloseIM(gdispc->im); gdispc->im = NULL; }
+    if (gdispc->display != NULL) { XCloseDisplay(gdispc->display); gdispc->display = NULL; }
+    return;
 }
 
 GDisplay *_GXDraw_CreateDisplay(char *displayname,char *programname) {
@@ -4560,13 +4444,11 @@ return( NULL );
     gdisp->gcstate[0].back_col = 0x1000000;	/* Doesn't match any colour */
     gdisp->gcstate[0].clip.x = gdisp->gcstate[0].clip.y = 0;
     gdisp->gcstate[0].clip.width = gdisp->gcstate[0].clip.height = 0x7fff;
-    gdisp->gcstate[0].func = df_copy;
 
     gdisp->gcstate[1].fore_col = 0x1000000;	/* Doesn't match any colour */
     gdisp->gcstate[1].back_col = 0x1000000;	/* Doesn't match any colour */
     gdisp->gcstate[1].clip.x = gdisp->gcstate[1].clip.y = 0;
     gdisp->gcstate[1].clip.width = gdisp->gcstate[1].clip.height = 0x7fff;
-    gdisp->gcstate[1].func = df_copy;
 
     gdisp->bs.double_time = 200;
     gdisp->bs.double_wiggle = 3;
@@ -4602,7 +4484,7 @@ return( NULL );
 
 #ifdef X_HAVE_UTF8_STRING	/* Don't even try without this. I don't want to have to guess encodings myself... */
     /* X Input method initialization */
-    XSetLocaleModifiers("");
+    XSetLocaleModifiers(""); // As it turns out, we can't free this here.
     gdisp->im = XOpenIM(display, XrmGetDatabase(display),
 	    GResourceProgramName, GResourceProgramName);
     /* The only reason this seems to fail is if XMODIFIERS contains an @im */
@@ -4641,8 +4523,6 @@ void _XSyncScreen() {
     XSync(((GXDisplay *) screen_display)->display,false);
 }
 
-#if !defined(__MINGW32__)
-
 /* map GK_ keys to X keys */
 /* Assumes most are mapped 1-1, see gkeysym.h */
 /* abort on unimplemented translations */
@@ -4659,22 +4539,6 @@ return( keysym );
 return( 0 );
 }
 
-int GDrawKeyState(int keysym) {
-    char key_map_stat[32];
-    Display *xdisplay = ((GXDisplay *)screen_display)->display;
-    KeyCode code;
-
-    XQueryKeymap(xdisplay, key_map_stat);
-
-    code = XKeysymToKeycode(xdisplay, GDrawKeyToXK(keysym));
-    if ( !code ) {
-abort();
-return 0;
-    }
-return ((key_map_stat[code >> 3] >> (code & 7)) & 1);
-}
-#endif
-
 #else	/* NO X */
 
 GDisplay *_GXDraw_CreateDisplay(char *displayname,char *programname) {
@@ -4686,4 +4550,4 @@ void _XSyncScreen() {
 }
 #endif
 
-
+#endif // FONTFORGE_CAN_USE_GDK

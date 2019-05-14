@@ -180,6 +180,7 @@ return( we_mbz );
     sfnt = fopen( outname,"wb+" );
     if ( sfnt==NULL ) {
         free(outname);
+        fclose(woff);
 return( we_cantopenout );
     }
 
@@ -243,7 +244,6 @@ return( err );
     /*  but I've reordered the tables (probably) so I've got a different */
     /*  set of offsets and I must figure it out for myself */
     if ( head_pos!=-1 ) {
-	int checksum;
 	fseek(sfnt,head_pos+8,SEEK_SET);
 	putlong(sfnt,0);		/* Clear what was there */
 	checksum = filecheck(sfnt);	/* Recalc */

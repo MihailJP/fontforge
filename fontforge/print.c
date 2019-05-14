@@ -25,8 +25,21 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "print.h"
+
+#include "cvexport.h"
+#include "dumppfa.h"
 #include "fontforgevw.h"
+#include "fvfonts.h"
+#include "langfreq.h"
+#include "mm.h"
+#include "psread.h"
 #include "sflayoutP.h"
+#include "splinesaveafm.h"
+#include "splineutil.h"
+#include "tottf.h"
+#include <gutils.h>
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
@@ -38,7 +51,6 @@
 #if !defined(__MINGW32__)
 #include <sys/wait.h>
 #endif
-#include "print.h"
 
 int pagewidth = 0, pageheight=0;	/* In points */
 char *printlazyprinter=NULL;
@@ -1144,14 +1156,18 @@ static void dump_pdfprologue(PI *pi) {
 	fprintf( pi->out, "  /Title (Character Displays from %s)\n", pi->mainsf->fullname );
     fprintf( pi->out, "  /Creator (FontForge)\n" );
     fprintf( pi->out, "  /Producer (FontForge)\n" );
-    time(&now);
-    tm = localtime(&now);
+    now = GetTime();
+    if (!getenv("SOURCE_DATE_EPOCH")) {
+	tm = localtime(&now);
+    } else {
+	tm = gmtime(&now);
+    }
     fprintf( pi->out, "    /CreationDate (D:%04d%02d%02d%02d%02d%02d",
 	    tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec );
 #ifdef _NO_TZSET
     fprintf( pi->out, "Z)\n" );
 #else
-    if ( timezone==0 )
+    if ( timezone==0 || getenv("SOURCE_DATE_EPOCH") )
 	fprintf( pi->out, "Z)\n" );
     else {
 	if ( timezone<0 ) /* fprintf bug - this is a kludge to print +/- in front of a %02d-padded value */
@@ -1358,7 +1374,7 @@ return;
     fprintf( pi->out, "%%!PS-Adobe-3.0\n" );
     fprintf( pi->out, "%%%%BoundingBox: 20 20 %d %d\n", pi->pagewidth-30, pi->pageheight-20 );
     fprintf( pi->out, "%%%%Creator: FontForge\n" );
-    time(&now);
+    now = GetTime();
     fprintf( pi->out, "%%%%CreationDate: %s", ctime(&now) );
     fprintf( pi->out, "%%%%DocumentData: Binary\n" );
     if ( author!=NULL )
@@ -2632,9 +2648,9 @@ return;
 	simple_pos = 8;
     else if ( strcmp(langbuf,"pl")==0 )
 	simple_pos = 9;
-    else if ( strcmp(langbuf,"pl")==0 )
+    else if ( strcmp(langbuf,"sl")==0 )
 	simple_pos = 10;
-    else if ( strcmp(langbuf,"cz")==0 )
+    else if ( strcmp(langbuf,"cs")==0 )
 	simple_pos = 11;
     else
 	simple_pos = rand()&3;
@@ -2642,7 +2658,7 @@ return;
     sample[0].lang = _simplelatnlangs[simple_pos];
 
     for ( j=0; _simplecyrillchoices[j]!=NULL; ++j );
-    simple_pos = rand()%j;
+    simple_pos = rand()%(j+1);
     _simplecyrill[0] = _simplecyrillchoices[simple_pos];
     sample[1].lang = _simplecyrilliclangs[simple_pos];
 }

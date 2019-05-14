@@ -24,9 +24,14 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "cvundoes.h"
 #include "fontforgeui.h"
 #include <math.h>
+#include "spiro.h"
 #include "splinefont.h"
+#include "splineorder2.h"
+#include "splineutil.h"
+#include "splineutil2.h"
 #include "ustring.h"
 
 int CVOneThingSel(CharView *cv, SplinePoint **sp, SplinePointList **_spl,
@@ -577,7 +582,7 @@ return;			/* We clicked on the active point, that's a no-op */
 	cv->p.constrain = sp->me;
 }
 
-static void AdjustControls(SplinePoint *sp) {
+void AdjustControls(SplinePoint *sp) {
     if ( sp->next!=NULL ) {
 	SplineCharDefaultNextCP(sp);	/* also fixes up tangents */
 	SplineCharDefaultPrevCP(sp->next->to);

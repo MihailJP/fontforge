@@ -24,10 +24,16 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "fvmetrics.h"
+
+#include "bitmapchar.h"
+#include "bvedit.h"
+#include "cvundoes.h"
 #include "fontforgevw.h"
+#include "splineutil.h"
 #include <math.h>
 #include <ustring.h>
-#include "fvmetrics.h"
 
 static void DoChar(SplineChar *sc,CreateWidthData *wd, FontViewBase *fv,
 	BDFChar *bc) {
@@ -122,7 +128,7 @@ return;
 		width = bb.maxx-bb.minx + 2*wd->setto;
 	    } else if ( wd->type == st_incr ) {
 		transform[4] = wd->increment;
-		width += 2*wd->increment;
+		width = sc->width + 2*wd->increment;
 	    } else {
 		transform[4] = bb.minx*wd->scale/100 - bb.minx;
 		width = bb.maxx-bb.minx +
@@ -137,7 +143,7 @@ return;
 		width = (ib.maxx-ib.minx + 2*wd->setto);
 	    } else if ( wd->type == st_incr ) {
 		transform[4] = wd->increment;
-		width += 2*wd->increment;
+		width = sc->width + 2*wd->increment;
 	    } else {
 		transform[4] = ib.minx*wd->scale/100 - ib.minx;
 		width = ib.maxx-ib.minx +

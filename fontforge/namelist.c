@@ -26,11 +26,15 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "namelist.h"
+
 #include "fontforgevw.h"
+#include "fvcomposite.h"
+#include "fvfonts.h"
+#include "pua.h"
 #include "ustring.h"
 #include <utype.h>
 #include "namehash.h"
-#include "tables.h"
 
 int recognizePUA = false;
 NameList *force_names_when_opening=NULL;
@@ -180,7 +184,7 @@ const char *StdGlyphName(char *buffer, int uni,enum uni_interp interp,NameList *
     if ( (uni>=0 && uni<' ') ||
 	    (uni>=0x7f && uni<0xa0) )
 	/* standard controls */;
-    else if ( uni!=-1  ) {
+    else if ( uni>0 && uni <= 0x10ffff ) {
 	if ( uni>=0xe000 && uni<=0xf8ff &&
 		(interp==ui_trad_chinese || for_this_font==&ams)) {
 	    const int *pua = interp==ui_trad_chinese ? cns14pua : amspua;
@@ -196,15 +200,23 @@ const char *StdGlyphName(char *buffer, int uni,enum uni_interp interp,NameList *
 			(name = nl->unicode[up][ub][uc])!=NULL )
 	    break;
 	}
+    } else {
+	LogError( _("Warning: StdGlyphName returning name for value %d outside of Unicode range\n"), uni );
     }
     if ( name==NULL ) {
-	if ( uni>=0x10000 )
+	if ( uni>=0x10000 || uni < 0 )
 	    sprintf( buffer, "u%04X", uni);
 	else
 	    sprintf( buffer, "uni%04X", uni);
 	name = buffer;
     }
 return( name );
+}
+
+const char *StdGlyphNameBoundsCheck(char *buffer, int uni,enum uni_interp interp,NameList *for_this_font) {
+    if ( uni<0 || uni > 0x10ffff )
+	return NULL;
+    return StdGlyphName(buffer, uni, interp, for_this_font);
 }
 
 #define RefMax	40
@@ -523,6 +535,7 @@ NameList *LoadNamelist(char *filename) {
     int up, ub, uc;
     int rn_cnt=0, rn_max = 0;
     int uses_unicode = false;
+    char *title;
 
     if ( file==NULL )
 return( NULL );
@@ -530,12 +543,21 @@ return( NULL );
     if ( !psnamesinited )
 	psinitnames();
 
-    nl = chunkalloc(sizeof(NameList));
     pt = strrchr(filename,'/');
     if ( pt==NULL ) pt = filename; else ++pt;
-    nl->title = def2utf8_copy(pt);
-    pt = strrchr(nl->title,'.');
+    title = def2utf8_copy(pt);
+    pt = strrchr(title,'.');
     if ( pt!=NULL ) *pt = '\0';
+
+    if ( NameListByName(title)!=NULL ) {
+	ff_post_error(_("NameList duplicated"),_("NameList with the name \"%s\" already exists"), title );
+	fclose(file);
+	free(title);
+return( NULL );
+    }
+
+    nl = chunkalloc(sizeof(NameList));
+    nl->title = title;
 
     while ( fgets(buffer,sizeof(buffer),file)!=NULL ) {
 	if ( buffer[0]=='#' || buffer[0]=='\n' || buffer[0]=='\r' )
@@ -551,10 +573,12 @@ return( NULL );
 	    if ( nl2==NULL ) {
 		ff_post_error(_("NameList base missing"),_("NameList %s based on %s which could not be found"), nl->title, pt );
 		NameListFree(nl);
+                fclose(file);
 return( NULL );
 	    } else if ( nl->basedon!=NULL ) {
 		ff_post_error(_("NameList based twice"),_("NameList %s based on two NameLists"), nl->title );
 		NameListFree(nl);
+                fclose(file);
 return( NULL );
 	    }
 	    nl->basedon = nl2;
@@ -564,6 +588,7 @@ return( NULL );
 	    if ( *test=='\0' ) {
 		ff_post_error(_("NameList parsing error"),_("Missing rename \"to\" name %s\n%s"), nl->title, buffer );
 		NameListFree(nl);
+                fclose(file);
 return( NULL );
 	    }
 	    *test='\0';
@@ -573,6 +598,7 @@ return( NULL );
 	    if ( *test=='\0' ) {
 		ff_post_error(_("NameList parsing error"),_("Missing rename \"to\" name %s\n%s"), nl->title, buffer );
 		NameListFree(nl);
+                fclose(file);
 return( NULL );
 	    }
 	    if ( rn_cnt>=rn_max-1 )
@@ -590,6 +616,7 @@ return( NULL );
 	    if ( end==pt || uni<0 || (unsigned long)uni>=unicode4_size ) {
 		ff_post_error(_("NameList parsing error"),_("Bad unicode value when parsing %s\n%s"), nl->title, buffer );
 		NameListFree(nl);
+                fclose(file);
 return( NULL );
 	    }
 	    pt = end;
@@ -597,6 +624,7 @@ return( NULL );
 	    if ( *pt=='\0' ) {
 		ff_post_error(_("NameList parsing error"),_("Missing name when parsing %s for unicode %x"), nl->title, uni );
 		NameListFree(nl);
+                fclose(file);
 return( NULL );
 	    }
 	    for ( test=pt; *test; ++test ) {
@@ -606,6 +634,7 @@ return( NULL );
 		    *test=='%' || *test=='/' ) {
 		    ff_post_error(_("NameList parsing error"),_("Bad name when parsing %s for unicode %x"), nl->title, uni );
 		    NameListFree(nl);
+                    fclose(file);
 return( NULL );
 		}
 		if ( *test&0x80 ) {
@@ -626,6 +655,7 @@ return( NULL );
 	    else {
 		ff_post_error(_("NameList parsing error"),_("Multiple names when parsing %s for unicode %x"), nl->title, uni );
 		NameListFree(nl);
+                fclose(file);
 return( NULL );
 	    }
 	}
@@ -667,23 +697,29 @@ void LoadNamelistDir(char *dir) {
     DIR *diro;
     struct dirent *ent;
     char buffer[1025];
+    char *userConfigDir = NULL;
 
-    if ( dir == NULL )
-	dir = getFontForgeUserDir(Config);
-    if ( dir == NULL )
-return;
+    if ( dir == NULL ) {
+	dir = userConfigDir = getFontForgeUserDir(Config);
+        if ( dir == NULL )
+            return;
+    }
 
     diro = opendir(dir);
-    if ( diro==NULL )		/* It's ok not to have any */
-return;
-
-    while ( (ent = readdir(diro))!=NULL ) {
-	if ( isnamelist(ent->d_name) ) {
-	    sprintf( buffer, "%s/%s", dir, ent->d_name );
-	    LoadNamelist(buffer);
-	}
+    if ( diro!=NULL ) {         /* It's ok not to have any */
+        while ( (ent = readdir(diro))!=NULL ) {
+            if ( isnamelist(ent->d_name) ) {
+                sprintf( buffer, "%s/%s", dir, ent->d_name );
+                LoadNamelist(buffer);
+            }
+        }
+        closedir(diro);
     }
-    closedir(diro);
+
+    if ( userConfigDir!=NULL ) 
+        free(userConfigDir);
+
+    return;
 }
 /* ************************************************************************** */
 const char *RenameGlyphToNamelist(char *buffer, SplineChar *sc,NameList *old,

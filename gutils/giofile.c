@@ -83,11 +83,24 @@ void _GIO_reporterror(GIOControl *gc, int errn) {
     (gc->receiveerror)(gc);
 }
 
+char *_GIO_decomposeURL(const unichar_t *uri) {
+    unichar_t *pt;
+
+    // file:///path/to.something, or /path/to/something
+    pt = uc_strstr(uri, "://");
+    if (pt == NULL) {
+        return cu_copy(uri);
+    }
+    pt += 3;
+
+    return cu_copy(pt);
+}
+
 static void _gio_file_dir(GIOControl *gc,char *path) {
     DIR *dir;
     struct dirent *ent;
     GDirEntry *head=NULL, *last=NULL, *cur;
-    char *buffer, *ept;
+    char *buffer, *ept, *temp;
     struct stat statb;
 
     dir = opendir(path);
@@ -113,8 +126,20 @@ return;
 	cur->modtime = statb.st_mtime;
 	cur->isdir   = S_ISDIR(cur->mode);
 	cur->isexe   = !cur->isdir && (cur->mode & 0100);
-	cur->mimetype= u_copy(c_to_u(GIOGetMimeType(buffer, false)));
-	
+	temp = NULL;
+	// Things go badly if we open a pipe or a device. So we don't.
+#ifdef __MINGW32__
+	//Symlinks behave differently on Windows and are transparent, so no S_ISLNK.
+	if (S_ISREG(statb.st_mode) || S_ISDIR(statb.st_mode)) {
+#else
+	if (S_ISREG(statb.st_mode) || S_ISDIR(statb.st_mode) || S_ISLNK(statb.st_mode)) {
+#endif
+	  // We look at the file and try to determine a MIME type.
+	  if ( (temp=GIOguessMimeType(buffer)) || (temp=GIOGetMimeType(buffer)) ) {
+	      cur->mimetype = u_copy(c_to_u(temp));
+	      free(temp);
+	  }
+	}
 	if ( last==NULL )
 	    head = last = cur;
 	else {
@@ -250,11 +275,9 @@ void _GIO_localDispatch(GIOControl *gc) {
 /* pathname preceded by "file://" just strip off the "file://" and treat as a */
 /*  filename */
 void *_GIO_fileDispatch(GIOControl *gc) {
-    char *username, *password, *host, *path, *topath;
-    int port;
+    char *path, *topath;
 
-    path = _GIO_decomposeURL(gc->path,&host,&port,&username,&password);
-    free(host); free(username); free(password);
+    path = _GIO_decomposeURL(gc->path);
     switch ( gc->gf ) {
       case gf_dir:
 	_gio_file_dir(gc,path);
@@ -272,8 +295,7 @@ void *_GIO_fileDispatch(GIOControl *gc) {
 	_gio_file_deldir(gc,path);
       break;
       case gf_renamefile:
-	topath = _GIO_decomposeURL(gc->topath,&host,&port,&username,&password);
-	free(host); free(username); free(password); 
+	topath = _GIO_decomposeURL(gc->topath);
 	_gio_file_renamefile(gc,path,topath);
 	free(topath);
       break;

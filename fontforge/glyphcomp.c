@@ -26,8 +26,18 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "glyphcomp.h"
+
+#include "bvedit.h"
+#include "cvundoes.h"
 #include "fontforgevw.h"
+#include "fvfonts.h"
 #include "scriptfuncs.h"
+#include "splinefill.h"
+#include "splineorder2.h"
+#include "splineutil.h"
+#include "splineutil2.h"
+#include "tottf.h"
 #include <math.h>
 #include <ustring.h>
 
@@ -187,8 +197,8 @@ return( true );
 			 ((dy=s->to->me.y-here->y)<=3 || dy<=3*err ) && (dy>=-3 || dy>=-3*err)) ) {
 		    s = s->to->next;
 		    t = 0;
-		    if ( (adx = (3*s->splines[0].a* t + 2*s->splines[0].b)* t + s->splines[0].c)<0 ) adx = -adx;
-		    if ( (ady = (3*s->splines[1].a* t + 2*s->splines[1].b)* t + s->splines[1].c)<0 ) ady = -ady;
+		    if ( s!=NULL && (adx = (3*s->splines[0].a* t + 2*s->splines[0].b)* t + s->splines[0].c)<0 ) adx = -adx;
+		    if ( s!=NULL && (ady = (3*s->splines[1].a* t + 2*s->splines[1].b)* t + s->splines[1].c)<0 ) ady = -ady;
 		} else
 	    break;
 	    }

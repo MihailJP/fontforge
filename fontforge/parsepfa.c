@@ -24,7 +24,12 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "dumppfa.h"
+#include "encoding.h"
 #include "fontforge.h"
+#include "parsettf.h"
+#include "psread.h"
+#include <gutils.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2612,7 +2617,7 @@ return;
 		parseline(fp,buffer,in);
 	}
     } else if (( fp->fd->fonttype==42 || fp->fd->cidfonttype==2 ) && fp->sfnts!=NULL ) {
-	fp->fd->sf = _SFReadTTF(fp->sfnts,0,0,"<Temp File>",fp->fd);
+	fp->fd->sf = _SFReadTTF(fp->sfnts,0,0,"<Temp File>",NULL,fp->fd);
 	fclose(fp->sfnts);
     }
 }
@@ -2620,7 +2625,6 @@ return;
 FontDict *_ReadPSFont(FILE *in) {
     FILE *temp;
     struct fontparse fp;
-    char oldloc[24];
     struct stat b;
 
     temp = tmpfile();
@@ -2630,20 +2634,20 @@ FontDict *_ReadPSFont(FILE *in) {
 return(NULL);
     }
 
-    strcpy( oldloc,setlocale(LC_NUMERIC,NULL) );
-    setlocale(LC_NUMERIC,"C");
+    locale_t tmplocale; locale_t oldlocale; // Declare temporary locale storage.
+    switch_to_c_locale(&tmplocale, &oldlocale); // Switch to the C locale temporarily and cache the old locale.
     memset(&fp,'\0',sizeof(fp));
     fp.fd = fp.mainfd = PSMakeEmptyFont();
     fp.fdindex = -1;
     realdecrypt(&fp,in,temp);
     free(fp.vbuf);
-    setlocale(LC_NUMERIC,oldloc);
+    switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
 
     fclose(temp);
 
     if ( fstat(fileno(in),&b)!=-1 ) {
-	fp.fd->modificationtime = b.st_mtime;
-	fp.fd->creationtime = b.st_mtime;
+	fp.fd->modificationtime = GetST_MTime(b);
+	fp.fd->creationtime = GetST_MTime(b);
     }
 return( fp.fd );
 }
@@ -2658,7 +2662,8 @@ FontDict *ReadPSFont(char *fontname) {
 return(NULL);
     }
     fd = _ReadPSFont(in);
-    fclose(in);
+    if ( fd!=NULL )
+        fclose(in);
 return( fd );
 }
 

@@ -25,7 +25,19 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "parsepdf.h"
+
+#include "cvimages.h"
+#include "dumppfa.h"
+#include "encoding.h"
 #include "fontforge.h"
+#include "namelist.h"
+#include "parsepfa.h"
+#include "parsettf.h"
+#include "psread.h"
+#include "splineutil.h"
+#include "splineutil2.h"
 #include <chardata.h>
 #include <utype.h>
 #include <ustring.h>
@@ -63,27 +75,30 @@ struct pdfcontext {
 
 static long FindXRef(FILE *pdf) {
 /* Find 'startxref' in FILE pdf and return the value found, else return -1 */
-    int ch;
     long xrefpos;
+    /* From end of file, back up over expected trailer:                  */
+    /*    CR/LF, '%%EOF', CR/LF, byte offset number, CR/LF, 'startxref', */
+    /* plus a little more.  Have observed offset numbers of 8 decimal    */
+    /* digits, so allow for 10 digit numbers.                            */
+    char buffer[40];
+    const size_t fillcnt = sizeof(buffer) - 1;
+    char *pt;
 
-    if (fseek(pdf,-5-2-8-2-10-2,SEEK_END)==0 ) {
-	while ( (ch=getc(pdf))>=0 ) {
-	    while ( ch=='s' && \
-		   (ch=getc(pdf))=='t' && \
-		   (ch=getc(pdf))=='a' && \
-		   (ch=getc(pdf))=='r' && \
-		   (ch=getc(pdf))=='t' && \
-		   (ch=getc(pdf))=='x' && \
-		   (ch=getc(pdf))=='r' && \
-		   (ch=getc(pdf))=='e' && \
-		   (ch=getc(pdf))=='f' ) {
-		if ( fscanf(pdf,"%ld",&xrefpos)!=1 ) return( -1 );
+    if ( fseek(pdf,-fillcnt,SEEK_END)!=0 )
+        return( -1 );
 
-		return( xrefpos );
-	    }
-	}
-    }
-    return( -1 );
+    if ( fread(buffer,1,fillcnt,pdf)!=fillcnt )
+        return( -1 );
+
+    buffer[fillcnt] = '\0';
+
+    if ( (pt=strstr(buffer,"startxref"))==NULL )
+        return( -1 );
+
+    if ( sscanf(pt,"startxref %ld",&xrefpos)!=1 ) 
+        return( -1 );
+
+    return( xrefpos );
 }
 
 static int findkeyword(FILE *pdf, char *keyword, char *end) {
@@ -188,6 +203,12 @@ static long *FindObjects(struct pdfcontext *pc) {
 
     cnt=0; ret=NULL; gen=NULL; /* no objects to return yet */
     while ( 1 ) {
+        if ( start < 0 || start > 10000000 || num < 0 || num > 10000000 || 
+             start+num > 10000000 ) {
+            free(ret); free(gen);
+            pc->ocnt = 0;
+            return( NULL );
+        }
 	if ( start+num>cnt ) {
 	    /* increase memory needed for XREFs. Mark last location = -2 */
 	    ret_old=ret; gen_old=gen; pc->ocnt=(int)(start+num);
@@ -395,7 +416,7 @@ return( false );
 	    }
 return( true );
 	}
-	value = copy(pdf_getdictvalue(pc));
+	value = pdf_getdictvalue(pc);
 	if ( value==NULL || strcmp(value,"null")==0 )
 	    free(key);
 	else {
@@ -403,8 +424,8 @@ return( true );
 		pc->pdfdict.keys = realloc(pc->pdfdict.keys,(pc->pdfdict.cnt+=20)*sizeof(char *));
 		pc->pdfdict.values = realloc(pc->pdfdict.values,pc->pdfdict.cnt*sizeof(char *));
 	    }
-	    pc->pdfdict.keys  [pc->pdfdict.next] = key  ;
-	    pc->pdfdict.values[pc->pdfdict.next] = value;
+	    pc->pdfdict.keys  [pc->pdfdict.next] = key;
+	    pc->pdfdict.values[pc->pdfdict.next] = copy(value);
 	    ++pc->pdfdict.next;
 	}
     }
@@ -568,7 +589,7 @@ static int pdf_findfonts(struct pdfcontext *pc) {
 		sscanf(desc, "%d", &dnum);
 		if ( *pt=='/' || *pt=='(' )
 		    ++pt;
-		tpt = copy(pt);
+                tpt = copy(pt);
 
 		dnum = pdf_getdescendantfont( pc,dnum );
 		if ( dnum > 0 ) {
@@ -581,7 +602,9 @@ static int pdf_findfonts(struct pdfcontext *pc) {
 		    /* they no longer look as CID-keyed fonts */
 		    pc->cmap_from_cid[k] = 1;
 		    k++;
-		}
+		} else {
+                    free(tpt);
+                }
 	    }
 	}
     }
@@ -637,6 +660,8 @@ return( val );
     if ( val<0 || val>=pc->ocnt || pc->objs[val]==-1 )
 return( 0 );
     here = ftell(pc->pdf);
+    if ( here < 0 )
+        return( 0 );
     if ( !pdf_findobject(pc,val))
 return( 0 );
     pdf = pc->compressed ? pc->compressed : pc->pdf;
@@ -766,22 +791,8 @@ static void pdf_85filter(FILE *to,FILE *from) {
     }
 }
 
-#ifdef _NO_LIBPNG
-
-static int haszlib(void) {
-return( false );
-}
-
-static void pdf_zfilter(FILE *to,FILE *from) {
-}
-
-#else
 
 # include <zlib.h>
-
-static int haszlib(void) {
-return( true );
-}
 
 #define Z_CHUNK	65536
 /* Copied with few mods from the zlib howto */
@@ -827,7 +838,6 @@ return ret;
     free(in); free(out);
 return( ret == Z_STREAM_END ? Z_OK : Z_DATA_ERROR );
 }
-#endif /* _NO_LIBPNG */
 
 static void pdf_rlefilter(FILE *to,FILE *from) {
     int ch1, ch2, i;
@@ -857,7 +867,7 @@ static FILE *pdf_defilterstream(struct pdfcontext *pc) {
     /*  to another */
     FILE *res, *old, *pdf = pc->pdf;
     int i,length,ch;
-    char *pt, *end;
+    char *pt, *end, *ptDecodeParms;
 
     if ( pc->compressed!=NULL ) {
 	LogError( _("A pdf stream object may not be a compressed object"));
@@ -881,6 +891,7 @@ return( NULL );
 
     if ( (pt=PSDictHasEntry(&pc->pdfdict,"Filter"))==NULL )
 return( res );
+    ptDecodeParms = PSDictHasEntry(&pc->pdfdict,"DecodeParms");
     while ( *pt==' ' || *pt=='[' || *pt==']' || *pt=='/' ) ++pt;	/* Yes, I saw a null array once */
     while ( *pt!='\0' ) {
 	for ( end=pt; isalnum(*end); ++end );
@@ -893,7 +904,12 @@ return( res );
 	} else if ( strmatch("ASCII85Decode",pt)==0 ) {
 	    pdf_85filter(res,old);
 	    pt += strlen("ASCII85Decode");
-	} else if ( strmatch("FlateDecode",pt)==0 && haszlib()) {
+	} else if ( strmatch("FlateDecode",pt)==0) {
+            if ( ptDecodeParms!=NULL ) {
+	        LogError( _("Unsupported decode filter parameters : %s"), ptDecodeParms );
+	        fclose(old); fclose(res);
+                return( NULL );
+            }
 	    pdf_zfilter(res,old);
 	    pt += strlen("FlateDecode");
 	} else if ( strmatch("RunLengthDecode",pt)==0 ) {
@@ -1069,7 +1085,7 @@ static char *toknames[] = { "m", "l", "c", "v",
 	"y", "h", "re",
 	"q", "Q", "cm", "w", "j", "J",
 	"M", "d",
-	"S", "s", "f" /* "F" is an alternate form for "f"*/, "f*", "B"
+	"S", "s", "f" /* "F" is an alternate form for "f"*/, "f*", "B",
 	"B*", "b", "b*", "n",
 	"d1", "d0",
 	"SC", "sc", "G", "g",
@@ -1179,7 +1195,7 @@ return( pt_number );
 	    }
 	} else {
 	    *val = strtod(tokbuf,&end);
-	    if ( !finite(*val) ) {
+	    if ( !isfinite(*val) ) {
 /* GT: NaN is a concept in IEEE floating point which means "Not a Number" */
 /* GT: it is used to represent errors like 0/0 or sqrt(-1). */
 		LogError( _("Bad number, infinity or nan: %s\n"), tokbuf );
@@ -1273,13 +1289,11 @@ static void _InterpretPdf(FILE *in, struct pdfcontext *pc, EntityChar *ec) {
     DashType dashes[DASH_MAX];
     int dash_offset = 0;
     Entity *ent;
-    char oldloc[25];
     char tokbuf[100];
     const int tokbufsize = 100;
 
-    strncpy( oldloc,setlocale(LC_NUMERIC,NULL),24 );
-    oldloc[24]=0;
-    setlocale(LC_NUMERIC,"C");
+    locale_t tmplocale; locale_t oldlocale; // Declare temporary locale storage.
+    switch_to_c_locale(&tmplocale, &oldlocale); // Switch to the C locale temporarily and cache the old locale.
 
     transform[0] = transform[3] = 1.0;
     transform[1] = transform[2] = transform[4] = transform[5] = 0;
@@ -1327,6 +1341,7 @@ static void _InterpretPdf(FILE *in, struct pdfcontext *pc, EntityChar *ec) {
 		struct pskeydict dict;
 		dict.cnt = dict.max = i;
 		dict.entries = calloc(i,sizeof(struct pskeyval));
+                dict.is_executable = false;
 		for ( j=0; j<i; ++j ) {
 		    dict.entries[j].type = stack[sp-i+j].type;
 		    dict.entries[j].u = stack[sp-i+j].u;
@@ -1587,7 +1602,7 @@ static void _InterpretPdf(FILE *in, struct pdfcontext *pc, EntityChar *ec) {
 	ec->splines = ent;
     }
     ECCategorizePoints(ec);
-    setlocale(LC_NUMERIC,oldloc);
+    switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
 }
 
 static SplineChar *pdf_InterpretSC(struct pdfcontext *pc,char *glyphname,
@@ -1723,14 +1738,16 @@ static void add_mapping(SplineFont *basesf, long *mappings, int *uvals, int nuni
 	free(sc->name);
 	sc->name = name;
 	sc->unicodeenc = UniFromName(name,sf->uni_interp,&custom);
+    } else {
+        free(name);
     }
 }
 
 static void pdf_getcmap(struct pdfcontext *pc, SplineFont *basesf, int font_num) {
     FILE *file;
     int i, j, gid, start, end, uni, cur=0, nuni, nhex, nchars, lo, *uvals;
-    long *mappings;
-    char tok[200], *ccval, prevtok[200];
+    long *mappings = NULL;
+    char tok[200], *ccval, prevtok[200]="";
     SplineFont *sf = basesf->subfontcnt > 0 ? basesf->subfonts[0] : basesf;
 
     if ( !pdf_findobject(pc,pc->cmapobjs[font_num]) || !pdf_readdict(pc) )
@@ -1813,8 +1830,10 @@ return;
 	EncMapFree( sf->map );
 	sf->map = EncMapFromEncoding(sf,FindOrMakeEncoding("Original"));
     }
+    free(mappings);
 return;
   fail:
+    free(mappings);
     LogError( _("Syntax errors while parsing ToUnicode CMap") );
 }
 
@@ -1863,16 +1882,15 @@ static SplineFont *pdf_loadtype3(struct pdfcontext *pc) {
   goto fail;
     if ( sscanf(fontmatrix,"[%lg",&emsize)!=1 || emsize==0 )
   goto fail;
-    emsize = 1.0/emsize;
-    enc = copy(enc);
-    name = copy(name+1);
-
     if ( !pdf_getcharprocs(pc,cp))
   goto fail;
+
+    emsize = 1.0/emsize;
     charprocdict = PSDictCopy(&pc->pdfdict);
 
     sf = SplineFontBlank(charprocdict->next);
     if ( name!=NULL ) {
+        name = copy(name+1);
 	free(sf->fontname); free(sf->fullname); free(sf->familyname);
 	sf->fontname = name;
 	sf->familyname = copy(name);
@@ -1898,7 +1916,6 @@ static SplineFont *pdf_loadtype3(struct pdfcontext *pc) {
     PSDictFree(charprocdict);
 
     /* I'm going to ignore the encoding vector for now, and just return original */
-    free(enc);
     sf->map = EncMapFromEncoding(sf,FindOrMakeEncoding("Original"));
 
 return( sf );
@@ -1956,10 +1973,12 @@ return( NULL );
 	FontDict *fd;
 	file = pdf_insertpfbsections(file,pc);
 	fd = _ReadPSFont(file);
+        if ( fd==NULL)
+            return( NULL );
 	sf = SplineFontFromPSFont(fd);
 	PSFontFree(fd);
     } else if ( type==2 ) {
-	sf = _SFReadTTF(file,0,pc->openflags,pc->fontnames[font_num],NULL);
+	sf = _SFReadTTF(file,0,pc->openflags,pc->fontnames[font_num],NULL,NULL);
     } else {
 	int len;
 	fseek(file,0,SEEK_END);
@@ -1998,12 +2017,11 @@ static void pcFree(struct pdfcontext *pc) {
 
 char **NamesReadPDF(char *filename) {
     struct pdfcontext pc;
-    char oldloc[24];
     int i;
     char **list;
 
-    strcpy(oldloc,setlocale(LC_NUMERIC,NULL) );
-    setlocale(LC_NUMERIC,"C");
+    locale_t tmplocale; locale_t oldlocale; // Declare temporary locale storage.
+    switch_to_c_locale(&tmplocale, &oldlocale); // Switch to the C locale temporarily and cache the old locale.
     memset(&pc,0,sizeof(pc));
     if ( (pc.pdf=fopen(filename,"r"))==NULL )
 	return( NULL );
@@ -2026,16 +2044,17 @@ char **NamesReadPDF(char *filename) {
     list[i]=NULL;
     fclose(pc.pdf);
     pcFree(&pc);
-    setlocale(LC_NUMERIC,oldloc);
+    switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
     return( list );
 
 /* if errors, then free memory, close files, and return a NULL */
 NamesReadPDFlist_error:
     while ( --i>=0 ) free(list[i]);
+    free(list);
 NamesReadPDF_error:
     pcFree(&pc);
     fclose(pc.pdf);
-    setlocale(LC_NUMERIC,oldloc);
+    switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
     return( NULL );
 }
 
@@ -2043,30 +2062,29 @@ SplineFont *_SFReadPdfFont(FILE *pdf,char *filename, enum openflags openflags) {
     char *select_this_font = NULL, *pt;
     struct pdfcontext pc;
     SplineFont *sf = NULL;
-    char oldloc[24];
     int i;
 
-    strcpy( oldloc,setlocale(LC_NUMERIC,NULL) );
-    setlocale(LC_NUMERIC,"C");
+    locale_t tmplocale; locale_t oldlocale; // Declare temporary locale storage.
+    switch_to_c_locale(&tmplocale, &oldlocale); // Switch to the C locale temporarily and cache the old locale.
     memset(&pc,0,sizeof(pc));
     pc.pdf = pdf;
     pc.openflags = openflags;
     if ( (pc.objs = FindObjects(&pc))==NULL ) {
 	LogError( _("Doesn't look like a valid pdf file, couldn't find xref section") );
 	pcFree(&pc);
-	setlocale(LC_NUMERIC,oldloc);
+	switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
 return( NULL );
     }
     if ( pc.encrypted ) {
 	LogError( _("This pdf file contains an /Encrypt dictionary, and FontForge does not currently\nsupport pdf encryption" ));
 	pcFree(&pc);
-	setlocale(LC_NUMERIC,oldloc);
+	switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
 return( NULL );
     }
     if ( pdf_findfonts(&pc)==0 ) {
 	LogError( _("This pdf file has no fonts"));
 	pcFree(&pc);
-	setlocale(LC_NUMERIC,oldloc);
+	switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
 return( NULL );
     }
     // parse the chosen font name
@@ -2104,7 +2122,7 @@ return( NULL );
 	if ( choice!=-1 )
 	    sf = pdf_loadfont(&pc,choice);
     }
-    setlocale(LC_NUMERIC,oldloc);
+    switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
     pcFree(&pc);
     free(select_this_font);
 return( sf );
@@ -2131,27 +2149,27 @@ Entity *EntityInterpretPDFPage(FILE *pdf,int select_page) {
     char *ret;
     int choice;
 
-    strcpy( oldloc,setlocale(LC_NUMERIC,NULL) );
-    setlocale(LC_NUMERIC,"C");
+    locale_t tmplocale; locale_t oldlocale; // Declare temporary locale storage.
+    switch_to_c_locale(&tmplocale, &oldlocale); // Switch to the C locale temporarily and cache the old locale.
     memset(&pc,0,sizeof(pc));
     pc.pdf = pdf;
     pc.openflags = 0;
     if ( (pc.objs = FindObjects(&pc))==NULL ) {
 	LogError( _("Doesn't look like a valid pdf file, couldn't find xref section") );
 	pcFree(&pc);
-	setlocale(LC_NUMERIC,oldloc);
+	switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
 return( NULL );
     }
     if ( pc.encrypted ) {
 	LogError( _("This pdf file contains an /Encrypt dictionary, and FontForge does not currently\nsupport pdf encryption" ));
 	pcFree(&pc);
-	setlocale(LC_NUMERIC,oldloc);
+	switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
 return( NULL );
     }
     if ( pdf_findpages(&pc)==0 ) {
 	LogError( _("This pdf file has no pages"));
 	pcFree(&pc);
-	setlocale(LC_NUMERIC,oldloc);
+	switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
 return( NULL );
     }
     if ( pc.pcnt==1 ) {
@@ -2167,19 +2185,19 @@ return( NULL );
 	    ret = ff_ask_string(_("Pick a page"),"1",buffer);
 	    if ( ret==NULL ) {
 		pcFree(&pc);
-		setlocale(LC_NUMERIC,oldloc);
+		switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
 return( NULL );
 	    }
 	    choice = strtol(ret,NULL,10)-1;
 	    if ( choice<0 || choice>=pc.pcnt ) {
 		pcFree(&pc);
-		setlocale(LC_NUMERIC,oldloc);
+		switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
 return( NULL );
 	    }
 	}
 	ent = pdf_InterpretEntity(&pc,choice);
     }
-    setlocale(LC_NUMERIC,oldloc);
+    switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
     pcFree(&pc);
 return( ent );
 }

@@ -25,10 +25,10 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "fontforge-config.h"
 #include "macobjective.h"
 
-void setup_cocoa_app() 
+void setup_cocoa_app()
 {
-   [NSApplication sharedApplication];
+    [NSApplication sharedApplication];
 }
-

@@ -28,11 +28,6 @@
 #include "colorP.h"
 #include "charset.h"
 #include "ustring.h"
-#include "gutils.h"
-
-#if defined(__MINGW32__)
-#  include "../gutils/divisors.c"
-#endif
 
 struct clutinf {
     Color col;
@@ -458,9 +453,11 @@ GClut *GImageFindCLUT(GImage *image,GClut *clut,int clutmax) {
     struct _GImage *base = image->list_len==0?image->u.image:image->u.images[0];
     char grey_clut[256];
 
+    if ( clutmax<2 )
+return( 0 );
     if ( clut==NULL )
 	clut = malloc(sizeof(GClut));
-    if ( clutmax<2 || clut==NULL )
+    if ( clut==NULL )
 return( 0 );
 
     clut->clut_len = 0; clut->is_grey = false;
@@ -504,10 +501,13 @@ return( PickGreyClut(clut,clutmax,grey_clut,cnt));
 	for ( i=0; i<cnt; ++i )
 	    clut->clut[i] = clutinf[i].col;
 	clut->clut[i] = transinf.col;
+        free(clutinf);
 return(clut);
     }
-	
-return( gimage_reduceclut(clut,clutmax,clutinf,cnt,&transinf));
+
+    gimage_reduceclut(clut,clutmax,clutinf,cnt,&transinf);
+    free(clutinf);
+    return clut;
 }
 
 static const GCol white = { 0xff, 0xff, 0xff, 1 }, black = { 0, 0, 0, 0 };

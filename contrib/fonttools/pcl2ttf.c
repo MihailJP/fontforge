@@ -121,7 +121,7 @@ static unsigned int getlong(FILE *pcl) {
 return( (ch1<<24)|(ch2<<16)|(ch3<<8)|ch4 );
 }
 
-static int skip2thingamy(FILE *pcl,char *thingamy) {
+static int skip2thingamy(FILE *pcl,const char *thingamy) {
     int ch;
 
     for (;;) {
@@ -287,13 +287,13 @@ return(&hdr->subtables[j]);
 
 static int hasRequiredTables(struct ttf_header *hdr) {
     static struct { int name, present; } tables[] = {
-	{ CHR('h','e','a','d') },
-	{ CHR('h','h','e','a') },
-	{ CHR('h','m','t','x') },
-	{ CHR('m','a','x','p') },
+	{ CHR('h','e','a','d'),0 },
+	{ CHR('h','h','e','a'),0 },
+	{ CHR('h','m','t','x'),0 },
+	{ CHR('m','a','x','p'),0 },
 	/* They can leave out 'gdir' if they want, I don't need it */
 	/* (and I'll remove it anyway) */
-	{ 0 }};
+	{ 0,0 }};
     int i;
 
     for ( i=0; tables[i].name!=0; ++i ) {
@@ -426,8 +426,10 @@ static unsigned short gettableshort(struct ttf_header *hdr, int tag, int offset)
     /* Get a short at the indicated offset of the indicated table */
     struct subtables *tbl = gettable(hdr,tag);
     if ( tbl==NULL ) {
-	fprintf( stderr, "Missing required table: '%c%c%c%c'\n", tag>>24, tag>>16, tag>>8, tag );
-return( -1 );
+	fprintf( stderr, "Missing required table: '%c%c%c%c'\n",
+			(char)((tag>>24)&0xff), (char)((tag>>16)&0xff),
+			(char)((tag>>8)&0xff), (char)(tag&0xff) );
+	return( -1 );
     }
     if ( offset+1>=tbl->len ) {
 	fprintf( stderr, "Attempt to read beyond the end of a table\n" );
@@ -1298,7 +1300,7 @@ return( false );
 	i = 0;
     } else {
 	for ( i=0; i<size-14 && i<height*bpl ; ++i ) {
-	    int ch = getc(pcl);
+	    ch = getc(pcl);
 	    if ( (ch>>4) >= 10 )
 		putc((ch>>4)-10+'A',bdf);
 	    else
@@ -1358,7 +1360,8 @@ return( false );
 
     fprintf( bdf, "STARTFONT 2.1\n" );
     *pt = '\0';
-    weight = hdr->strokeweight<=-7 ? "UltraThin" :
+    weight = (char *)((
+	     hdr->strokeweight<=-7 ? "UltraThin" :
 	     hdr->strokeweight==-6 ? "ExtraThin" :
 	     hdr->strokeweight==-5 ? "Thin" :
 	     hdr->strokeweight==-4 ? "ExtraLight" :
@@ -1371,14 +1374,15 @@ return( false );
 	     hdr->strokeweight==3 ? "Bold" :
 	     hdr->strokeweight==4 ? "ExtraBold" :
 	     hdr->strokeweight==5 ? "Black" :
-	     hdr->strokeweight==6 ? "ExtraBlack" : "UltraBlack";
-    expansion = hdr->widthtype<=-5 ? "UltraCompressed" :
+	     hdr->strokeweight==6 ? "ExtraBlack" : "UltraBlack"));
+    expansion = (char *)((
+	     hdr->widthtype<=-5 ? "UltraCompressed" :
 	     hdr->widthtype==-4 ? "ExtraCompressed" :
 	     hdr->widthtype==-3 ? "Compressed" :
 	     hdr->strokeweight<=-1 ? "Condensed" :
 	     hdr->strokeweight==0 ? "Normal" :
 	     hdr->strokeweight<=2 ? "Expanded" :
-		 "ExtraExpanded";
+		 "ExtraExpanded"));
     fprintf( bdf, "FONT -pcl2ttf-%s-%s-%c-%s--%d-%d-%d-%d-%c-%d-FontSpecific-1\n",
 	    buffer,
 	    weight,
@@ -1430,9 +1434,9 @@ return( false );
     slurpbdf_glyphs(pcl,hdr,bdf,fbbox, &cnt);
 
     fprintf( bdf, "ENDFONT\n" );
-    
+
     if ( fbbox[0]==-10000 )
-	fbbox[0] = fbbox[1] = fbbox[2] = fbbox[0] = 0;
+	fbbox[0] = fbbox[1] = fbbox[2] = fbbox[3] = 0;
     fseek(bdf,fbboxpos,SEEK_SET);
     fprintf( bdf, "FONTBOUNDINGBOX %5d %5d %5d %5d\n", fbbox[0], fbbox[1], fbbox[2], fbbox[3] );
     fseek(bdf,cntpos,SEEK_SET );

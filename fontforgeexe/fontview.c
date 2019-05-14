@@ -26,24 +26,47 @@
  */
 #include <fontforge-config.h>
 
+#include "inc/gnetwork.h"
+#include "collabclientui.h"
+#include "collabclientpriv.h"
+
+#include "autosave.h"
+#include "autotrace.h"
+#include "autowidth.h"
+#include "autowidth2.h"
+#include "bitmapchar.h"
+#include "bvedit.h"
+#include "cvundoes.h"
+#include "dumppfa.h"
+#include "encoding.h"
 #include "fontforgeui.h"
+#include "fvcomposite.h"
+#include "fvfonts.h"
 #include "groups.h"
+#include "mm.h"
+#include "namelist.h"
+#include "nonlineartrans.h"
 #include "psfont.h"
+#include "pua.h"
+#include "scripting.h"
+#include "splinefill.h"
+#include "search.h"
+#include "sfd.h"
+#include "splinesaveafm.h"
+#include "splineutil.h"
+#include "splineutil2.h"
+#include "tottfgpos.h"
 #include <gfile.h>
 #include <gio.h>
 #include <gresedit.h>
 #include <ustring.h>
-#include "../fontforge/ffglib.h"
+#include <ffglib.h>
 #include <gkeysym.h>
 #include <utype.h>
 #include <chardata.h>
 #include <gresource.h>
 #include <math.h>
 #include <unistd.h>
-
-#include "inc/gnetwork.h"
-#include "collabclientui.h"
-#include "collabclientpriv.h"
 
 #include "gutils/unicodelibinfo.h"
 #include "sfundo.h"
@@ -64,9 +87,10 @@ extern int onlycopydisplayed, copymetadata, copyttfinstr, add_char_to_name_list;
 int home_char='A';
 int compact_font_on_open=0;
 int navigation_mask = 0;		/* Initialized in startui.c */
-int prefs_ensure_correct_extension = 1;
 
 static char *fv_fontnames = MONO_UI_FAMILIES;
+extern char* pref_collab_last_server_connected_to;
+extern void python_call_onClosingFunctions();
 
 #define	FV_LAB_HEIGHT	15
 
@@ -114,9 +138,6 @@ FontView *fv_list=NULL;
 
 static void AskAndMaybeCloseLocalCollabServers( void );
 
-#if BUILD_COLLAB
-static void FVStopWebFontServer( FontView *fv );
-#endif
 
 static void FV_ToggleCharChanged(SplineChar *sc) {
     int i, j;
@@ -628,9 +649,6 @@ int _FVMenuSaveAs(FontView *fv) {
     gcd.creator = GCheckBoxCreate;
 
     GFileChooserInputFilenameFuncType FilenameFunc = GFileChooserDefInputFilenameFunc;
-    if( prefs_ensure_correct_extension ) {
-	FilenameFunc = GFileChooserSaveAsInputFilenameFunc;
-    }
 
 #if defined(__MINGW32__)
     //
@@ -640,7 +658,7 @@ int _FVMenuSaveAs(FontView *fv) {
     if( !GFileIsAbsolute(temp) )
     {
     	char* defaultSaveDir = GFileGetHomeDocumentsDir();
-	printf("save-as:%s\n", temp );
+//	printf("save-as:%s\n", temp );
     	char* temp2 = GFileAppendFile( defaultSaveDir, temp, 0 );
     	free(temp);
     	temp = temp2;
@@ -655,6 +673,28 @@ int _FVMenuSaveAs(FontView *fv) {
 return( 0 );
     filename = utf82def_copy(ret);
     free(ret);
+
+    if(!(endswithi( filename, ".sfdir") || endswithi( filename, ".sfd")))
+    {
+	// they forgot the extension, so we force the default of .sfd
+	// and alert them to the fact that we have done this and we
+	// are not saving to a OTF, TTF, UFO formatted file
+
+	char* extension = ".sfd";
+	char* newpath = copyn( filename, strlen(filename) + strlen(".sfd") + 1 );
+	strcat( newpath, ".sfd" );
+
+	char* oldfn = GFileNameTail( filename );
+	char* newfn = GFileNameTail( newpath );
+	
+	LogError( _("You tried to save with the filename %s but it was saved as %s. "),
+		  oldfn, newfn );
+	LogError( _("Please choose File/Generate Fonts to save to other formats."));
+
+	free(filename);
+	filename = newpath;
+    }
+    
     FVFlattenAllBitmapSelections(fv);
     fv->b.sf->compression = 0;
     ok = SFDWrite(filename,fv->b.sf,fv->b.map,fv->b.normal,s2d);
@@ -678,8 +718,10 @@ return( 0 );
 	}
 	SplineFontSetUnChanged(sf);
 	FVSetTitles(fv->b.sf);
-    } else
+    } else {
+	ff_post_error(_("Save Failed"),_("Save Failed"));
 	free(filename);
+    }
 return( ok );
 }
 
@@ -706,7 +748,7 @@ int _FVMenuSave(FontView *fv) {
 	ret = _FVMenuSaveAs(fv);
     else {
 	FVFlattenAllBitmapSelections(fv);
-	if ( !SFDWriteBak(sf,fv->b.map,fv->b.normal) )
+	if ( !SFDWriteBak(sf->filename,sf,fv->b.map,fv->b.normal) )
 	    ff_post_error(_("Save Failed"),_("Save Failed"));
 	else {
 	    SplineFontSetUnChanged(sf);
@@ -905,6 +947,11 @@ static void FVMenuRevertGlyph(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *
     FVRevertGlyph((FontViewBase *) fv);
 }
 
+static void FVMenuClearSpecialData(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
+    FontView *fv = (FontView *) GDrawGetUserData(gw);
+    FVClearSpecialData((FontViewBase *) fv);
+}
+
 void MenuPrefs(GWindow UNUSED(base), struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
     DoPrefs();
 }
@@ -926,18 +973,12 @@ static void _MenuExit(void *UNUSED(junk)) {
 
     FontView *fv, *next;
 
-#if BUILD_COLLAB
     if( collabclient_haveLocalServer() )
     {
 	AskAndMaybeCloseLocalCollabServers();
     }
-
-    for ( fv = fv_list; fv!=NULL; fv = next )
-    {
-	next = (FontView *) (fv->b.next);
-	printf("fv:%p running webfont server:%d\n", fv, fv->pid_webfontserver );
-	FVStopWebFontServer( fv );
-    }
+#ifndef _NO_PYTHON
+    python_call_onClosingFunctions();
 #endif
 
     LastFonts_Save();
@@ -952,6 +993,8 @@ static void _MenuExit(void *UNUSED(junk)) {
 	    GDrawProcessPendingEvents(NULL);
 	}
     }
+    GDrawSync(NULL);
+    GDrawProcessPendingEvents(NULL);
     exit(0);
 }
 
@@ -1005,48 +1048,76 @@ static void FVMenuMergeKern(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UN
     MergeKernInfo(fv->b.sf,fv->b.map);
 }
 
-void MenuOpen(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e))
-{
+void _FVMenuOpen(FontView *fv) {
     char *temp;
     char *eod, *fpt, *file, *full;
     FontView *test; int fvcnt, fvtest;
 
-    char* OpenDir = NULL;
+    char* OpenDir = NULL, *DefaultDir = NULL, *NewDir = NULL;
 #if defined(__MINGW32__)
-    FontView *fv = (FontView *) GDrawGetUserData(gw);
-    OpenDir = GFileGetHomeDocumentsDir();
-    if( fv && fv->b.sf && fv->b.sf->filename )
-    {
-//	printf("existing name:%s\n", fv->b.sf->filename );
-	char* dname = GFileDirName( fv->b.sf->filename );
-	OpenDir = dname;
+    DefaultDir = copy(GFileGetHomeDocumentsDir()); //Default value
+    if (fv && fv->b.sf && fv->b.sf->filename) {
+        free(DefaultDir);
+        DefaultDir = GFileDirNameEx(fv->b.sf->filename, true);
     }
 #endif
 
     for ( fvcnt=0, test=fv_list; test!=NULL; ++fvcnt, test=(FontView *) (test->b.next) );
     do {
-	temp = GetPostScriptFontName(OpenDir,true);
-	if ( temp==NULL )
-return;
-	eod = strrchr(temp,'/');
-	*eod = '\0';
-	file = eod+1;
-	do {
-	    fpt = strstr(file,"; ");
-	    if ( fpt!=NULL ) *fpt = '\0';
-	    full = malloc(strlen(temp)+1+strlen(file)+1);
-	    strcpy(full,temp); strcat(full,"/"); strcat(full,file);
-	    ViewPostScriptFont(full,0);
-	    file = fpt+2;
-	    free(full);
-	} while ( fpt!=NULL );
-	free(temp);
-	for ( fvtest=0, test=fv_list; test!=NULL; ++fvtest, test=(FontView *) (test->b.next) );
+        if (NewDir != NULL) {
+            if (OpenDir != DefaultDir) {
+                free(OpenDir);
+            }
+            
+            OpenDir = NewDir;
+            NewDir = NULL;
+        } else if (OpenDir != DefaultDir) {
+            free(OpenDir);
+            OpenDir = DefaultDir;
+        }
+        
+        temp = GetPostScriptFontName(OpenDir,true);
+        if ( temp==NULL )
+            return;
+
+        //Make a copy of the folder; may be needed later if opening fails.
+        NewDir = GFileDirName(temp);
+        if (!GFileExists(NewDir)) {
+            free(NewDir);
+            NewDir = NULL;
+        }
+
+        eod = strrchr(temp,'/');
+        if (eod != NULL) {
+            *eod = '\0';
+            file = eod+1;
+            
+            if (*file) {
+                do {
+                    fpt = strstr(file,"; ");
+                    if ( fpt!=NULL ) *fpt = '\0';
+                    full = malloc(strlen(temp)+1+strlen(file)+1);
+                    strcpy(full,temp); strcat(full,"/"); strcat(full,file);
+                    ViewPostScriptFont(full,0);
+                    file = fpt+2;
+                    free(full);
+                } while ( fpt!=NULL );
+            }
+        }
+        free(temp);
+        for ( fvtest=0, test=fv_list; test!=NULL; ++fvtest, test=(FontView *) (test->b.next) );
     } while ( fvtest==fvcnt );	/* did the load fail for some reason? try again */
+    
+    free( NewDir );
+    free( OpenDir );
+    if (OpenDir != DefaultDir) {
+        free( DefaultDir );
+    }
 }
 
-static void MenuBrowseOFLib(GWindow UNUSED(base), struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
-    OFLibBrowse();
+static void FVMenuOpen(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
+    FontView *fv = (FontView*) GDrawGetUserData(gw);
+    _FVMenuOpen(fv);
 }
 
 static void FVMenuContextualHelp(GWindow UNUSED(base), struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
@@ -1233,7 +1304,6 @@ static void FVMenuChangeGlyph(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *
 static void FVMenuSubSup(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
     FontView *fv = (FontView *) GDrawGetUserData(gw);
     GlyphChangeDlg(fv,NULL,gc_subsuper);
-    /*AddSubSupDlg(fv);*/
 }
 
 static void FVMenuOblique(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
@@ -1262,7 +1332,7 @@ static void FVMenuCondense(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNU
 #define MID_Ligatures	2020
 #define MID_KernPairs	2021
 #define MID_AnchorPairs	2022
-#define MID_FitToEm	2023
+#define MID_FitToBbox	2023
 #define MID_DisplaySubs	2024
 #define MID_32x8	2025
 #define MID_16x4	2026
@@ -1353,6 +1423,7 @@ static void FVMenuCondense(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNU
 #define MID_RevertToBackup 2708
 #define MID_GenerateTTC 2709
 #define MID_OpenMetrics	2710
+#define MID_ClearSpecialData 2711
 #define MID_Cut		2101
 #define MID_Copy	2102
 #define MID_Paste	2103
@@ -1418,8 +1489,6 @@ static void FVMenuCondense(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNU
 #define MID_CollabDisconnect    22002
 #define MID_CollabCloseLocalServer  22003
 #define MID_CollabConnectToExplicitAddress 22004
-#define MID_StartWebFontServer      22005
-#define MID_StopWebFontServer       22006
 
 
 #define MID_Warnings	3000
@@ -1586,7 +1655,7 @@ static void FVMenuUndoFontLevel(GWindow gw,struct gmenuitem *mi,GEvent *e) {
 	return;
 
     struct sfundoes *undo = sf->undoes;
-    printf("font level undo msg:%s\n", undo->msg );
+//    printf("font level undo msg:%s\n", undo->msg );
     SFUndoPerform( undo, sf );
     SFUndoRemoveAndFree( sf, undo );
 }
@@ -1831,7 +1900,7 @@ static void FVSelectByScript(FontView *fv,int merge) {
     memset(&label,0,sizeof(label));
     memset(&boxes,0,sizeof(boxes));
 
-    wattrs.mask = wam_events|wam_cursor|wam_utf8_wtitle|wam_undercursor|wam_isdlg|wam_restrict|wam_isdlg;
+    wattrs.mask = wam_events|wam_cursor|wam_utf8_wtitle|wam_undercursor|wam_isdlg|wam_restrict;
     wattrs.event_masks = ~(1<<et_charup);
     wattrs.restrict_input_to_me = false;
     wattrs.is_dlg = 1;
@@ -2847,6 +2916,7 @@ static void FVShowSubFont(FontView *fv,SplineFont *new) {
     }
     if ( wascompact ) {
 	EncMapFree(fv->b.map);
+	if (fv->b.map == fv->b.sf->map) { fv->b.sf->map = fv->b.normal; }
 	fv->b.map = fv->b.normal;
 	fv->b.normal = NULL;
 	fv->b.selected = realloc(fv->b.selected,fv->b.map->enccount);
@@ -3195,7 +3265,7 @@ static void FVMenuSize(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	default_fv_font_size = dspsize = 96;
     else if ( mi->mid == MID_128 )
 	default_fv_font_size = dspsize = 128;
-    else if ( mi->mid == MID_FitToEm ) {
+    else if ( mi->mid == MID_FitToBbox ) {
 	default_fv_bbsized = fv->bbsized = !fv->bbsized;
 	fv->b.sf->display_bbsized = fv->bbsized;
 	changedmodifier = true;
@@ -3510,8 +3580,8 @@ return;
 
     const char* collabStateString = "";
     if( collabclient_inSessionFV( &fv->b )) {
-	printf("collabclient_getState( fv ) %d %d\n",
-	       fv->b.collabState, collabclient_getState( &fv->b ));
+//	printf("collabclient_getState( fv ) %d %d\n",
+//	       fv->b.collabState, collabclient_getState( &fv->b ));
 	collabStateString = collabclient_stateToString(collabclient_getState( &fv->b ));
     }
 
@@ -3637,7 +3707,7 @@ static void FVMenuFlatten(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUS
 
     if ( cidmaster==NULL )
 return;
-    SFFlatten(cidmaster);
+    SFFlatten(&cidmaster);
 }
 
 static void FVMenuFlattenByCMap(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e)) {
@@ -3651,7 +3721,7 @@ return;
     if ( cmapname==NULL )
 return;
     SFFindNearTop(fv->b.sf);
-    SFFlattenByCMap(cidmaster,cmapname);
+    SFFlattenByCMap(&cidmaster,cmapname);
     SFRestoreNearTop(fv->b.sf);
     free(cmapname);
 }
@@ -3857,6 +3927,7 @@ return;
     }
     if ( fv->b.normal!=NULL ) {
 	EncMapFree(fv->b.normal);
+	if (fv->b.normal == fv->b.sf->map) { fv->b.sf->map = NULL; }
 	fv->b.normal = NULL;
     }
     SFReplaceEncodingBDFProps(fv->b.sf,fv->b.map);
@@ -4360,18 +4431,13 @@ static GMenuItem2 dummyitem[] = {
     { { (unichar_t *) N_("Font|_New"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'N' }, NULL, NULL, NULL, NULL, 0 },
     GMENUITEM2_EMPTY
 };
-static GMenuItem2 sites[] = {
-    { { (unichar_t *) N_("Open Font Library..."), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'N' }, NULL, NULL, NULL, MenuBrowseOFLib, 0 },
-    GMENUITEM2_EMPTY
-};
 
 static GMenuItem2 fllist[] = {
     { { (unichar_t *) N_("Font|_New"), (GImage *) "filenew.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'N' }, H_("New|No Shortcut"), NULL, NULL, MenuNew, 0 },
 #if HANYANG
     { { (unichar_t *) N_("_Hangul"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'H' }, H_("Hangul|No Shortcut"), hglist, hglistcheck, NULL, 0 },
 #endif
-    { { (unichar_t *) N_("_Open"), (GImage *) "fileopen.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'O' }, H_("Open|No Shortcut"), NULL, NULL, MenuOpen, 0 },
-    { { (unichar_t *) N_("Browse web"), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'O' }, H_("Browse web|No Shortcut"), sites, NULL, NULL, 0 },
+    { { (unichar_t *) N_("_Open"), (GImage *) "fileopen.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'O' }, H_("Open|No Shortcut"), NULL, NULL, FVMenuOpen, 0 },
     { { (unichar_t *) N_("Recen_t"), (GImage *) "filerecent.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 't' }, H_("Recent|No Shortcut"), dummyitem, MenuRecentBuild, NULL, MID_Recent },
     { { (unichar_t *) N_("_Close"), (GImage *) "fileclose.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'C' }, H_("Close|No Shortcut"), NULL, NULL, FVMenuClose, 0 },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
@@ -4383,10 +4449,11 @@ static GMenuItem2 fllist[] = {
     { { (unichar_t *) N_("Generate TTC..."), (GImage *) "filegeneratefamily.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'F' }, H_("Generate TTC...|No Shortcut"), NULL, NULL, FVMenuGenerateTTC, MID_GenerateTTC },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
     { { (unichar_t *) N_("_Import..."), (GImage *) "fileimport.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'I' }, H_("Import...|No Shortcut"), NULL, NULL, FVMenuImport, 0 },
-    { { (unichar_t *) N_("_Merge Feature Info..."), (GImage *) "filemergefeature.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Merge Kern Info...|No Shortcut"), NULL, NULL, FVMenuMergeKern, 0 },
+    { { (unichar_t *) N_("_Merge Feature Info..."), (GImage *) "filemergefeature.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'M' }, H_("Merge Feature Info...|No Shortcut"), NULL, NULL, FVMenuMergeKern, 0 },
     { { (unichar_t *) N_("_Revert File"), (GImage *) "filerevert.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'R' }, H_("Revert File|No Shortcut"), NULL, NULL, FVMenuRevert, MID_Revert },
     { { (unichar_t *) N_("Revert To _Backup"), (GImage *) "filerevertbackup.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'R' }, H_("Revert To Backup|No Shortcut"), NULL, NULL, FVMenuRevertBackup, MID_RevertToBackup },
     { { (unichar_t *) N_("Revert Gl_yph"), (GImage *) "filerevertglyph.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'R' }, H_("Revert Glyph|No Shortcut"), NULL, NULL, FVMenuRevertGlyph, MID_RevertGlyph },
+    { { (unichar_t *) N_("Clear Special Data"), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'R' }, H_("Clear Special Data|No Shortcut"), NULL, NULL, FVMenuClearSpecialData, MID_ClearSpecialData },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
     { { (unichar_t *) N_("_Print..."), (GImage *) "fileprint.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'P' }, H_("Print...|No Shortcut"), NULL, NULL, FVMenuPrint, MID_Print },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
@@ -4420,7 +4487,7 @@ static GMenuItem2 cflist[] = {
 };
 
 static GMenuItem2 sclist[] = {
-    { { (unichar_t *) N_("Color|Choose..."), (GImage *)"colorwheel.png", COLOR_DEFAULT, COLOR_DEFAULT, (void *) -10, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Color Choose|No Shortcut"), NULL, NULL, FVMenuSelectColor, 0 },
+    { { (unichar_t *) N_("Color|Choose..."), (GImage *)"colorwheel.png", COLOR_DEFAULT, COLOR_DEFAULT, (void *) -10, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Choose...|No Shortcut"), NULL, NULL, FVMenuSelectColor, 0 },
     { { (unichar_t *)  N_("Color|Default"), &def_image, COLOR_DEFAULT, COLOR_DEFAULT, (void *) COLOR_DEFAULT, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Default|No Shortcut"), NULL, NULL, FVMenuSelectColor, 0 },
     { { NULL, &white_image, COLOR_DEFAULT, COLOR_DEFAULT, (void *) 0xffffff, NULL, 0, 1, 0, 0, 0, 0, 0, 0, 0, '\0' }, NULL, NULL, NULL, FVMenuSelectColor, 0 },
     { { NULL, &red_image, COLOR_DEFAULT, COLOR_DEFAULT, (void *) 0xff0000, NULL, 0, 1, 0, 0, 0, 0, 0, 0, 0, '\0' }, NULL, NULL, NULL, FVMenuSelectColor, 0 },
@@ -4513,17 +4580,17 @@ static GMenuItem2 eflist[] = {
     { { (unichar_t *) N_("Change _Weight..."), (GImage *) "styleschangeweight.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Change Weight...|No Shortcut"), NULL, NULL, FVMenuEmbolden, MID_Embolden },
     { { (unichar_t *) N_("_Italic..."), (GImage *) "stylesitalic.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Italic...|No Shortcut"), NULL, NULL, FVMenuItalic, MID_Italic },
     { { (unichar_t *) N_("Obli_que..."), (GImage *) "stylesoblique.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Oblique...|No Shortcut"), NULL, NULL, FVMenuOblique, 0 },
-    { { (unichar_t *) N_("_Condense/Extend..."), (GImage *) "stylesextendcondense.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Condense...|No Shortcut"), NULL, NULL, FVMenuCondense, MID_Condense },
-    { { (unichar_t *) N_("Change _X-Height..."), (GImage *) "styleschangexheight.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Change XHeight...|No Shortcut"), NULL, NULL, FVMenuChangeXHeight, MID_ChangeXHeight },
+    { { (unichar_t *) N_("_Condense/Extend..."), (GImage *) "stylesextendcondense.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Condense/Extend...|No Shortcut"), NULL, NULL, FVMenuCondense, MID_Condense },
+    { { (unichar_t *) N_("Change _X-Height..."), (GImage *) "styleschangexheight.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Change X-Height...|No Shortcut"), NULL, NULL, FVMenuChangeXHeight, MID_ChangeXHeight },
     { { (unichar_t *) N_("Change _Glyph..."), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Change Glyph...|No Shortcut"), NULL, NULL, FVMenuChangeGlyph, MID_ChangeGlyph },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
-    { { (unichar_t *) N_("Add _Small Capitals..."), (GImage *) "stylessmallcaps.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Add Small Caps...|No Shortcut"), NULL, NULL, FVMenuSmallCaps, MID_SmallCaps },
+    { { (unichar_t *) N_("Add _Small Capitals..."), (GImage *) "stylessmallcaps.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Add Small Capitals...|No Shortcut"), NULL, NULL, FVMenuSmallCaps, MID_SmallCaps },
     { { (unichar_t *) N_("Add Subscripts/Superscripts..."), (GImage *) "stylessubsuper.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Add Subscripts/Superscripts...|No Shortcut"), NULL, NULL, FVMenuSubSup, MID_SubSup },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
-    { { (unichar_t *) N_("In_line..."), (GImage *) "stylesinline.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Inline|No Shortcut"), NULL, NULL, FVMenuInline, 0 },
-    { { (unichar_t *) N_("_Outline..."), (GImage *) "stylesoutline.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Outline|No Shortcut"), NULL, NULL, FVMenuOutline, 0 },
-    { { (unichar_t *) N_("S_hadow..."), (GImage *) "stylesshadow.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Shadow|No Shortcut"), NULL, NULL, FVMenuShadow, 0 },
-    { { (unichar_t *) N_("_Wireframe..."), (GImage *) "styleswireframe.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Wireframe|No Shortcut"), NULL, NULL, FVMenuWireframe, 0 },
+    { { (unichar_t *) N_("In_line..."), (GImage *) "stylesinline.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Inline...|No Shortcut"), NULL, NULL, FVMenuInline, 0 },
+    { { (unichar_t *) N_("_Outline..."), (GImage *) "stylesoutline.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Outline...|No Shortcut"), NULL, NULL, FVMenuOutline, 0 },
+    { { (unichar_t *) N_("S_hadow..."), (GImage *) "stylesshadow.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Shadow...|No Shortcut"), NULL, NULL, FVMenuShadow, 0 },
+    { { (unichar_t *) N_("_Wireframe..."), (GImage *) "styleswireframe.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, true, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Wireframe...|No Shortcut"), NULL, NULL, FVMenuWireframe, 0 },
     GMENUITEM2_EMPTY
 };
 
@@ -4559,7 +4626,7 @@ static GMenuItem2 rndlist[] = {
 };
 
 static GMenuItem2 scollist[] = {
-    { { (unichar_t *) N_("Color|Choose..."), (GImage *)"colorwheel.png", COLOR_DEFAULT, COLOR_DEFAULT, (void *) -10, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Color Choose|No Shortcut"), NULL, NULL, FVMenuSetColor, 0 },
+    { { (unichar_t *) N_("Color|Choose..."), (GImage *)"colorwheel.png", COLOR_DEFAULT, COLOR_DEFAULT, (void *) -10, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Choose...|No Shortcut"), NULL, NULL, FVMenuSetColor, 0 },
     { { (unichar_t *)  N_("Color|Default"), &def_image, COLOR_DEFAULT, COLOR_DEFAULT, (void *) COLOR_DEFAULT, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Default|No Shortcut"), NULL, NULL, FVMenuSetColor, 0 },
     { { NULL, &white_image, COLOR_DEFAULT, COLOR_DEFAULT, (void *) 0xffffff, NULL, 0, 1, 0, 0, 0, 0, 0, 0, 0, '\0' }, NULL, NULL, NULL, FVMenuSetColor, 0 },
     { { NULL, &red_image, COLOR_DEFAULT, COLOR_DEFAULT, (void *) 0xff0000, NULL, 0, 1, 0, 0, 0, 0, 0, 0, 0, '\0' }, NULL, NULL, NULL, FVMenuSetColor, 0 },
@@ -4587,7 +4654,7 @@ static GMenuItem2 validlist[] = {
     { { (unichar_t *) N_("Find Pr_oblems..."), (GImage *) "elementfindprobs.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'o' }, H_("Find Problems...|No Shortcut"), NULL, NULL, FVMenuFindProblems, MID_FindProblems },
     { { (unichar_t *) N_("_Validate..."), (GImage *) "elementvalidate.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'o' }, H_("Validate...|No Shortcut"), NULL, NULL, FVMenuValidate, MID_Validate },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
-    { { (unichar_t *) N_("Set E_xtremum Bound..."), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'o' }, H_("Set Extremum bound...|No Shortcut"), NULL, NULL, FVMenuSetExtremumBound, MID_SetExtremumBound },
+    { { (unichar_t *) N_("Set E_xtremum Bound..."), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'o' }, H_("Set Extremum Bound...|No Shortcut"), NULL, NULL, FVMenuSetExtremumBound, MID_SetExtremumBound },
     GMENUITEM2_EMPTY
 };
 
@@ -5107,7 +5174,7 @@ static GMenuItem2 vwlist[] = {
     { { (unichar_t *) N_("_96 pixel outline"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, '4' }, H_("96 pixel outline|No Shortcut"), NULL, NULL, FVMenuSize, MID_96 },
     { { (unichar_t *) N_("_128 pixel outline"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, '4' }, H_("128 pixel outline|No Shortcut"), NULL, NULL, FVMenuSize, MID_128 },
     { { (unichar_t *) N_("_Anti Alias"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'A' }, H_("Anti Alias|No Shortcut"), NULL, NULL, FVMenuSize, MID_AntiAlias },
-    { { (unichar_t *) N_("_Fit to em"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'F' }, H_("Fit to em|No Shortcut"), NULL, NULL, FVMenuSize, MID_FitToEm },
+    { { (unichar_t *) N_("_Fit to font bounding box"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'F' }, H_("Fit to font bounding box|No Shortcut"), NULL, NULL, FVMenuSize, MID_FitToBbox },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
     { { (unichar_t *) N_("Bitmap _Magnification..."), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 1, 0, 0, 0, 1, 1, 0, 'F' }, H_("Bitmap Magnification...|No Shortcut"), NULL, NULL, FVMenuMagnify, MID_BitmapMag },
     GMENUITEM2_EMPTY,			/* Some extra room to show bitmaps */
@@ -5231,8 +5298,8 @@ static void vwlistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	    mi->ti.checked = (fv->show!=NULL && fv->show->clut!=NULL);
 	    mi->ti.disabled = sf->onlybitmaps && fv->show!=fv->filled;
 	  break;
-	  case MID_FitToEm:
-	    mi->ti.checked = (fv->show!=NULL && !fv->show->bbsized);
+	  case MID_FitToBbox:
+	    mi->ti.checked = (fv->show!=NULL && fv->show->bbsized);
 	    mi->ti.disabled = sf->onlybitmaps && fv->show!=fv->filled;
 	  break;
 	  case MID_Layers:
@@ -5262,7 +5329,7 @@ static GMenuItem2 htlist[] = {
     { { (unichar_t *) N_("Edit 'maxp'..."), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Edit 'maxp'...|No Shortcut"), NULL, NULL, FVMenuEditTable, MID_Editmaxp },
     { { (unichar_t *) N_("Edit 'cvt '..."), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Edit 'cvt '...|No Shortcut"), NULL, NULL, FVMenuEditTable, MID_Editcvt },
     { { (unichar_t *) N_("Remove Instr Tables"), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, '\0' }, H_("Remove Instr Tables|No Shortcut"), NULL, NULL, FVMenuRmInstrTables, MID_RmInstrTables },
-    { { (unichar_t *) N_("S_uggest Deltas..."), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'l' }, H_("Suggest Deltas|No Shortcut"), NULL, NULL, FVMenuDeltas, MID_Deltas },
+    { { (unichar_t *) N_("S_uggest Deltas..."), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'l' }, H_("Suggest Deltas...|No Shortcut"), NULL, NULL, FVMenuDeltas, MID_Deltas },
     { { NULL, NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 1, 0, 0, 0, '\0' }, NULL, NULL, NULL, NULL, 0 }, /* line */
     { { (unichar_t *) N_("_Clear Hints"), (GImage *) "hintsclearvstems.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'C' }, H_("Clear Hints|No Shortcut"), NULL, NULL, FVMenuClearHints, MID_ClearHints },
     { { (unichar_t *) N_("Clear Instructions"), (GImage *) "menuempty.png", COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'C' }, H_("Clear Instructions|No Shortcut"), NULL, NULL, FVMenuClearInstrs, MID_ClearInstrs },
@@ -5497,7 +5564,7 @@ static void FVMenuCollabStart(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *
 {
     FontView *fv = (FontView *) GDrawGetUserData(gw);
 
-    printf("connecting to server and sending initial SFD to it...\n");
+//    printf("connecting to server and sending initial SFD to it...\n");
 
     int port_default = 5556;
     int port = port_default;
@@ -5513,7 +5580,7 @@ static void FVMenuCollabStart(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *
 		  "%s", HostPortPack( address, port ));
     }
 
-    printf("host address:%s\n",address);
+//    printf("host address:%s\n",address);
 
     char* res = gwwv_ask_string(
 	"Starting Collab Server",
@@ -5524,17 +5591,17 @@ static void FVMenuCollabStart(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *
 
     if( res )
     {
-	printf("res:%s\n", res );
-	strncpy( address, res, IPADDRESS_STRING_LENGTH_T );
-	HostPortUnpack( address, &port, port_default );
+//	printf("res:%s\n", res );
+	HostPortUnpack( res, &port, port_default );
 
-	printf("address:%s\n", address );
-	printf("port:%d\n", port );
+//	printf("address:%s\n", res );
+//	printf("port:%d\n", port );
 
-	void* cc = collabclient_new( address, port );
+	void* cc = collabclient_new( res, port );
 	fv->b.collabClient = cc;
 	collabclient_sessionStart( cc, fv );
-	printf("connecting to server...sent the sfd for session start.\n");
+//	printf("connecting to server...sent the sfd for session start.\n");
+	free(res);
     }
 }
 #endif
@@ -5562,8 +5629,8 @@ static int collab_MakeChoicesArray( GHashTable* peers, char** choices, int choic
 	if( localOnly && !collabclient_isAddressLocal( ba->ip ))
 	    continue;
 
-	printf("user:%s\n", ba->username );
-	printf("mach:%s\n", ba->machinename );
+//	printf("user:%s\n", ba->username );
+//	printf("mach:%s\n", ba->machinename );
 
 	char buf[101];
 	if( localOnly )
@@ -5611,7 +5678,7 @@ static void FVMenuCollabConnect(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent
 {
     FontView *fv = (FontView *) GDrawGetUserData(gw);
 
-    printf("connecting to server...\n");
+//    printf("connecting to server...\n");
 
     {
 	int choices_sz = 100;
@@ -5624,7 +5691,7 @@ static void FVMenuCollabConnect(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent
 	int max = collab_MakeChoicesArray( peers, choices, choices_sz, localOnly );
 	int choice = gwwv_choose(_("Connect to Collab Server"),(const char **) choices, max,
 				 0,_("Select a collab server to connect to..."));
-	printf("you wanted %d\n", choice );
+//	printf("you wanted %d\n", choice );
 	if( choice <= max )
 	{
 	    beacon_announce_t* ba = collab_getBeaconFromChoicesArray( peers, choice, localOnly );
@@ -5641,21 +5708,32 @@ static void FVMenuCollabConnect(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent
 	}
     }
 
-    printf("FVMenuCollabConnect(done)\n");
+//    printf("FVMenuCollabConnect(done)\n");
 }
 
 static void FVMenuCollabConnectToExplicitAddress(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e))
 {
     FontView *fv = (FontView *) GDrawGetUserData(gw);
 
-    printf("connecting to server... explicit address...\n");
+//    printf("********** connecting to server... explicit address... p:%p\n", pref_collab_last_server_connected_to);
 
+    char* default_server = "localhost";
+    if( pref_collab_last_server_connected_to ) {
+	default_server = pref_collab_last_server_connected_to;
+    }
+    
     char* res = gwwv_ask_string(
     	"Connect to Collab Server",
-    	"localhost",
+    	default_server,
     	"Please enter the network location of the Collab server you wish to connect to...");
     if( res )
     {
+	if( pref_collab_last_server_connected_to ) {
+	    free( pref_collab_last_server_connected_to );
+	}
+	pref_collab_last_server_connected_to = copy( res );
+	SavePrefs(true);
+	
     	int port_default = 5556;
     	int port = port_default;
     	char address[IPADDRESS_STRING_LENGTH_T];
@@ -5667,7 +5745,7 @@ static void FVMenuCollabConnectToExplicitAddress(GWindow gw, struct gmenuitem *U
     	collabclient_sessionJoin( cc, fv );
     }
 
-    printf("FVMenuCollabConnect(done)\n");
+//    printf("FVMenuCollabConnect(done)\n");
 }
 
 static void FVMenuCollabDisconnect(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e))
@@ -5689,6 +5767,9 @@ static void AskAndMaybeCloseLocalCollabServers()
     char* choices[101];
     collabclient_trimOldBeaconInformation( 0 );
     GHashTable* peers = collabclient_getServersFromBeaconInfomration();
+    if( !peers )
+	return;
+    
     int localOnly = 1;
     int max = collab_MakeChoicesArray( peers, choices, choices_sz, localOnly );
     if( !max )
@@ -5701,10 +5782,10 @@ static void AskAndMaybeCloseLocalCollabServers()
 				      buts, _("Select which servers you wish to close..."));
 
     int allServersSelected = 1;
-    printf("you wanted %d\n", choice );
+//    printf("you wanted %d\n", choice );
     for( i=0; i < max; i++ )
     {
-	printf("sel[%d] is %d\n", i, sel[i] );
+//	printf("sel[%d] is %d\n", i, sel[i] );
 	beacon_announce_t* ba = collab_getBeaconFromChoicesArray( peers, choice, localOnly );
 
 	if( sel[i] && ba )
@@ -5716,7 +5797,7 @@ static void AskAndMaybeCloseLocalCollabServers()
 		FontViewBase* fv = FontViewFind( FontViewFind_byCollabBasePort, (void*)(intptr_t)port );
 		if( fv )
 		    collabclient_sessionDisconnect( fv );
-		printf("CLOSING port:%d fv:%p\n", port, fv );
+//		printf("CLOSING port:%d fv:%p\n", port, fv );
 		collabclient_closeLocalServer( port );
 	    }
 	}
@@ -5726,47 +5807,16 @@ static void AskAndMaybeCloseLocalCollabServers()
 	}
     }
 
-    printf("allServersSelected:%d\n", allServersSelected );
+//    printf("allServersSelected:%d\n", allServersSelected );
     if( allServersSelected )
 	collabclient_closeAllLocalServersForce();
 }
 
-#ifdef BUILD_COLLAB
 static void FVMenuCollabCloseLocalServer(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e))
 {
     AskAndMaybeCloseLocalCollabServers();
 }
 
-static void FVMenuStartWebFontServer(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e))
-{
-    FontView *fv = (FontView *) GDrawGetUserData(gw);
-
-    char command_line[PATH_MAX+1];
-    sprintf(command_line, "%s/nodejs/collabwebview/collabwebview.sh", getShareDir() );
-    printf("command_line:%s\n", command_line );
-    char* argv[5];
-    argv[0] = command_line;
-    argv[1] = 0;
-    gchar **envp = 0;
-    GSpawnFlags flags = 0;
-    GError * error = 0;
-    gboolean rc = g_spawn_async( getTempDir(),
-				 argv,
-				 envp,
-				 flags,
-				 0, 0,
-				 &fv->pid_webfontserver,
-				 &error );
-    if( !rc )
-    {
-	fv->pid_webfontserver = 0;
-	fprintf(stderr, "Error starting collab webfont server\n");
-	if( error )
-	    fprintf(stderr, "code:%d message:%s\n", error->code, error->message );
-    }
-
-
-}
 
 #if defined(__MINGW32__)
 //
@@ -5779,22 +5829,6 @@ static int kill( int pid, int sig )
     TerminateProcess( hHandle, 0 );
 }
 #endif
-
-static void FVStopWebFontServer( FontView *fv )
-{
-    printf("stop %d\n", fv->pid_webfontserver );
-    if( fv->pid_webfontserver )
-    {
-	kill( fv->pid_webfontserver, SIGTERM );
-	g_spawn_close_pid( fv->pid_webfontserver );
-    }
-}
-
-static void FVMenuStopWebFontServer(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUSED(e))
-{
-    FontView *fv = (FontView *) GDrawGetUserData(gw);
-    FVStopWebFontServer( fv );
-}
 
 
 
@@ -5813,12 +5847,14 @@ static void collablistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e))
 	    break;
 	}
 	case MID_CollabCloseLocalServer:
-	    printf("can close local server: %d\n", collabclient_haveLocalServer() );
+//	    printf("can close local server: %d\n", collabclient_haveLocalServer() );
 	    mi->ti.disabled = !collabclient_haveLocalServer();
 	    break;
 	}
     }
 }
+
+#ifdef BUILD_COLLAB
 
 static GMenuItem2 collablist[] = {
     { { (unichar_t *) N_("_Start Session..."), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'I' }, H_("Start Session...|No Shortcut"), NULL, NULL, FVMenuCollabStart, MID_CollabStart },
@@ -5827,9 +5863,6 @@ static GMenuItem2 collablist[] = {
     { { (unichar_t *) N_("_Disconnect"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'I' }, H_("Disconnect|No Shortcut"), NULL, NULL, FVMenuCollabDisconnect, MID_CollabDisconnect },
     GMENUITEM2_LINE,
     { { (unichar_t *) N_("Close local server"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'I' }, H_("Close local server|No Shortcut"), NULL, NULL, FVMenuCollabCloseLocalServer, MID_CollabCloseLocalServer },
-    GMENUITEM2_LINE,
-    { { (unichar_t *) N_("Start Webfont server"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'I' }, H_("Start Webfont server|No Shortcut"), NULL, NULL, FVMenuStartWebFontServer, MID_StartWebFontServer },
-    { { (unichar_t *) N_("Stop Webfont server"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'I' }, H_("Stop Webfont server|No Shortcut"), NULL, NULL, FVMenuStopWebFontServer, MID_StopWebFontServer },
 
     GMENUITEM2_EMPTY,				/* Extra room to show sub-font names */
 };
@@ -5878,7 +5911,7 @@ static GMenuItem2 mblist[] = {
     { { (unichar_t *) N_("_Tools"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 1, 1, 0, 0, 0, 0, 1, 1, 0, 'l' }, H_("Tools|No Shortcut"), NULL, fvpy_tllistcheck, NULL, 0 },
 #endif
 #ifdef NATIVE_CALLBACKS
-    { { (unichar_t *) N_("Tools_2"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 1, 1, 0, 0, 0, 0, 1, 1, 0, 'l' }, H_("Tools 2|No Shortcut"), NULL, fv_tl2listcheck, NULL, 0 },
+    { { (unichar_t *) N_("Tools_2"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 1, 1, 0, 0, 0, 0, 1, 1, 0, 'l' }, H_("Tools2|No Shortcut"), NULL, fv_tl2listcheck, NULL, 0 },
 #endif
     { { (unichar_t *) N_("H_ints"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'i' }, H_("Hints|No Shortcut"), htlist, htlistcheck, NULL, 0 },
     { { (unichar_t *) N_("E_ncoding"), NULL, COLOR_DEFAULT, COLOR_DEFAULT, NULL, NULL, 0, 1, 0, 0, 0, 0, 1, 1, 0, 'V' }, H_("Encoding|No Shortcut"), enlist, enlistcheck, NULL, 0 },
@@ -6113,7 +6146,6 @@ static void FVExpose(FontView *fv,GWindow pixmap, GEvent *event) {
 	    char utf8_buf[8];
 	    int use_utf8 = false;
 	    Color fg;
-	    extern const int amspua[];
 	    int uni;
 	    struct cidmap *cidmap = NULL;
 	    sc = (gid=fv->b.map->map[index])!=-1 ? fv->b.sf->glyphs[gid]: NULL;
@@ -6338,8 +6370,10 @@ void FVDrawInfo(FontView *fv,GWindow pixmap, GEvent *event) {
     GString *output = g_string_new( "" );
     gchar *uniname = NULL;
 
-    if ( event->u.expose.rect.y+event->u.expose.rect.height<=fv->mbh )
+    if ( event->u.expose.rect.y+event->u.expose.rect.height<=fv->mbh ) {
+        g_string_free( output, TRUE ); output = NULL;
 	return;
+    }
 
     GDrawSetFont(pixmap,fv->fontset[0]);
     GDrawPushClip(pixmap,&event->u.expose.rect,&old);
@@ -6350,6 +6384,7 @@ void FVDrawInfo(FontView *fv,GWindow pixmap, GEvent *event) {
 	    fv->end_pos<0 || fv->pressed_pos<0 )
 	fv->end_pos = fv->pressed_pos = -1;	/* Can happen after reencoding */
     if ( fv->end_pos == -1 ) {
+        g_string_free( output, TRUE ); output = NULL;
 	GDrawPopClip(pixmap,&old);
 	return;
     }
@@ -6365,7 +6400,6 @@ void FVDrawInfo(FontView *fv,GWindow pixmap, GEvent *event) {
 	    ++remap;
 	}
     }
-
     g_string_printf( output, "%d (0x%x) ", localenc, localenc );
 
     sc = (gid=fv->b.map->map[fv->end_pos])!=-1 ? sf->glyphs[gid] : NULL;
@@ -6409,8 +6443,9 @@ void FVDrawInfo(FontView *fv,GWindow pixmap, GEvent *event) {
     }
 
     GDrawDrawText8( pixmap, 10, fv->mbh+fv->lab_as, output->str, -1, fg );
-    g_string_free( output, TRUE );
+    g_string_free( output, TRUE ); output = NULL;
     GDrawPopClip( pixmap, &old );
+    return;
 }
 
 static void FVShowInfo(FontView *fv) {
@@ -6626,7 +6661,7 @@ void SCPreparePopup(GWindow gw,SplineChar *sc,struct remap *remap, int localenc,
 	int actualuni) {
 /* This is for the popup which appears when you hover mouse over a character on main window */
     int upos=-1;
-    char *msg = "";
+    char *msg, *msg_old;
 
     /* If a glyph is multiply mapped then the inbuild unicode enc may not be */
     /*  the actual one used to access the glyph */
@@ -6669,17 +6704,24 @@ void SCPreparePopup(GWindow gw,SplineChar *sc,struct remap *remap, int localenc,
 	if ( uniname != NULL ) free( uniname ); uniname = NULL;
 
 	/* annotation */
-	char *uniannot;
-	if( ( uniannot = unicode_annot( upos )) != NULL )
-	    msg = xasprintf("%s\n%s", msg, uniannot);
-	if ( uniannot != NULL ) free( uniannot ); uniannot = NULL;
+        char *uniannot = unicode_annot( upos );
+        if( uniannot != NULL ) {
+            msg_old = msg;
+            msg = xasprintf("%s\n%s", msg_old, uniannot);
+            free(msg_old);
+            free( uniannot );
+        }
     }
 
     /* user comments */
-    if ( sc->comment!=NULL )
-        msg = xasprintf("%s\n%s", msg, sc->comment);
+    if ( sc->comment!=NULL ) {
+        msg_old = msg;
+        msg = xasprintf("%s\n%s", msg_old, sc->comment);
+        free(msg_old);
+    }
 
     GGadgetPreparePopup8( gw, msg );
+    free(msg);
 }
 
 static void noop(void *UNUSED(_fv)) {
@@ -6755,7 +6797,7 @@ return;
 		break;
 	    if ( gid!=-1 ) {
 		CharView *cv = (CharView *) (sf->glyphs[gid]->views);
-		printf("calling CVChangeSC() sc:%p %s\n", sc, sc->name );
+//		printf("calling CVChangeSC() sc:%p %s\n", sc, sc->name );
 		CVChangeSC(cv,sc);
 		GDrawSetVisible(cv->gw,true);
 		GDrawRaise(cv->gw);
@@ -7045,7 +7087,7 @@ return( GGadgetDispatchEvent(fv->vsb,event));
 	FVTimer(fv,event);
       break;
       case et_focus:
-	  printf("fv.et_focus\n");
+//	  printf("fv.et_focus\n");
 	if ( event->u.focus.gained_focus )
 	    GDrawSetGIC(gw,fv->gic,0,20);
       break;
@@ -7080,7 +7122,7 @@ static void FontView_ReformatAll(SplineFont *sf) {
     MetricsView *mvs;
     extern int use_freetype_to_rasterize_fv;
 
-    if ( ((FontView *) (sf->fv))->v==NULL || ((FontView *) (sf->fv))->colcnt==0 )			/* Can happen in scripts */
+    if ( sf->fv==NULL || ((FontView *) (sf->fv))->v==NULL || ((FontView *) (sf->fv))->colcnt==0 )			/* Can happen in scripts */
 return;
 
     for ( fv=(FontView *) (sf->fv); fv!=NULL; fv=(FontView *) (fv->b.nextsame) ) {
@@ -7273,6 +7315,7 @@ static FontView *__FontViewCreate(SplineFont *sf) {
 	} else if ( sf->compacted ) {
 	    fv->b.normal = sf->map;
 	    fv->b.map = CompactEncMap(EncMapCopy(sf->map),sf);
+	    sf->map = fv->b.map;
 	} else {
 	    fv->b.map = sf->map;
 	    fv->b.normal = NULL;
@@ -7291,12 +7334,14 @@ static FontView *__FontViewCreate(SplineFont *sf) {
 	sf = fv->b.sf;
 	if ( fv->b.nextsame==NULL ) { EncMapFree(sf->map); sf->map = NULL; }
 	fv->b.map = EncMap1to1(sf->glyphcnt);
+	if ( fv->b.nextsame==NULL ) { sf->map = fv->b.map; }
 	if ( sf->compacted ) {
 	    fv->b.normal = fv->b.map;
 	    fv->b.map = CompactEncMap(EncMapCopy(fv->b.map),sf);
+	    if ( fv->b.nextsame==NULL ) { sf->map = fv->b.map; }
 	}
     }
-    fv->b.selected = calloc(fv->b.map->enccount,sizeof(char));
+    fv->b.selected = calloc((fv->b.map ? fv->b.map->enccount : 0), sizeof(char));
     fv->user_requested_magnify = -1;
     fv->magnify = (ps<=9)? 3 : (ps<20) ? 2 : 1;
     fv->cbw = (ps*fv->magnify)+1;
@@ -7315,16 +7360,29 @@ static FontView *__FontViewCreate(SplineFont *sf) {
 return( fv );
 }
 
-static void FontViewInit(void) {
-    static int done = false;
+static int fontview_ready = false;
 
-    if ( done )
+static void FontViewFinish() {
+    if (!fontview_ready) return;
+    mb2FreeGetText(mblist);
+    mbFreeGetText(fvpopupmenu);
+}
+
+void FontViewFinishNonStatic() {
+    FontViewFinish();
+}
+
+static void FontViewInit(void) {
+    // static int done = false; // superseded by fontview_ready.
+
+    if ( fontview_ready )
 return;
 
-    done = true;
+    fontview_ready = true;
 
     mb2DoGetText(mblist);
     mbDoGetText(fvpopupmenu);
+    atexit(&FontViewFinishNonStatic);
 }
 
 static struct resed fontview_re[] = {
@@ -7504,10 +7562,13 @@ static void FontView_Free(FontView *fv) {
 	BDFFontFree(fv->filled);
     else if ( fv->b.nextsame==NULL && fv->b.sf->fv==&fv->b ) {
 	EncMapFree(fv->b.map);
+	if (fv->b.sf != NULL && fv->b.map == fv->b.sf->map) { fv->b.sf->map = NULL; }
 	SplineFontFree(fv->b.cidmaster?fv->b.cidmaster:fv->b.sf);
 	BDFFontFree(fv->filled);
     } else {
 	EncMapFree(fv->b.map);
+	if (fv->b.sf != NULL && fv->b.map == fv->b.sf->map) { fv->b.sf->map = NULL; }
+	fv->b.map = NULL;
 	for ( fvs=(FontView *) (fv->b.sf->fv), i=0 ; fvs!=NULL; fvs = (FontView *) (fvs->b.nextsame) )
 	    if ( fvs->filled==fv->filled ) ++i;
 	if ( i==1 )
@@ -8104,6 +8165,7 @@ int FontViewFind_byXUIDConnected( FontViewBase* fv, void* udata )
     if( !fv || !fv->sf )
 	return 0;
     return ( fv->collabState == cs_server || fv->collabState == cs_client )
+	&& fv->sf->xuid
 	&& !strcmp( fv->sf->xuid, (char*)udata );
 }
 
@@ -8148,7 +8210,7 @@ FontViewBase* FontViewFindActive()
 FontViewBase* FontViewFind( int (*testFunc)( FontViewBase*, void* udata ), void* udata )
 {
     FontViewBase *fv;
-    printf("FontViewFind(top) fv_list:%p\n", fv_list );
+//    printf("FontViewFind(top) fv_list:%p\n", fv_list );
     for ( fv = (FontViewBase*)fv_list; fv!=NULL; fv=fv->next )
     {
 	if( testFunc( fv, udata ))
@@ -8156,6 +8218,12 @@ FontViewBase* FontViewFind( int (*testFunc)( FontViewBase*, void* udata ), void*
     }
     return 0;
 }
+
+FontView* FontViewFindUI( int (*testFunc)( FontViewBase*, void* udata ), void* udata )
+{
+    return (FontView*)FontViewFind( testFunc, udata );
+}
+
 
 /****************************************/
 /****************************************/

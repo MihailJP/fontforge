@@ -24,7 +24,19 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "tottfgpos.h"
+
 #include "fontforgevw.h"
+#include "fvfonts.h"
+#include "lookups.h"
+#include "mem.h"
+#include "namelist.h"
+#include "asmfpst.h"
+#include "splinesaveafm.h"
+#include "splineutil.h"
+#include "tottf.h"
+#include "mathconstants.h"
 #include <utype.h>
 #include <ustring.h>
 
@@ -144,6 +156,8 @@ static uint32 scripts[][15] = {
 /* Yi */	{ CHR('y','i',' ',' '), 0xa000, 0xa4c6 },
 		{ 0 }
 };
+
+static SplineChar **SFOrderedGlyphs(SplineChar **glyphs);
 
 void ScriptMainRange(uint32 script, int *start, int *end) {
     int i;
@@ -361,7 +375,7 @@ void AnchorClassDecompose(SplineFont *sf,AnchorClass *_ac, int classcnt, int *su
     memset(marks,0,classcnt*sizeof(SplineChar **));
     gmax = gi==NULL ? sf->glyphcnt : gi->gcnt;
     for ( j=0; j<2; ++j ) {
-	for ( i=0; i<gmax; ++i ) if ( (gid = gi==NULL ? i : gi->bygid[i])!=-1 && sf->glyphs[gid]!=NULL ) {
+	for ( i=0; i<gmax; ++i ) if ( (gid = gi==NULL ? i : gi->bygid[i])!=-1 && gid < sf->glyphcnt && sf->glyphs[gid]!=NULL ) {
 	    for ( ac = _ac, k=0; k<classcnt; ac=ac->next ) if ( ac->matches ) {
 		for ( test=sf->glyphs[gid]->anchor; test!=NULL ; test=test->next ) {
 		    if ( test->anchor==ac ) {
@@ -407,13 +421,18 @@ void AnchorClassDecompose(SplineFont *sf,AnchorClass *_ac, int classcnt, int *su
 	    subcnts[k] = 0;
 	}
     }
-    for ( i=0; i<4; ++i )
+    for ( i=0; i<4; ++i ) {
 	if ( heads[i].glyphs!=NULL )
 	    heads[i].glyphs[heads[i].cnt] = NULL;
+    }
+    for ( i=0; i<classcnt; ++i ) {
+        if ( subcnts[i]!=0 )
+            SFOrderedGlyphs(marks[i]);
+    }
 
-    *base = heads[at_basechar].glyphs;
-    *lig  = heads[at_baselig].glyphs;
-    *mkmk = heads[at_basemark].glyphs;
+    *base = SFOrderedGlyphs(heads[at_basechar].glyphs);
+    *lig  = SFOrderedGlyphs(heads[at_baselig].glyphs);
+    *mkmk = SFOrderedGlyphs(heads[at_basemark].glyphs);
 }
 
 SplineChar **EntryExitDecompose(SplineFont *sf,AnchorClass *ac,struct glyphinfo *gi) {
@@ -477,13 +496,24 @@ static void dumpcoveragetable(FILE *gpos,SplineChar **glyphs) {
     /* figure out whether it is better (smaller) to use an array of glyph ids */
     /*  or a set of glyph id ranges */
 
-    for ( i=0; glyphs[i]!=NULL; ++i ) {
-	if ( glyphs[i]->ttf_glyph<=last )
-	    IError("Glyphs must be ordered when creating coverage table");
-	if ( glyphs[i]->ttf_glyph!=last+1 )
-	    ++range_cnt;
-	last = glyphs[i]->ttf_glyph;
-    }
+	// We will not emit glyphs with -1 identifiers.
+	// We count the valid glyphs and the ranges.
+	int glyph_cnt = 0;
+	for (i=0; glyphs[i]!=NULL; i++) {
+		if (i > 0 && glyphs[i]->ttf_glyph <= glyphs[i-1]->ttf_glyph) {
+			LogError(_("Glyphs must be ordered when creating coverage table"));
+		}
+		if (glyphs[i]->ttf_glyph < 0) {
+			LogError(_("-1 glyph index in dumpcoveragetable.\n"));
+		} else {
+			glyph_cnt++;
+			// On the first validly TrueType-indexed glyph or at the start of any discontinuity, start a new range.
+			if (range_cnt == 0 || glyphs[i]->ttf_glyph > last + 1)
+				range_cnt++;
+			last = glyphs[i]->ttf_glyph;
+		}
+	}
+
     /* I think Windows will only accept format 2 coverage tables? */
     if ( !(coverageformatsallowed&2) || ((coverageformatsallowed&1) && i<=3*range_cnt )) {
 	/* We use less space with a list of glyphs than with a set of ranges */
@@ -495,24 +525,35 @@ static void dumpcoveragetable(FILE *gpos,SplineChar **glyphs) {
 	putshort(gpos,2);		/* Coverage format=2 => range list */
 	putshort(gpos,range_cnt);	/* count of ranges */
 	last = -2; start = -2;		/* start is a index in our glyph array, last is ttf_glyph */
-	r = 0;
-	for ( i=0; glyphs[i]!=NULL; ++i ) {
-	    if ( glyphs[i]->ttf_glyph!=last+1 ) {
-		if ( last!=-2 ) {
-		    putshort(gpos,glyphs[start]->ttf_glyph);	/* start glyph ID */
-		    putshort(gpos,last);			/* end glyph ID */
-		    putshort(gpos,start);			/* coverage index of start glyph */
-		    ++r;
+	// start is the index in the glyph array of the starting glyph. last is the ttf_glyph of the ending glyph.
+	r = 0; // r keeps count of the emitted ranges.
+	// We follow the chain of glyphs, ending and emitting a range whenever there is a discontinuity.
+	for (i=0; glyphs[i]!=NULL; i++) {
+		if (i > 0 && glyphs[i]->ttf_glyph <= glyphs[i-1]->ttf_glyph) {
+			// LogError(_("Glyphs must be ordered when creating coverage table"));
 		}
-		start = i;
-	    }
-	    last = glyphs[i]->ttf_glyph;
+		if (glyphs[i]->ttf_glyph < 0) {
+			// LogError(_("-1 glyph index in dumpcoveragetable."));
+		} else {
+			// At the start of any discontinuity, dump the previous range.
+			if (r > 0 && glyphs[i]->ttf_glyph > last + 1) {
+				putshort(gpos,glyphs[start]->ttf_glyph);	/* start glyph ID */
+				putshort(gpos,last);			/* end glyph ID */
+				putshort(gpos,start);			/* coverage index of start glyph */
+			}
+			// On the first validly TrueType-indexed glyph or at the start of any discontinuity, start a new range.
+			if (r == 0 || glyphs[i]->ttf_glyph > last + 1) {
+				start = i;
+				r++;
+			}
+			last = glyphs[i]->ttf_glyph;
+		}
 	}
-	if ( last!=-2 ) {
-	    putshort(gpos,glyphs[start]->ttf_glyph);	/* start glyph ID */
-	    putshort(gpos,last);			/* end glyph ID */
-	    putshort(gpos,start);			/* coverage index of start glyph */
-	    ++r;
+	// If there were any valid glyphs, there will be one more range to be emitted.
+	if (r > 0) {
+		putshort(gpos,glyphs[start]->ttf_glyph);	/* start glyph ID */
+		putshort(gpos,last);			/* end glyph ID */
+		putshort(gpos,start);			/* coverage index of start glyph */
 	}
 	if ( r!=range_cnt )
 	    IError("Miscounted ranges in format 2 coverage table output");
@@ -524,20 +565,38 @@ static int sc_ttf_order( const void *_sc1, const void *_sc2) {
 return( sc1->ttf_glyph - sc2->ttf_glyph );
 }
 
-static SplineChar **SFOrderedGlyphsWithPSTinSubtable(SplineFont *sf,struct lookup_subtable *sub) {
-    SplineChar **glyphs = SFGlyphsWithPSTinSubtable(sf,sub);
+static SplineChar **SFOrderedGlyphs(SplineChar **glyphs) {
     int cnt, i, k;
     if ( glyphs==NULL )
 return( NULL );
     for ( cnt=0; glyphs[cnt]!=NULL; ++cnt);
     qsort(glyphs,cnt,sizeof(SplineChar *),sc_ttf_order);
-    if ( glyphs[0]->ttf_glyph==-1 ) {
+	// We want to eliminate invalid glyphs.
+    if ( cnt > 0 && glyphs[0]->ttf_glyph < 0 ) {
 	/* Not sure if this can happen, but it's easy to fix */
-	for ( k=0; k<cnt && glyphs[k]->ttf_glyph==-1; ++k);
+	// We count the invalid glyphs.
+	for ( k=0; k<cnt && glyphs[k]->ttf_glyph < 0; ++k);
+	// Then we move the valid glyphs down to the base of the range.
 	for ( i=0; i<=cnt-k; ++i )
 	    glyphs[i] = glyphs[i+k];
+	cnt -= k;
+	// fprintf(stderr, "Eliminated %d invalid glyphs.\n", k);
+	// And we null-terminate.
+	glyphs[i] = NULL;
     }
+    for ( i=0; i<cnt-1; ++i )
+        if (glyphs[i]->ttf_glyph==glyphs[i+1]->ttf_glyph) {
+						// fprintf(stderr, "Duplicate glyph.\n");
+            memmove(glyphs+i, glyphs+i+1, (cnt-i)*sizeof(SplineChar *));
+            --cnt;
+        }
+	glyphs[cnt] = NULL;
 return( glyphs );
+}
+
+static SplineChar **SFOrderedGlyphsWithPSTinSubtable(SplineFont *sf,struct lookup_subtable *sub) {
+    SplineChar **glyphs = SFGlyphsWithPSTinSubtable(sf,sub);
+    return SFOrderedGlyphs(glyphs);
 }
 
 SplineChar **SFGlyphsFromNames(SplineFont *sf,char *names) {
@@ -545,9 +604,11 @@ SplineChar **SFGlyphsFromNames(SplineFont *sf,char *names) {
     char *pt, *end;
     SplineChar *sc, **glyphs;
 
+    // If names is NULL, return a null-terminated zero-length list.
     if ( names==NULL )
 return( calloc(1,sizeof(SplineChar *)) );
 
+    // Find the number of tokens in the name list.
     cnt = 0;
     for ( pt = names; *pt; pt = end+1 ) {
 	++cnt;
@@ -556,6 +617,8 @@ return( calloc(1,sizeof(SplineChar *)) );
     break;
     }
 
+    // Allocate space for all tokens in the name list.
+    // We may not use all of them if some of the references are invalid.
     glyphs = malloc((cnt+1)*sizeof(SplineChar *));
     cnt = 0;
     for ( pt = names; *pt; pt = end+1 ) {
@@ -575,6 +638,26 @@ return( calloc(1,sizeof(SplineChar *)) );
 return( glyphs );
 }
 
+static SplineChar **TTFGlyphsFromNames(SplineFont *sf,char *names) {
+		// This returns only the named glyphs that also have valid TrueType indices.
+    SplineChar **glyphs = SFGlyphsFromNames(sf,names);
+		if (glyphs == NULL) IError("Glyph-finding error.");
+		int i, j;
+		// Count the valid glyphs.
+		for (i=0, j=0; glyphs[i] != NULL; i++)
+			if (glyphs[i]->ttf_glyph >= 0) j++;
+		SplineChar **output = calloc(j+1,sizeof(SplineChar *));
+		if (output == NULL) IError("Memory error.");
+		for (i=0, j=0; glyphs[i] != NULL; i++)
+			if (glyphs[i]->ttf_glyph >= 0) {
+				output[j] = glyphs[i];
+				j++;
+			}
+		// fprintf(stderr, "Using %d of %d glyphs.\n", j, i);
+		free(glyphs);
+		return output;
+}
+
 static SplineChar **OrderedGlyphsFromNames(SplineFont *sf,char *names) {
     SplineChar **glyphs = SFGlyphsFromNames(sf,names);
     int i,j;
@@ -582,7 +665,9 @@ static SplineChar **OrderedGlyphsFromNames(SplineFont *sf,char *names) {
     if ( glyphs==NULL || glyphs[0]==NULL )
 return( glyphs );
 
-    for ( i=0; glyphs[i+1]!=NULL; ++i ) for ( j=i+1; glyphs[j]!=NULL; ++j ) {
+#if 0
+
+    for ( i=0; glyphs[i] != NULL && glyphs[i+1]!=NULL; ++i ) for ( j=i+1; glyphs[j]!=NULL; ++j ) {
 	if ( glyphs[i]->ttf_glyph > glyphs[j]->ttf_glyph ) {
 	    SplineChar *sc = glyphs[i];
 	    glyphs[i] = glyphs[j];
@@ -597,7 +682,12 @@ return( glyphs );
 	    }
 	}
     }
+
 return( glyphs );
+#endif // 0
+
+// We are going to try using SFOrderedGlyphs here.
+	return SFOrderedGlyphs(glyphs);
 }
 
 static void gposvrmaskeddump(FILE *gpos,int vf1,int mask,int offset) {
@@ -813,7 +903,7 @@ static void dumpGPOSsimplepos(FILE *gpos,SplineFont *sf,struct lookup_subtable *
 	for ( pst=glyphs[cnt]->possub; pst!=NULL; pst=pst->next ) {
 	    if ( pst->subtable==sub && pst->type==pst_position ) {
 		if ( first==NULL ) first = pst;
-		else if ( same ) {
+		else if ( same && first && pst ) {
 		    if ( first->u.pos.xoff!=pst->u.pos.xoff ||
 			    first->u.pos.yoff!=pst->u.pos.yoff ||
 			    first->u.pos.h_adv_off!=pst->u.pos.h_adv_off ||
@@ -845,7 +935,7 @@ static void dumpGPOSsimplepos(FILE *gpos,SplineFont *sf,struct lookup_subtable *
     coverage_pos = ftell(gpos);
     putshort(gpos,0);		/* offset to coverage table */
     putshort(gpos,bits);
-    if ( same ) {
+    if ( same && first ) {
 	if ( bits&1 ) putshort(gpos,first->u.pos.xoff);
 	if ( bits&2 ) putshort(gpos,first->u.pos.yoff);
 	if ( bits&4 ) putshort(gpos,first->u.pos.h_adv_off);
@@ -967,6 +1057,7 @@ static void dumpGPOSpairpos(FILE *gpos,SplineFont *sf,struct lookup_subtable *su
 	    }
 	    for ( v=0; v<2; ++v ) {
 		for ( kp = v ? glyphs[cnt]->vkerns : glyphs[cnt]->kerns; kp!=NULL; kp=kp->next ) {
+		    if( kp->subtable!=sub ) continue; // process only glyphs from the current subtable
 		    if ( kp->sc->ttf_glyph!=-1 ) {
 			if ( k ) {
 			    seconds[cnt][tot].other_gid = kp->sc->ttf_glyph;
@@ -1511,7 +1602,7 @@ static SplineChar **allmarkglyphs(SplineChar ***glyphlist, int classcnt) {
     int i, tot, k;
 
     if ( classcnt==1 )
-return( glyphlist[0]);
+return( SFOrderedGlyphs(glyphlist[0]));
 
     for ( i=tot=0; i<classcnt; ++i ) {
 	for ( k=0; glyphlist[i][k]!=NULL; ++k );
@@ -1606,15 +1697,20 @@ static void dumpgposAnchorData(FILE *gpos,AnchorClass *_ac,
 		/* 2 for component count, for each component an offset to an offset to an anchor record */
 	}
 	++max;
-	aps = malloc((classcnt*max)*sizeof(AnchorPoint *));
+        int special_ceiling = classcnt*max;
+	aps = malloc((classcnt*max+max)*sizeof(AnchorPoint *));
 	for ( j=0; j<cnt; ++j ) {
-	    memset(aps,0,(classcnt*max)*sizeof(AnchorPoint *));
+	    memset(aps,0,(classcnt*max+max)*sizeof(AnchorPoint *));
 	    pos = 0;
 	    for ( ap=base[j]->anchor; ap!=NULL ; ap=ap->next )
 		for ( k=0, ac=_ac; k<classcnt; ac=ac->next ) if ( ac->matches ) {
 		    if ( ap->anchor==ac ) {
 			if ( ap->lig_index>pos ) pos = ap->lig_index;
-			aps[k*max+ap->lig_index] = ap;
+			if (k*max+ap->lig_index > special_ceiling || k*max+ap->lig_index < 0) {
+				fprintf(stderr, "A ligature index is invalid.\n");
+			} else {
+				aps[k*max+ap->lig_index] = ap;
+			}
 		    }
 		    ++k;
 		}
@@ -1645,7 +1741,7 @@ static void dumpgposAnchorData(FILE *gpos,AnchorClass *_ac,
 		}
 	    }
 	}
-	free(aps);
+	free(aps); aps = NULL;
     }
     coverage_offset = ftell(gpos);
     fseek(gpos,subtable_start+4,SEEK_SET);
@@ -1767,11 +1863,16 @@ static void dumpGSUBmultiplesubs(FILE *gsub,SplineFont *sf,struct lookup_subtabl
 	putshort(gsub,offset);
 	if (maps[cnt] == NULL) {
 		fprintf( stderr, "maps[%d] is null; glyphs[%d] is \"%s\"; lookup name is \"%s\".\n" , cnt , cnt , (glyphs[cnt]->name ? glyphs[cnt]->name : ""), sub->subtable_name) ;
-	}
-	for ( gc=0; maps[cnt][gc]!=NULL; ++gc );
+            gc = 0;
+	} else {
+    	    for ( gc=0; maps[cnt][gc]!=NULL; ++gc );
+        }
 	offset += 2+2*gc;
     }
     for ( cnt = 0; glyphs[cnt]!=NULL; ++cnt ) {
+        if (maps[cnt] == NULL) {
+            break;
+        }
 	for ( gc=0; maps[cnt][gc]!=NULL; ++gc );
 	putshort(gsub,gc);
 	for ( gc=0; maps[cnt][gc]!=NULL; ++gc )
@@ -1880,6 +1981,7 @@ static uint16 *FigureInitialClasses(FPST *fpst) {
     uint16 *initial = malloc((fpst->nccnt+1)*sizeof(uint16));
     int i, cnt, j;
 
+    initial[fpst->nccnt] = 0xffff;
     for ( i=cnt=0; i<fpst->rule_cnt; ++i ) {
 	for ( j=0; j<cnt ; ++j )
 	    if ( initial[j] == fpst->rules[i].u.class.nclasses[0] )
@@ -1902,20 +2004,25 @@ static SplineChar **OrderedInitialGlyphs(SplineFont *sf,FPST *fpst) {
 	names = fpst->rules[i].u.glyph.names;
 	pt = strchr(names,' ');
 	if ( pt==NULL ) pt = names+strlen(names);
+	// Temporarily terminate the desired token.
 	ch = *pt; *pt = '\0';
 	sc = SFGetChar(sf,-1,names);
 	*pt = ch;
+	// Check for duplicates.
 	for ( j=0; j<cnt; ++j )
 	    if ( glyphs[j]==sc )
 	break;
+	// If there are no duplicates and sc is non-null, add it to the output collection.
 	if ( j==cnt && sc!=NULL )
 	    glyphs[cnt++] = sc;
     }
+		// Null-terminate the output collection.
     glyphs[cnt] = NULL;
     if ( cnt==0 )
 return( glyphs );
 
-    for ( i=0; glyphs[i+1]!=NULL; ++i ) for ( j=i+1; glyphs[j]!=NULL; ++j ) {
+    // Sort the results.
+    for ( i=0; glyphs[i] != NULL && glyphs[i+1]!=NULL; ++i ) for ( j=i+1; glyphs[j]!=NULL; ++j ) {
 	if ( glyphs[i]->ttf_glyph > glyphs[j]->ttf_glyph ) {
 	    sc = glyphs[i];
 	    glyphs[i] = glyphs[j];
@@ -1923,6 +2030,24 @@ return( glyphs );
 	}
     }
 return( glyphs );
+}
+
+static SplineChar **OrderedInitialTTFGlyphs(SplineFont *sf, FPST *fpst) {
+	SplineChar **glyphs = OrderedInitialGlyphs(sf, fpst);
+	int vcount = 0;
+	int i = 0;
+	for (i = 0; i < fpst->rule_cnt && glyphs[i] != NULL; i++) {
+		if (glyphs[i]->ttf_glyph >= 0) vcount ++;
+	}
+	// fprintf(stderr, "Killing %d of %d glyphs.\n", i - vcount, i);
+	SplineChar **vglyphs = malloc((vcount+1)*sizeof(SplineChar *));
+	int j = 0;
+	for (i = 0; i < fpst->rule_cnt && glyphs[i] != NULL; i++) {
+		if (glyphs[i]->ttf_glyph >= 0) vglyphs[j++] = glyphs[i];
+	}
+	vglyphs[j] = NULL;
+	free(glyphs);
+	return vglyphs;
 }
 
 static int NamesStartWith(SplineChar *sc,char *names ) {
@@ -1965,7 +2090,7 @@ static void dumpg___ContextChainGlyphs(FILE *lfile,SplineFont *sf,
     SplineChar **glyphs, **subglyphs;
     int lc;
 
-    glyphs = OrderedInitialGlyphs(sf,fpst);
+    glyphs = OrderedInitialTTFGlyphs(sf,fpst);
     for ( cnt=0; glyphs[cnt]!=NULL; ++cnt );
 
     putshort(lfile,1);		/* Sub format 1 => glyph lists */
@@ -1996,30 +2121,32 @@ static void dumpg___ContextChainGlyphs(FILE *lfile,SplineFont *sf,
 		if ( fpst->rules[k].lookups[l].lookup->lookup_index!=-1 )
 		    ++lc;
 	    if ( iscontext ) {
-		subglyphs = SFGlyphsFromNames(sf,fpst->rules[k].u.glyph.names);
+		subglyphs = TTFGlyphsFromNames(sf,fpst->rules[k].u.glyph.names);
 		for ( l=0; subglyphs[l]!=NULL; ++l );
 		putshort(lfile,l);
 		curcontext = l;
 		putshort(lfile,lc);
+		if (subglyphs[0] != NULL)
 		for ( l=1; subglyphs[l]!=NULL; ++l )
 		    putshort(lfile,subglyphs[l]->ttf_glyph);
 		free(subglyphs);
 	    } else {
-		subglyphs = SFGlyphsFromNames(sf,fpst->rules[k].u.glyph.back);
+		subglyphs = TTFGlyphsFromNames(sf,fpst->rules[k].u.glyph.back);
 		for ( l=0; subglyphs[l]!=NULL; ++l );
 		putshort(lfile,l);
 		curcontext = l;
 		for ( l=0; subglyphs[l]!=NULL; ++l )
 		    putshort(lfile,subglyphs[l]->ttf_glyph);
 		free(subglyphs);
-		subglyphs = SFGlyphsFromNames(sf,fpst->rules[k].u.glyph.names);
+		subglyphs = TTFGlyphsFromNames(sf,fpst->rules[k].u.glyph.names);
 		for ( l=0; subglyphs[l]!=NULL; ++l );
 		putshort(lfile,l);
 		curcontext += l;
+		if (subglyphs[0] != NULL)
 		for ( l=1; subglyphs[l]!=NULL; ++l )
 		    putshort(lfile,subglyphs[l]->ttf_glyph);
 		free(subglyphs);
-		subglyphs = SFGlyphsFromNames(sf,fpst->rules[k].u.glyph.fore);
+		subglyphs = TTFGlyphsFromNames(sf,fpst->rules[k].u.glyph.fore);
 		for ( l=0; subglyphs[l]!=NULL; ++l );
 		putshort(lfile,l);
 		curcontext += l;
@@ -2441,6 +2568,8 @@ return( true );
 static void otf_dumpALookup(FILE *lfile, OTLookup *otl, SplineFont *sf,
 	struct alltabs *at) {
     struct lookup_subtable *sub;
+    int lookup_sub_table_contains_no_data_count = 0;
+    int lookup_sub_table_is_too_big_count = 0;
 
     otl->lookup_offset = ftell(lfile);
     for ( sub = otl->subtables; sub!=NULL; sub=sub->next ) {
@@ -2500,14 +2629,20 @@ static void otf_dumpALookup(FILE *lfile, OTLookup *otl, SplineFont *sf,
 	      break;
 	    }
 	    if ( ftell(lfile)-sub->subtable_offset==0 ) {
-		IError( "Lookup sub table, %s in %s, contains no data.\n",
-			sub->subtable_name, sub->lookup->lookup_name );
+		if ( lookup_sub_table_contains_no_data_count < 32 ) {
+		  IError( "Lookup sub table, %s in %s, contains no data.\n",
+		  	sub->subtable_name, sub->lookup->lookup_name );
+		  lookup_sub_table_contains_no_data_count ++;
+		}
 		sub->unused = true;
 		sub->subtable_offset = -1;
 	    } else if ( sub->extra_subtables==NULL &&
 		    ftell(lfile)-sub->subtable_offset>65535 )
-		IError( "Lookup sub table, %s in %s, is too big. Will not be useable.\n",
-			sub->subtable_name, sub->lookup->lookup_name );
+		if ( lookup_sub_table_is_too_big_count < 32 ) {
+		  IError( "Lookup sub table, %s in %s, is too big. Will not be useable.\n",
+		  	sub->subtable_name, sub->lookup->lookup_name );
+		  lookup_sub_table_is_too_big_count ++;
+		}
 	}
     }
     otl->lookup_length = ftell(lfile)-otl->lookup_offset;
@@ -2815,7 +2950,6 @@ static FILE *g___FigureExtensionSubTables(OTLookup *all,int startoffset,int is_g
     int len, len2, gotmore;
     FILE *efile;
     int i, offset, cnt;
-    int any= false;
 
     if ( all==NULL )
 return( NULL );
@@ -2840,12 +2974,6 @@ return( NULL );
 	    break;
 	    }
 	    if ( sub!=NULL ) {
-		if ( !any ) {
-		    ff_post_notice(_("Lookup potentially too big"),
-			    _("Lookup %s has an\noffset bigger than 65535 bytes. This means\nFontForge must use an extension lookup to output it.\nNot all applications support extension lookups."),
-			    otf->lookup_name );
-		    any = true;
-		}
 		otf->needs_extension = true;
 		gotmore = true;
 		len += 8*otf->subcnt;
@@ -3008,11 +3136,6 @@ return( NULL );
     if ( size_params_ptr!=0 ) {
 	size_params_loc = ftell(g___);
 	fseek(g___,size_params_ptr,SEEK_SET);
-	/* When Adobe first released fonts containing the 'size' feature */
-	/*  they did not follow the spec, and the offset to the size parameters */
-	/*  was relative to the wrong location. They claim (Aug 2006) that */
-	/*  this has been fixed. FF used to do what Adobe did. Many programs */
-	/*  expect broken sizes tables now, but we don't supply them. */
 	putshort(g___,size_params_loc-size_params_ptr);
 	fseek(g___,size_params_loc,SEEK_SET);
 	putshort(g___,sf->design_size);
@@ -3355,15 +3478,19 @@ void otf_dumpgdef(struct alltabs *at, SplineFont *sf) {
 return;					/* No anchor positioning, no ligature carets */
 
     at->gdef = tmpfile();
-    if ( sf->mark_set_cnt==0 )
+    if ( sf->mark_set_cnt==0 ) {
 	putlong(at->gdef,0x00010000);		/* Version */
-    else
+        putshort(at->gdef, needsclass ? 12 : 0 ); /* glyph class defn table */
+    } else {
 	putlong(at->gdef,0x00010002);		/* Version with mark sets */
-    putshort(at->gdef, needsclass ? 14 : 0 );	/* glyph class defn table */
+        putshort(at->gdef, needsclass ? 14 : 0 ); /* glyph class defn table */
+    }
     putshort(at->gdef, 0 );			/* attachment list table */
     putshort(at->gdef, 0 );			/* ligature caret table (come back and fix up later) */
     putshort(at->gdef, 0 );			/* mark attachment class table */
-    putshort(at->gdef, 0 );			/* mark attachment set table only meaningful if version is 0x10002, but doesn't hurt to output always*/
+    if ( sf->mark_set_cnt>0 ) {
+        putshort(at->gdef, 0 );                 /* mark attachment set table only meaningful if version is 0x10002*/
+    }
 
 	/* Glyph class subtable */
     if ( needsclass ) {
@@ -3908,12 +4035,17 @@ static void ttf_math_dump_glyphvariant(FILE *mathf,struct alltabs *at, SplineFon
 
 void otf_dump_math(struct alltabs *at, SplineFont *sf) {
     FILE *mathf;
+    struct MATH *math;
     int i;
     uint32 devtab_offsets[60], const_start, gi_start, v_start;
     int bits = MathBits(at,sf);
 
-    if ( sf->MATH==NULL )
-return;
+    if ( sf->MATH!=NULL )
+	math = sf->MATH;
+    else if ( bits!=0 )
+	math = MathTableNew(sf);
+    else
+	return;
 
     at->math = mathf = tmpfile();
 
@@ -3926,8 +4058,8 @@ return;
     memset(devtab_offsets,0,sizeof(devtab_offsets));
     const_start = ftell(mathf);
     for ( i=0; math_constants_descriptor[i].script_name!=NULL; ++i ) {
-	int16 *pos = (int16 *) (((char *) (sf->MATH)) + math_constants_descriptor[i].offset );
-	if ( pos == (int16 *) &sf->MATH->MinConnectorOverlap )
+	int16 *pos = (int16 *) (((char *) math) + math_constants_descriptor[i].offset );
+	if ( pos == (int16 *) &math->MinConnectorOverlap )
     continue;		/* Actually lives in the Variant table, not here */
 	putshort(mathf, *pos);
 	if ( math_constants_descriptor[i].devtab_offset != -1 ) {
@@ -3936,9 +4068,9 @@ return;
 	}
     }
     for ( i=0; math_constants_descriptor[i].script_name!=NULL; ++i ) {
-	int16 *pos = (int16 *) (((char *) (sf->MATH)) + math_constants_descriptor[i].offset );
-	DeviceTable **devtab = (DeviceTable **) (((char *) (sf->MATH)) + math_constants_descriptor[i].devtab_offset );
-	if ( pos == (int16 *) &sf->MATH->MinConnectorOverlap )
+	int16 *pos = (int16 *) (((char *) math) + math_constants_descriptor[i].offset );
+	DeviceTable **devtab = (DeviceTable **) (((char *) math) + math_constants_descriptor[i].devtab_offset );
+	if ( pos == (int16 *) &math->MinConnectorOverlap )
     continue;		/* Actually lives in the Variant table, not here */
 	if ( math_constants_descriptor[i].devtab_offset >= 0 && *devtab!=NULL ) {
 	    uint32 here = ftell(mathf);
@@ -4013,6 +4145,9 @@ return;
 	putc('\0',mathf);
     if ( ftell(mathf)&2 )
 	putshort(mathf,0);
+
+    if ( sf->MATH==NULL )
+	free(math);
 }
 
 struct taglist {

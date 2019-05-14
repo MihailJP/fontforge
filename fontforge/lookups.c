@@ -25,7 +25,15 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "lookups.h"
+
 #include "fontforgevw.h"
+#include "fvfonts.h"
+#include "macenc.h"
+#include "splinesaveafm.h"
+#include "splineutil.h"
+#include "tottfgpos.h"
 #include <chardata.h>
 #include <utype.h>
 #include <ustring.h>
@@ -34,7 +42,6 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include "ttf.h"
-#include "lookups.h"
 #include "xvasprintf.h"
 
 struct opentype_feature_friendlynames friendlies[] = {
@@ -968,13 +975,15 @@ static void RemoveNestedReferences(SplineFont *sf,int isgpos) {
 		otl->lookup_type==gpos_context || otl->lookup_type==gpos_contextchain ) {
 	    for ( sub=otl->subtables; sub!=NULL; sub=sub->next ) {
 		FPST *fpst = sub->fpst;
-		for ( i=0; i<fpst->rule_cnt; ++i ) {
-		    for ( j=0; j<fpst->rules[i].lookup_cnt; ++j ) {
-			if ( fpst->rules[i].lookups[j].lookup == otl ) {
-			    for ( k=j+1; k<fpst->rules[i].lookup_cnt; ++k )
-				fpst->rules[i].lookups[k-1] = fpst->rules[i].lookups[k];
-			    --fpst->rules[i].lookup_cnt;
-			    --j;
+		if (fpst!=NULL) {
+		    for ( i=0; i<fpst->rule_cnt; ++i ) {
+			for ( j=0; j<fpst->rules[i].lookup_cnt; ++j ) {
+			    if ( fpst->rules[i].lookups[j].lookup == otl ) {
+				for ( k=j+1; k<fpst->rules[i].lookup_cnt; ++k )
+				    fpst->rules[i].lookups[k-1] = fpst->rules[i].lookups[k];
+				--fpst->rules[i].lookup_cnt;
+				--j;
+			    }
 			}
 		    }
 		}
@@ -1107,7 +1116,7 @@ void SFRemoveLookupSubTable(SplineFont *sf,struct lookup_subtable *sub, int remo
 	KernPair *kp, *kpprev, *kpnext;
 	k=0;
 	do {
-	    _sf = sf->subfontcnt==0 ? sf : sf->subfonts[i];
+	    _sf = sf->subfontcnt==0 ? sf : sf->subfonts[k];
 	    for ( i=0; i<_sf->glyphcnt; ++i ) if ( (sc=_sf->glyphs[i])!=NULL ) {
 		for ( pst=sc->possub, prev=NULL ; pst!=NULL; pst=next ) {
 		    next = pst->next;
@@ -2019,6 +2028,21 @@ static KernClass *SF_AddKernClass(struct sfmergecontext *mc,KernClass *kc,
     newkc->seconds = ClassCopy(newkc->second_cnt,newkc->seconds);
     newkc->offsets = malloc(newkc->first_cnt*newkc->second_cnt*sizeof(int16));
     memcpy(newkc->offsets,kc->offsets,newkc->first_cnt*newkc->second_cnt*sizeof(int16));
+    // We support group kerning as well.
+    if (newkc->firsts_names) newkc->firsts_names = ClassCopy(newkc->first_cnt,newkc->firsts_names);
+    if (newkc->seconds_names) newkc->seconds_names = ClassCopy(newkc->second_cnt,newkc->seconds_names);
+    if (newkc->firsts_flags) {
+      newkc->firsts_flags = malloc(newkc->first_cnt*sizeof(int));
+      memcpy(newkc->firsts_flags,kc->firsts_flags,newkc->first_cnt*sizeof(int));
+    }
+    if (newkc->seconds_flags) {
+      newkc->seconds_flags = malloc(newkc->second_cnt*sizeof(int));
+      memcpy(newkc->seconds_flags,kc->seconds_flags,newkc->second_cnt*sizeof(int));
+    }
+    if (newkc->offsets_flags) {
+      newkc->offsets_flags = malloc(newkc->first_cnt*newkc->second_cnt*sizeof(int));
+      memcpy(newkc->offsets_flags,kc->offsets_flags,newkc->first_cnt*newkc->second_cnt*sizeof(int));
+    }
 return( newkc );
 }
 
@@ -2605,20 +2629,13 @@ struct lookup_data {
 
 static int ApplyLookupAtPos(uint32 tag, OTLookup *otl,struct lookup_data *data,int pos);
 
-static int GlyphNameInClass(const char *name,char *class ) {
+static int GlyphNameInClass(const char *name,const char *class) {
     const char *pt;
     int len = strlen(name);
 
-    if ( class==NULL )
-return( false );
-
-    pt = copy(class);
-    while ( (pt=strstr(pt,name))!=NULL ) {
-	if ( pt==NULL )
-return( false );
+    for (pt = class; pt && (pt=strstr(pt,name))!=NULL; pt += len) {
 	if ( (pt==class || pt[-1]==' ') && (pt[len]=='\0' || pt[len]==' '))
 return( true );
-	pt+=len;
     }
 
 return( false );
@@ -3050,6 +3067,8 @@ static int ContextualMatch(struct lookup_subtable *sub,struct lookup_data *data,
     int lookup_flags = sub->lookup->lookup_flags;
     const char *pt;
 
+    if (fpst==NULL)
+        return 0;
     /* If we should skip the current glyph then don't try for a match here */
     cpos = skipglyphs(lookup_flags,data,pos);
     if ( cpos!=pos )
@@ -4076,6 +4095,7 @@ return( true );
 		}
 	    }
 	}
+	otl = otl->next;
     }
 return( false );
 }
@@ -4142,10 +4162,12 @@ static void AddOTLToSllk(struct sllk *sllk, OTLookup *otl, struct scriptlanglist
 	struct lookup_subtable *sub;
 	for ( sub=otl->subtables; sub!=NULL; sub=sub->next ) {
 	    FPST *fpst = sub->fpst;
-	    for ( j=0; j<fpst->rule_cnt; ++j ) {
-		struct fpst_rule *r = &fpst->rules[j];
-		for ( k=0; k<r->lookup_cnt; ++k )
-		    AddOTLToSllk(sllk,r->lookups[k].lookup,sl);
+	    if (fpst!=NULL) {
+		for ( j=0; j<fpst->rule_cnt; ++j ) {
+		     struct fpst_rule *r = &fpst->rules[j];
+		     for ( k=0; k<r->lookup_cnt; ++k )
+			AddOTLToSllk(sllk,r->lookups[k].lookup,sl);
+		}
 	    }
 	}
     }
@@ -5014,11 +5036,15 @@ return( xasprintf( _("%s is not a class name for the forward classes." ), parsed
 		    parsed[i].replacements = NULL;
 		}
 	    } else
-		rule->u.coverage.ncovers[i-last-1] = parsed[i].entity;
+		rule->u.coverage.fcovers[i-last-1] = parsed[i].entity;
 	    parsed[i].entity = NULL;
 	}
       break;
       default:
+	  for ( i=0; i<cnt; i++ ) {
+	      free( parsed[i].entity );
+	      free( parsed[i].replacements );
+	  }
 return( copy( _("Bad FPST format")) );
     }
     if ( fpst->format!=pst_reversecoverage ) {

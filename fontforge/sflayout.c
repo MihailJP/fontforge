@@ -26,7 +26,15 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "bvedit.h"
+#include "encoding.h"
 #include "fontforgevw.h"
+#include "fvfonts.h"
+#include "lookups.h"
+#include "splinefill.h"
+#include "splineorder2.h"
+#include "splineutil.h"
+#include "tottfgpos.h"
 #include <math.h>
 
 #include "sflayoutP.h"
@@ -394,7 +402,7 @@ void LayoutInfoRefigureLines(LayoutInfo *li, int start_of_change,
     double scale;
 
     if ( li->lines==NULL ) {
-	li->lines = malloc(10*sizeof(struct opentype_str *));
+	li->lines = malloc(10*sizeof(struct opentype_str **));
 	li->lineheights = malloc(10*sizeof(struct lineheights));
 	li->lines[0] = NULL;
 	li->lmax = 10;
@@ -496,7 +504,7 @@ void LayoutInfoRefigureLines(LayoutInfo *li, int start_of_change,
     li->pcnt += pdiff;
 
     if ( li->lmax <= li->lcnt+lcnt - (le-ls) + 1 ) {
-	li->lines = realloc(li->lines,(li->lmax = li->lcnt+30+lcnt-(le-ls+1))*sizeof(struct openfont_str **));
+	li->lines = realloc(li->lines,(li->lmax = li->lcnt+30+lcnt-(le-ls+1))*sizeof(struct opentype_str **));
 	li->lineheights = realloc(li->lineheights,li->lmax*sizeof(struct lineheights));
     }
     /* move any old lines around */

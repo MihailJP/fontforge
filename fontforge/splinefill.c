@@ -24,7 +24,13 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "splinefill.h"
+
 #include "fontforge.h"
+#include "fvfonts.h"
+#include "psread.h"
+#include "splinesaveafm.h"
+#include "splineutil.h"
 #include <stdio.h>
 #include <string.h>
 #include <ustring.h>
@@ -1457,7 +1463,7 @@ BDFFont *SplineFontToBDFHeader(SplineFont *_sf, int pixelsize, int indicate) {
 	strcpy(aa,_("Generating bitmap font"));
 	if ( sf->fontname!=NULL ) {
 	    strcat(aa,": ");
-	    strncat(aa,sf->fontname,sizeof(aa)-strlen(aa));
+	    strncat(aa,sf->fontname,sizeof(aa)-strlen(aa)-1);
 	    aa[sizeof(aa)-1] = '\0';
 	}
 	ff_progress_start_indicator(10,_("Rasterizing..."),
@@ -1532,6 +1538,7 @@ return;
 		memset(sum,0,new.bytes_per_line*sizeof(uint32));
 	    }
 	}
+        free(sum);
     } else {
 	for ( i=0; i<=bc->ymax-bc->ymin; ++i ) {
 	    bpt = bc->bitmap + i*bc->bytes_per_line;
@@ -1615,7 +1622,7 @@ return( SplineFontRasterize(_sf,layer,pixelsize,true));
     strcpy(aa,_("Generating anti-alias font"));
     if ( sf->fontname!=NULL ) {
 	strcat(aa,": ");
-	strncat(aa,sf->fontname,sizeof(aa)-strlen(aa));
+	strncat(aa,sf->fontname,sizeof(aa)-strlen(aa)-1);
 	aa[sizeof(aa)-1] = '\0';
     }
     ff_progress_start_indicator(10,_("Rasterizing..."),
@@ -1749,7 +1756,7 @@ BDFFont *SplineFontPieceMeal(SplineFont *sf,int layer,int ptsize,int dpi,
     }
     if ( flags&pf_ft_nohints )
     {
-	printf("SplineFontPieceMeal() going unhinted...\n");
+//	printf("SplineFontPieceMeal() going unhinted...\n");
 	bdf->unhinted_freetype = true;
     }
     else if ( flags&pf_ft_recontext )
@@ -1776,7 +1783,7 @@ BDFFont *SplineFontPieceMeal(SplineFont *sf,int layer,int ptsize,int dpi,
 	bdf->recontext_freetype = bdf->unhinted_freetype = false;
     }
     
-    if ( (ftc || bdf->recontext_freetype || bdf->recontext_freetype) && (flags&pf_antialias) )
+    if ( (ftc || bdf->recontext_freetype) && (flags&pf_antialias) )
 	BDFClut(bdf,16);
     else if ( flags&pf_antialias )
 	BDFClut(bdf,4);

@@ -25,6 +25,9 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include "fontforgeui.h"
+#include "fvfonts.h"
+#include "splinefill.h"
+#include "splineutil.h"
 #include <gkeysym.h>
 #include <string.h>
 #include <ustring.h>
@@ -117,8 +120,10 @@ static void AnchorD_FreeChar(AnchorDlg *a) {
     for ( i=0; i<a->cnt; ++i )
 	BDFCharFree(a->apmatch[i].bdfc);
     free(a->apmatch); a->apmatch = NULL;
-    if ( a->freetypecontext!=NULL )
-	FreeTypeFreeContext(a->freetypecontext);
+    if ( a->freetypecontext!=NULL ) {
+        FreeTypeFreeContext(a->freetypecontext);
+        a->freetypecontext = NULL;
+    }
 }
 
 static void AnchorD_FreeAll(AnchorDlg *a) {
@@ -176,7 +181,7 @@ static GTextInfo **AnchorD_GlyphsInClass(AnchorDlg *a) {
 	} while ( k<_sf->subfontcnt );
 	if ( !j ) {
 	    btot = bcnt;
-	    ti = calloc(bcnt+mcnt+5,sizeof(GTextInfo));
+	    ti = calloc(bcnt+mcnt+5,sizeof(GTextInfo*));
 	    ti[0] = calloc(1,sizeof(GTextInfo));
 	    ti[0]->text = utf82u_copy(ac->type==act_curs ? _("Exits") : _("Bases"));
 	    ti[0]->fg = ti[0]->bg = COLOR_DEFAULT;

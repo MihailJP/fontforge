@@ -55,7 +55,7 @@ dnl that call ./bootstrap or ./autogen.sh enable a quiet mode where users
 dnl won't see why ./configure fails. This forced-halt also aids users by
 dnl giving an immediate answer as to why ./configure fails (see lots of
 dnl issues before this where users run into problems, but reason for fail
-dnl isn't immediately clear) - anser is usually in adding a developer pkg
+dnl isn't immediately clear) - answer is usually in adding a developer pkg
 dnl since some distros normally distribute compiled binaries to save space.
 dnl This also avoids using pkg-config since some versions don't check the
 dnl additional directories such as /usr/local by default without users
@@ -107,6 +107,7 @@ if test x"${i_do_have_libuninameslist}" = xyes -a x"${LIBUNINAMESLIST_LIBS}" = x
       [LIBUNINAMESLIST_LIBS="${LIBUNINAMESLIST_LIBS} ${found_lib}"
        AC_CHECK_FUNC([uniNamesList_NamesListVersion],[have_libuninameslist=3])
        AC_CHECK_FUNC([uniNamesList_blockCount],[have_libuninameslist=4])
+       AC_CHECK_FUNC([uniNamesList_names2anU],[have_libuninameslist=5])
        AC_DEFINE_UNQUOTED([_LIBUNINAMESLIST_FUN],[$have_libuninameslist],[LibUninNamesList library >= 0.3])
       ],[i_do_have_libuninameslist=no])
 fi
@@ -159,49 +160,107 @@ with_libuninameslist=no
 
 dnl FONTFORGE_ARG_WITH_CAIRO
 dnl ------------------------
-AC_DEFUN([FONTFORGE_ARG_WITH_CAIRO],
-[
-   FONTFORGE_ARG_WITH([cairo],
-      [AS_HELP_STRING([--without-cairo],
-                      [build without Cairo graphics (use regular X graphics instead)])],
-      [cairo >= 1.6],
-      [FONTFORGE_WARN_PKG_NOT_FOUND([CAIRO])],
-      [_NO_LIBCAIRO])
+dnl Add with cairo support by default (only if cairo and headers exist).
+dnl Additionally, zlib, png and their header files should exist too.
+dnl If user defines --without-cairo, then don't use cairo graphics.
+dnl If user defines --with-cairo, then fail with error if there is no
+dnl cairo or headers available.
+dnl You will need to test for zlib and png before running this function.
+dnl Latest version here indicated cairo >= 1.6
+dnl function=`cairo_format_stride_for_width` will verify cairo >= 1.6
+AC_DEFUN([FONTFORGE_ARG_WITH_CAIRO],[
+FONTFORGE_ARG_WITHOUT([cairo],[LIBCAIRO],[build without Cairo graphics (use regular X graphics instead)])
+
+if test x"${with_cairo}" != xno; then
+dnl try the easy path first with PKG_CHECK_MODULES() else check using
+dnl lib and header checks for distros/OSes with weak pkg-config setups.
+   PKG_CHECK_MODULES([LIBCAIRO],[cairo >= 1.6],[i_do_have_cairo=yes],
+         [if test x"${i_do_have_cairo}" != xno -a x"${LIBCAIRO_CFLAGS}" = x; then
+             AC_CHECK_HEADER([cairo/cairo.h],[],[i_do_have_cairo=no])
+          fi
+          if test x"${i_do_have_cairo}" != xno -a x"${LIBCAIRO_LIBS}" = x; then
+             FONTFORGE_SEARCH_LIBS([cairo_format_stride_for_width],[cairo],
+                   [LIBCAIRO_LIBS="${LIBCAIRO_LIBS} ${found_lib}"],
+                   [i_do_have_cairo=no])
+          fi])
+fi
+
+AC_MSG_CHECKING([Build with Cairo support?])
+if test x"${with_cairo}" != xno; then
+   if test x"${i_do_have_libpng}" != xyes || test x"${with_libpng}" = xno; then
+      AC_MSG_FAILURE([ERROR: Please install the Developer version of libpng],[1])
+   fi
+fi
+if test x"${with_cairo}" = xyes; then
+   if test x"${i_do_have_cairo}" != xno; then
+      AC_MSG_RESULT([yes])
+   else
+      AC_MSG_FAILURE([ERROR: Please install the Developer version of Cairo],[1])
+   fi
+else
+   if test x"${i_do_have_cairo}" = xno || test x"${with_cairo}" = xno; then
+      AC_MSG_RESULT([no])
+      AC_DEFINE([_NO_LIBCAIRO],1,[Define if not using cairo])
+      AS_TR_SH(LIBCAIRO_CFLAGS)=""
+      AS_TR_SH(LIBCAIRO_LIBS)=""
+   else
+      AC_MSG_RESULT([yes])
+   fi
+fi
+AC_SUBST([LIBCAIRO_CFLAGS])
+AC_SUBST([LIBCAIRO_LIBS])
 ])
 
 
 dnl FONTFORGE_ARG_WITH_LIBPNG
 dnl -------------------------
-AC_DEFUN([FONTFORGE_ARG_WITH_LIBPNG],
-[
-FONTFORGE_ARG_WITH([libpng],
-        [AS_HELP_STRING([--without-libpng],[build without PNG support])],
-        [libpng],
-        [FONTFORGE_WARN_PKG_NOT_FOUND([LIBPNG])],
-        [_NO_LIBPNG])
+dnl Add with libpng support by default (only if the libpng library exists
+dnl AND png.h header file exist).
+dnl If user defines --without-libpng, then don't use libpng.
+dnl If user defines --with-libpng, then fail with error if there is no
+dnl libpng library OR no png.h header file.
+AC_DEFUN([FONTFORGE_ARG_WITH_LIBPNG],[
+FONTFORGE_ARG_WITHOUT([libpng],[LIBPNG],[build without PNG support])
+
+if test x"${i_do_have_libpng}" = xyes -a x"${LIBPNG_CFLAGS}" = x; then
+   AC_CHECK_HEADER([png.h],[],[i_do_have_libpng=no])
+fi
+if test x"${i_do_have_libpng}" = xyes -a x"${LIBPNG_LIBS}" = x; then
+   FONTFORGE_SEARCH_LIBS([png_init_io],[png],
+         [LIBPNG_LIBS="${LIBPNG_LIBS} ${found_lib}"],
+         [i_do_have_libpng=no])
+fi
+
+FONTFORGE_BUILD_YES_NO_HALT([libpng],[LIBPNG],[Build with PNG support?])
 ])
 
 
 dnl FONTFORGE_ARG_WITH_LIBTIFF
 dnl --------------------------
-AC_DEFUN([FONTFORGE_ARG_WITH_LIBTIFF],
-[
-FONTFORGE_ARG_WITH_BASE([libtiff],
-        [AS_HELP_STRING([--without-libtiff],[build without TIFF support])],
-        [libtiff-4],
-        [FONTFORGE_WARN_PKG_NOT_FOUND([LIBTIFF])],
-        [_NO_LIBTIFF],
-        [FONTFORGE_ARG_WITH_LIBTIFF_fallback])
-])
-dnl
-AC_DEFUN([FONTFORGE_ARG_WITH_LIBTIFF_fallback],
-[
-   FONTFORGE_SEARCH_LIBS([TIFFClose],[tiff],
-      [i_do_have_libtiff=yes
-       AC_SUBST([LIBTIFF_CFLAGS],[""])
-       AC_SUBST([LIBTIFF_LIBS],["${found_lib}"])
-       FONTFORGE_WARN_PKG_FALLBACK([LIBTIFF])],
-      [i_do_have_libtiff=no])
+dnl Add with libtiff support by default (only if the libtiff library exists
+dnl AND tiffio.h header file exist). First, verify that TIFFRewriteField is
+dnl NOT accessible, otherwise this is an old tiff library (less than v4.0).
+dnl libtiff 4 and higher have bigtiff support.
+dnl If user defines --without-libtiff, then don't use libtiff.
+dnl If user defines --with-libtiff, then fail with error if there is no
+dnl libtiff library OR libtiff < ver4.0, OR no tiffio.h header file.
+AC_DEFUN([FONTFORGE_ARG_WITH_LIBTIFF],[
+FONTFORGE_ARG_WITHOUT([libtiff],[LIBTIFF],[build without TIFF support])
+
+if test x"${i_do_have_libtiff}" = xyes -a x"${LIBTIFF_CFLAGS}" = x; then
+   AC_CHECK_HEADER([tiffio.h],[],[i_do_have_libtiff=no])
+fi
+if test x"${i_do_have_libtiff}" = xyes -a x"${LIBTIFF_LIBS}" = x; then
+   FONTFORGE_SEARCH_LIBS([TIFFRewriteField],[tiff],
+         [i_do_have_libtiff=no],[])
+   if test x"${i_do_have_libtiff}" = xyes; then
+      FONTFORGE_SEARCH_LIBS([TIFFClose],[tiff],
+            [LIBTIFF_LIBS="${LIBTIFF_LIBS} ${found_lib}"],
+            [i_do_have_libtiff=no])
+   fi
+fi
+
+FONTFORGE_BUILD_YES_NO_HALT([libtiff],[LIBTIFF],[Build with TIFF support?])
 ])
 
 
@@ -229,7 +288,7 @@ if test x"${i_do_have_libreadline}" = xyes -a x"${LIBREADLINE_LIBS}" = x; then
    fi
 fi
 if test x"${i_do_have_libreadline}" = xyes -a x"${LIBREADLINE_CFLAGS}" = x; then
-   AC_CHECK_HEADER([readline/readline.h],[$LIBREADLINE_CFLAGS=""],[i_do_have_libreadline=no])
+   AC_CHECK_HEADER([readline/readline.h],[LIBREADLINE_CFLAGS=""],[i_do_have_libreadline=no])
 fi
 
 FONTFORGE_BUILD_YES_NO_HALT([libreadline],[LIBREADLINE],[Build with LibReadLine support?])
@@ -241,7 +300,8 @@ dnl ---------------------------
 dnl Add with libspiro support by default (only if libspiro library exists AND
 dnl spiroentrypoints.h header file exist). If both found, then check further
 dnl to see if this version of libspiro also has TaggedSpiroCPsToBezier0().
-dnl If TaggedSpiroCPsToBezier0() also exists, then also set _LIBSPIRO_FUN=1
+dnl If LibSpiroGetVersion() also exists, then also set _LIBSPIRO_FUN=2, else
+dnl if TaggedSpiroCPsToBezier0() also exists, then also set _LIBSPIRO_FUN=1
 dnl If user defines --without-libspiro, then do not include libspiro.
 dnl If user defines --with-libspiro, then fail with error if there is no
 dnl libspiro library OR no spiroentrypoints.h header file.
@@ -254,9 +314,11 @@ fi
 if test x"${i_do_have_libspiro}" = xyes -a x"${LIBSPIRO_LIBS}" = x; then
    FONTFORGE_SEARCH_LIBS([TaggedSpiroCPsToBezier],[spiro],
          [LIBSPIRO_LIBS="${LIBSPIRO_LIBS} ${found_lib}"
+          AC_CHECK_FUNC([LibSpiroVersion],
+                [AC_DEFINE([_LIBSPIRO_FUN],[2],[LibSpiro >= 0.6, includes LibSpiroVersion()])],
           AC_CHECK_FUNC([TaggedSpiroCPsToBezier0],
-                [AC_DEFINE([_LIBSPIRO_FUN],[1],[LibSpiro >= 0.2, includes TaggedSpiroCPsToBezier0()])])],
-         [i_do_have_libspiro=no])
+                [AC_DEFINE([_LIBSPIRO_FUN],[1],[LibSpiro >= 0.2, includes TaggedSpiroCPsToBezier0()])]))
+         ],[i_do_have_libspiro=no])
 fi
 
 FONTFORGE_BUILD_YES_NO_HALT([libspiro],[LIBSPIRO],[Build with LibSpiro Curve Contour support?])
@@ -301,28 +363,25 @@ fi
 ])
 
 
-dnl There is no pkg-config support for libjpeg, at least on Gentoo. (17 Jul 2012)
-dnl
 dnl FONTFORGE_ARG_WITH_LIBJPEG
 dnl --------------------------
-AC_DEFUN([FONTFORGE_ARG_WITH_LIBJPEG],
-[
-AC_ARG_VAR([LIBJPEG_CFLAGS],[C compiler flags for LIBJPEG, overriding the automatic detection])
-AC_ARG_VAR([LIBJPEG_LIBS],[linker flags for LIBJPEG, overriding the automatic detection])
-AC_ARG_WITH([libjpeg],[AS_HELP_STRING([--without-libjpeg],[build without JPEG support])],
-            [i_do_have_libjpeg="${withval}"],[i_do_have_libjpeg=yes])
+dnl Add libjpeg support by default (only if library AND header exist).
+dnl If user defines --without-libjpeg, then do not include libjpeg.
+dnl If user defines --with-libjpeg, then fail and stop with error if
+dnl there is no libjpeg library OR no jpeglib.h header file.
+AC_DEFUN([FONTFORGE_ARG_WITH_LIBJPEG],[
+FONTFORGE_ARG_WITHOUT([libjpeg],[LIBJPEG],[build without JPEG support])
+
+if test x"${i_do_have_libjpeg}" = xyes -a x"${LIBJPEG_CFLAGS}" = x; then
+   AC_CHECK_HEADER([jpeglib.h],[],[i_do_have_libjpeg=no])
+fi
 if test x"${i_do_have_libjpeg}" = xyes -a x"${LIBJPEG_LIBS}" = x; then
    FONTFORGE_SEARCH_LIBS([jpeg_CreateDecompress],[jpeg],
-                  [AC_SUBST([LIBJPEG_LIBS],["${found_lib}"])],
-                  [i_do_have_libjpeg=no])
+         [LIBJPEG_LIBS="${LIBJPEG_LIBS} ${found_lib}"],
+         [i_do_have_libjpeg=no])
 fi
-if test x"${i_do_have_libjpeg}" = xyes -a x"${LIBJPEG_CFLAGS}" = x; then
-   AC_CHECK_HEADER([jpeglib.h],[AC_SUBST([LIBJPEG_CFLAGS],[""])],[i_do_have_libjpeg=no])
-fi
-if test x"${i_do_have_libjpeg}" != xyes; then
-   FONTFORGE_WARN_PKG_NOT_FOUND([LIBJPEG])
-   AC_DEFINE([_NO_LIBJPEG],1,[Define if not using libjpeg.])
-fi
+
+FONTFORGE_BUILD_YES_NO_HALT([libjpeg],[LIBJPEG],[Build with JPEG support?])
 ])
 
 
@@ -337,38 +396,13 @@ dnl ---------------------------
 AC_DEFUN([FONTFORGE_WARN_PKG_FALLBACK],
    [AC_MSG_WARN([No pkg-config file was found for $1, but the library is present and we will try to use it.])])
 
-AC_DEFUN([CHECK_LIBUUID],
-	[
-	PKG_CHECK_MODULES([LIBUUID], [uuid >= 1.41.2], [LIBUUID_FOUND=yes], [LIBUUID_FOUND=no])
-	if test "$LIBUUID_FOUND" = "no" ; then
-	    PKG_CHECK_MODULES([LIBUUID], [uuid], [LIBUUID_FOUND=yes], [LIBUUID_FOUND=no])
-	    if test "$LIBUUID_FOUND" = "no" ; then
-                AC_MSG_ERROR([libuuid development files required])
-            else
-                LIBUUID_CFLAGS+=" -I$(pkg-config --variable=includedir uuid)/uuid "
-            fi
-	fi
-	AC_SUBST([LIBUUID_CFLAGS])
-	AC_SUBST([LIBUUID_LIBS])
-	])
-
 dnl FONTFORGE_ARG_WITH_ZEROMQ
 dnl -------------------------
 AC_DEFUN([FONTFORGE_ARG_WITH_ZEROMQ],
 [
 FONTFORGE_ARG_WITH([libzmq],
         [AS_HELP_STRING([--without-libzmq],[build without libzmq])],
-        [ libczmq >= 2.0.1 libzmq >= 4.0.0 ],
+        [ libczmq >= 2.2.0 libczmq < 4 libzmq >= 4.0.4 ],
         [FONTFORGE_WARN_PKG_NOT_FOUND([LIBZMQ])],
         [_NO_LIBZMQ], [NO_LIBZMQ=1])
-if test "x$i_do_have_libzmq" = xyes; then
-   if test "x${WINDOWS_CROSS_COMPILE}" = x; then
-      AC_MSG_WARN([Using zeromq enables collab, which needs libuuid, so I'm checking for that now...])
-      CHECK_LIBUUID
-   fi
-fi
-
-LIBZMQ_CFLAGS+=" $LIBUUID_CFLAGS"
-LIBZMQ_LIBS+=" $LIBUUID_LIBS"
-
 ])

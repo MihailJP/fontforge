@@ -24,8 +24,17 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "autohint.h"
+#include "dumppfa.h"
 #include "fontforgevw.h"
 #include "fffreetype.h"
+#include "fvfonts.h"
+#include "splinefill.h"
+#include "splineorder2.h"
+#include "splinesaveafm.h"
+#include "splinestroke.h"
+#include "splineutil.h"
+#include "tottf.h"
 #include <math.h>
 
 FT_Library ff_ft_context;
@@ -212,7 +221,7 @@ return( NULL );
 	    /* like the metricsview, which may expect the full glyph set */
 	    /* available, and will crash if that is not the case */
 	    /* So if anything needs autohinting, do it now */
-	    if ( (ff==ff_pfb || ff==ff_pfa || ff==ff_otf || ff==ff_otfcid ) &&
+	    if ( (ff==ff_pfb || ff==ff_pfa || ff==ff_otf || ff==ff_otfcid || ff==ff_cff) &&
 		    autohint_before_generate ) {
 		extern int preserve_hint_undoes;	/* users don't expect that rasterizing the glyph will cause an undo */
 		int phu = preserve_hint_undoes;		/* if metrics view & char view are open, and a change is made in */
@@ -235,6 +244,12 @@ return( NULL );
 	    sf->glyphs = new;
 	}
 	sf->internal_temp = true;
+
+    if (ff == ff_cff) {
+        /* FT_New_Memory_Face does not like PS-wrapped CFF */
+        flags |= ps_flag_nocffsugar;
+    }
+
 	switch ( ff ) {
 	  case ff_pfb: case ff_pfa:
 	    if ( !_WritePSFont(ftc->file,sf,ff,0,map,NULL,layer))
@@ -243,7 +258,7 @@ return( NULL );
 	  case ff_ttf: case ff_ttfsym:
 	    ftc->isttf = true;
 	    /* Fall through.... */
-	  case ff_otf: case ff_otfcid:
+	  case ff_otf: case ff_otfcid: case ff_cff:
 	    if ( !_WriteTTFFont(ftc->file,sf,ff,NULL,bf_none,flags,map,layer))
  goto fail;
 	  break;
@@ -1125,7 +1140,7 @@ return( bdf );
 
 void *FreeTypeFontContext(SplineFont *sf,SplineChar *sc,FontViewBase *fv,int layer) {
 return( _FreeTypeFontContext(sf,sc,fv,layer,sf->subfontcnt!=0?ff_otfcid:
-	sf->layers[layer].order2?ff_ttf:ff_pfb,0,NULL) );
+	sf->layers[layer].order2?ff_ttf:ff_cff,0,NULL) );
 }
 
 void FreeType_FreeRaster(struct freetype_raster *raster) {

@@ -24,6 +24,9 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "autohint.h"
+#include "cvexport.h"
+#include "cvundoes.h"
 #include "fontforgeui.h"
 #include <math.h>
 #include <locale.h>
@@ -230,19 +233,6 @@ struct gfc_data {
     int layer;
 };
 
-
-static GTextInfo bcformats[] = {
-/* 0=*.xbm, 1=*.bmp, 2=*.png, 3=*.xpm, 4=*.c(fontforge-internal) */
-    { (unichar_t *) N_("X Bitmap"), NULL, 0, 0, (void *) 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
-    { (unichar_t *) N_("BMP"), NULL, 0, 0, (void *) 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
-#ifndef _NO_LIBPNG
-    { (unichar_t *) N_("png"), NULL, 0, 0, (void *) 2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
-#endif
-    { (unichar_t *) N_("X Pixmap"), NULL, 0, 0, (void *) 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
-    { (unichar_t *) N_("C FontForge"), NULL, 0, 0, (void *) 4, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
-    GTEXTINFO_EMPTY
-};
-
 static GTextInfo formats[] = {
     { (unichar_t *) N_("EPS"), NULL, 0, 0, (void *) 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, '\0' },
     { (unichar_t *) N_("XFig"), NULL, 0, 0, (void *) 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
@@ -261,18 +251,20 @@ static GTextInfo formats[] = {
     { (unichar_t *) N_("C FontForge"), NULL, 0, 0, (void *) (BITMAP_FORMAT_START+4), 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, '\0' },
     GTEXTINFO_EMPTY
 };
-static int last_format = 0;
+static int last_format = 0, blast_format = BITMAP_FORMAT_START;
 
 static void DoExport(struct gfc_data *d,unichar_t *path) {
     char *temp;
-    int format, good;
+    int format, good = 0;
 
     temp = cu_copy(path);
-    last_format = format = (intpt) (GGadgetGetListItemSelected(d->format)->userdata);
-    if ( d->bc )
-	last_format += BITMAP_FORMAT_START;
+    format = (intpt) (GGadgetGetListItemSelected(d->format)->userdata);
     if ( d->bc!=NULL )
-	good = BCExportXBM(temp,d->bc,format);
+        blast_format = format;
+    else
+        last_format = format;
+    if ( d->bc!=NULL )
+	good = BCExportXBM(temp,d->bc,format-BITMAP_FORMAT_START);
     else if ( format==0 )
 	good = ExportEPS(temp,d->sc,d->layer);
     else if ( format==1 )
@@ -280,7 +272,7 @@ static void DoExport(struct gfc_data *d,unichar_t *path) {
     else if ( format==2 )
 	good = ExportSVG(temp,d->sc,d->layer);
     else if ( format==3 )
-	good = ExportGlif(temp,d->sc,d->layer);
+	good = ExportGlif(temp,d->sc,d->layer,3);
     else if ( format==4 )
 	good = ExportPDF(temp,d->sc,d->layer);
     else if ( format==5 )
@@ -359,15 +351,8 @@ static int GFD_Format(GGadget *g, GEvent *e) {
 	pt = u_strrchr(f2,'.');
 	if ( pt==NULL )
 	    pt = f2+u_strlen(f2);
-	if ( d->bc!=NULL )
-	    uc_strcpy(pt,format==0?".xbm":
-			 format==1?".bmp":
-			//format==2?".png":
-			 format==3?".xpm":
-			 format==4?".c":
-				   ".png");
 #ifndef _NO_PYTHON
-	else if ( format>=fv_pythonbase )
+	if ( format>=fv_pythonbase )
 	    uc_strcpy(pt+1,py_ie[format-fv_pythonbase].extension);
 #endif
 	else
@@ -412,25 +397,26 @@ static void GFD_dircreatefailed(GIOControl *gio) {
 
 static int GFD_NewDir(GGadget *g, GEvent *e) {
     if ( e->type==et_controlevent && e->u.control.subtype == et_buttonactivate ) {
-	struct gfc_data *d = GDrawGetUserData(GGadgetGetWindow(g));
-	char *newdir;
-	unichar_t *utemp;
+        struct gfc_data *d = GDrawGetUserData(GGadgetGetWindow(g));
+        char *newdir;
+        unichar_t *utemp;
 
-	newdir = gwwv_ask_string(_("Create directory"),NULL,_("Directory name?"));
-	if ( newdir==NULL )
-return( true );
-	if ( !GFileIsAbsolute(newdir)) {
-	    char *basedir = u2utf8_copy(GFileChooserGetDir(d->gfc));
-	    char *temp = GFileAppendFile(basedir,newdir,false);
-	    free(newdir); free(basedir);
-	    newdir = temp;
-	}
-	utemp = utf82u_copy(newdir); free(newdir);
-	GIOmkDir(GFileChooserReplaceIO(d->gfc,
-		GIOCreate(utemp,d,GFD_dircreated,GFD_dircreatefailed)));
-	free(utemp);
+        newdir = gwwv_ask_string(_("Create directory"),NULL,_("Directory name?"));
+        if ( newdir==NULL )
+            return( true );
+        if ( !GFileIsAbsolute(newdir)) {
+            unichar_t *tmp_dir = GFileChooserGetDir(d->gfc);
+            char *basedir = u2utf8_copy(tmp_dir);
+            char *temp = GFileAppendFile(basedir,newdir,false);
+            free(newdir); free(basedir); free(tmp_dir);
+            newdir = temp;
+        }
+        utemp = utf82u_copy(newdir); free(newdir);
+        GIOmkDir(GFileChooserReplaceIO(d->gfc,
+              GIOCreate(utemp,d,GFD_dircreated,GFD_dircreatefailed)));
+        free(utemp);
     }
-return( true );
+    return true;
 }
 
 static int e_h(GWindow gw, GEvent *event) {
@@ -485,21 +471,21 @@ static int _Export(SplineChar *sc,BDFChar *bc,int layer) {
     GGadget *pulldown, *files, *tf;
     char buffer[100]; unichar_t ubuf[100];
     char *ext;
-    int _format, i;
-    int /*bs = GIntGetResource(_NUM_Buttonsize), bsbigger,*/ totwid;
+    int _format, _lpos, i;
+    int bs = GIntGetResource(_NUM_Buttonsize), bsbigger, totwid, scalewid;
     static int done = false;
     GTextInfo *cur_formats;
 
     if ( !done ) {
 	for ( i=0; formats[i].text!=NULL; ++i )
 	    formats[i].text= (unichar_t *) _((char *) formats[i].text);
-	for ( i=0; bcformats[i].text!=NULL; ++i )
-	    bcformats[i].text= (unichar_t *) _((char *) bcformats[i].text);
 	done = true;
     }
-    if ( bc==NULL )
+    if ( bc==NULL ) {
 	formats[5].disabled = !CanBeAPlateFile(sc);
-    cur_formats = bc==NULL ? formats : bcformats;
+        cur_formats = formats;
+    } else
+        cur_formats = formats + BITMAP_FORMAT_START;
 #ifndef _NO_PYTHON
     if ( bc==NULL && py_ie!=NULL ) {
 	int cnt, extras;
@@ -534,8 +520,10 @@ static int _Export(SplineChar *sc,BDFChar *bc,int layer) {
     wattrs.cursor = ct_pointer;
     wattrs.utf8_window_title = _("Export");
     pos.x = pos.y = 0;
-    totwid = GGadgetScale(300);
-    pos.width = GDrawPointsToPixels(NULL,200);
+    totwid = 240;
+    scalewid = GGadgetScale(totwid);
+    bsbigger = 3*bs+4*14>scalewid; scalewid = bsbigger?3*bs+4*12:scalewid;
+    pos.width = GDrawPointsToPixels(NULL,scalewid);
     pos.height = GDrawPointsToPixels(NULL,255);
     gw = GDrawCreateTopWindow(NULL,&pos,e_h,&d,&wattrs);
 
@@ -543,10 +531,12 @@ static int _Export(SplineChar *sc,BDFChar *bc,int layer) {
     memset(&gcd,0,sizeof(gcd));
     memset(&boxes,0,sizeof(boxes));
 
+    gcd[0].gd.pos.x = 12; gcd[0].gd.pos.y = 6; gcd[0].gd.pos.width = totwid-24; gcd[0].gd.pos.height = 182;
     gcd[0].gd.flags = gg_visible | gg_enabled;
     gcd[0].creator = GFileChooserCreate;
     hvarray[0] = &gcd[0]; hvarray[1] = NULL;
 
+    gcd[1].gd.pos.x = 12; gcd[1].gd.pos.y = 224-3; gcd[1].gd.pos.width = -1; gcd[1].gd.pos.height = 0;
     gcd[1].gd.flags = gg_visible | gg_enabled | gg_but_default;
     label[1].text = (unichar_t *) _("_Save");
     label[1].text_is_1byte = true;
@@ -556,6 +546,7 @@ static int _Export(SplineChar *sc,BDFChar *bc,int layer) {
     gcd[1].creator = GButtonCreate;
     barray[0] = GCD_Glue; barray[1] = &gcd[1]; barray[2] = GCD_Glue;
 
+    gcd[2].gd.pos.x = (totwid-bs)*100/GIntGetResource(_NUM_ScaleFactor)/2; gcd[2].gd.pos.y = 224; gcd[2].gd.pos.width = -1; gcd[2].gd.pos.height = 0;
     gcd[2].gd.flags = gg_visible | gg_enabled;
     label[2].text = (unichar_t *) _("_Filter");
     label[2].text_is_1byte = true;
@@ -600,25 +591,26 @@ static int _Export(SplineChar *sc,BDFChar *bc,int layer) {
     gcd[5].creator = GLabelCreate;
     harray[0] = &gcd[5];
 
-    _format = last_format;
     if ( bc!=NULL ) {
-	_format-=2;
-	if ( _format<0 || _format>2 ) _format = 0;
+	_format = blast_format;
+	_lpos = _format - BITMAP_FORMAT_START;
+    } else {
+	_format = last_format;
+	_lpos = _format;
     }
     gcd[6].gd.pos.x = 55; gcd[6].gd.pos.y = 194; 
     gcd[6].gd.flags = gg_visible | gg_enabled ;
     gcd[6].gd.u.list = cur_formats;
     if ( bc!=NULL ) {
-	bcformats[0].disabled = bc->byte_data;
-	if ( _format==0 ) _format=1;
+	cur_formats[0].disabled = bc->byte_data;
+	if ( _lpos==0 ) _lpos=1;
     }
-    gcd[6].gd.label = &cur_formats[_format];
-    gcd[6].gd.u.list[0].selected = true;
+    gcd[6].gd.label = &cur_formats[_lpos];
     gcd[6].gd.handle_controlevent = GFD_Format;
     gcd[6].creator = GListButtonCreate;
     for ( i=0; cur_formats[i].text!=NULL; ++i )
 	cur_formats[i].selected =false;
-    cur_formats[_format].selected = true;
+    cur_formats[_lpos].selected = true;
     harray[1] = &gcd[6];
     harray[2] = GCD_Glue;
     harray[3] = &gcd[4];
@@ -643,13 +635,11 @@ static int _Export(SplineChar *sc,BDFChar *bc,int layer) {
     GHVBoxSetExpandableCol(boxes[3].ret,gb_expandglue);
 
     GFileChooserConnectButtons(gcd[0].ret,gcd[1].ret,gcd[2].ret);
-    if ( bc!=NULL )
-	ext = _format==0 ? "xbm" : _format==1 ? "bmp" : "png";
 #ifndef _NO_PYTHON
-    else if ( _format>=fv_pythonbase )
+    if ( _format>=fv_pythonbase )
 	ext = py_ie[_format-fv_pythonbase].extension;
-#endif
     else
+#endif
 	ext = _format==0?"eps":_format==1?"fig":_format==2?"svg":
 		_format==3?"glif":
 		_format==4?"pdf":_format==5?"plate":
@@ -673,7 +663,7 @@ static int _Export(SplineChar *sc,BDFChar *bc,int layer) {
     GFileChooserGetChildren(gcd[0].ret,&pulldown,&files,&tf);
     GWidgetIndicateFocusGadget(tf);
 
-    if ( cur_formats!=formats && cur_formats!=bcformats )
+    if ( cur_formats!=formats && cur_formats!=formats+BITMAP_FORMAT_START )
 	GTextInfoListFree(cur_formats);
 
     memset(&d,'\0',sizeof(d));

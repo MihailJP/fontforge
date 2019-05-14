@@ -24,8 +24,16 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "splinestroke.h"
+
+#include "cvundoes.h"
 #include "fontforge.h"
 #include "splinefont.h"
+#include "splineorder2.h"
+#include "splineoverlap.h"
+#include "splineutil.h"
+#include "splineutil2.h"
 #include <math.h>
 #define PI      3.1415926535897932
 
@@ -708,7 +716,7 @@ return;		/* Essentially colinear */ /* Won't be perfect because control points l
 	    p->needs_point_left = p->needs_point_right = false;
 	    p->left_hidden = bends_left;
 	    p->right_hidden = !bends_left;
-	    if ( rot.x<=fabs(diff_angle.x) ) {
+	    if ( rot.x<=diff_angle.x || (diff_angle.x <= -1 && rot.x <= -0.999999) ) { /* close enough */
 		p->right = done.right;
 		p->left = done.left;
 		p->needs_point_left = p->needs_point_right = true;
@@ -743,8 +751,15 @@ return;		/* Essentially colinear */ /* Won't be perfect because control points l
 	if ( was_neg!=0 && c->cur-was_neg<5 )
 	    c->all[was_neg].needs_point_left = c->all[was_neg].needs_point_right = false;
     }
-    if ( !atbreak )
-	c->all[c->cur++] = done;
+    if (!atbreak) {
+        if (c->cur >= c->max) {
+            int extras = 10;
+            c->all = realloc(c->all, (c->max+extras)*sizeof(StrokePoint));
+            memset(c->all+c->max, 0, extras*sizeof(StrokePoint));
+            c->max += extras;
+        }
+        c->all[c->cur++] = done;
+    }
 }
 
 static void FindSlope(StrokeContext *c,Spline *s, bigreal t, bigreal tdiff) {
@@ -857,7 +872,7 @@ static void HideStrokePointsCircle(StrokeContext *c) {
 		if ( dist1sq<400 )
 		    j -= (6-1);
 		else
-		    j -= .66667*sqrt(dist1sq)-1;
+		    j -= .5*sqrt(dist1sq)-1;
 		/* Minus 1 because we are going to add 1 anyway */
 	    }
 	}
@@ -1039,7 +1054,7 @@ return( left_trace );
 static void SquareCap(StrokeContext *c,int isend) {
     int cnt, i, start, end, incr;
     int start_corner, end_corner, cc, nc;
-    BasePoint slope, slope1, slope2;
+    BasePoint slope1, slope2;
     StrokePoint done;
     StrokePoint *p;
     bigreal t;
@@ -1114,9 +1129,9 @@ static void SquareCap(StrokeContext *c,int isend) {
 	    p->line = true;
 	    p->needs_point_left = p->needs_point_right = i==cnt;
 	    p->left.x = done.left.x - t*slope1.x;
-	    p->left.y = done.left.y - t*slope2.y;
-	    p->right.x = done.right.x + t*slope.x;
-	    p->right.y = done.right.y + t*slope.y;
+	    p->left.y = done.left.y - t*slope1.y;
+	    p->right.x = done.right.x + t*slope1.x;
+	    p->right.y = done.right.y + t*slope1.y;
 	    if ( i==end )
 	break;
 	}
@@ -2032,7 +2047,7 @@ return;
 		SplineRefigure(sp->next);
 		SplineFree(nsp->next);
 		SplinePointFree(nsp);
-		if ( ss->first==nsp ) ss->first = sp;
+		if ( ss->first==nsp ) { ss->first = sp; ss->start_offset = 0; }
 		if ( ss->last ==nsp ) ss->last  = sp;
 		removed = true;
 	    } else
@@ -2816,20 +2831,24 @@ static SplineSet *JoinFragments(SplineSet *fragments,SplineSet **contours,
 	if ( test!=NULL || test2!=NULL ) {
 	    if ( test!=NULL ) {
 		PointJoint(cur->last,test->first,resolution);
-		if ( cur==test )
+		if ( cur==test ) {
 		    cur->first = cur->last;
-		else
+		    cur->start_offset = 0;
+		} else
 		    cur->last = test->last;
 	    } else {
 		PointJoint(cur->first,test2->last,resolution);
 		if ( cur==test2 )
 		    cur->last = cur->first;
-		else
+		else {
 		    cur->first = test2->first;
+		    cur->start_offset = 0;
+		}
 		test = test2;
 	    }
 	    if ( cur!=test ) {
 		test->first = test->last = NULL;
+		cur->start_offset = 0;
 		prev2->next = test->next;
 		if ( next==test )
 		    next = test->next;
@@ -2986,7 +3005,7 @@ static SplineSet *EdgeEffects(SplineSet *fragments,StrokeContext *c) {
 			sp2->prev->to = sp2;
 			next = chunkalloc(sizeof(SplineSet));
 			*next = *cur;
-			cur->first = sp;
+			cur->first = sp; cur->start_offset = 0;
 			next->last = sp2;
 			cur->next = next;
 		break;
@@ -3165,6 +3184,7 @@ return(ss);
 		first1->next->from = first1;
 		SplinePointFree(second2);
 		ss->first = ss->last = first1;
+		ss->start_offset = 0;
 		ss = RemoveBackForthLine(ss);
 		other = RemoveBackForthLine(other);
 		if ( ss==NULL )
@@ -3187,17 +3207,93 @@ return( ss );
 return( ss );
 }
 
+#if 0
+// If there are odd crashes, double-frees, or bad accesses dealing with strokes, try looking for duplicate points and contours.
+
+struct pointer_list_item;
+struct pointer_list_item {
+	void *item;
+	struct pointer_list_item *next;
+};
+void pointer_list_item_free_chain(struct pointer_list_item *start) {
+	struct pointer_list_item *curr = start;
+	struct pointer_list_item *next;
+	while (curr != NULL) {
+		next = curr->next;
+		free(curr);
+		curr = next;
+	}
+	return;
+}
+struct pointer_list_item *pointer_list_item_get(struct pointer_list_item *start, void *item) {
+	struct pointer_list_item *curr = start;
+	struct pointer_list_item *next;
+	while (curr != NULL) {
+		next = curr->next;
+		if (item == curr->item) return curr;
+		curr = next;
+	}
+	return NULL;
+}
+struct pointer_list_item *pointer_list_item_add(struct pointer_list_item *start, void *item) {
+	struct pointer_list_item *curr = calloc(1, sizeof(struct pointer_list_item));
+	curr->item = item;
+	curr->next = start;
+	return curr;
+}
+static int SplineSetFindDupes(SplineSet *contours) {
+	struct pointer_list_item *points = NULL;
+	struct pointer_list_item *paths = NULL;
+	SplineSet *contour_curr = contours;
+	int err = 0;
+	int path_cnt = 0;
+	int point_cnt = 0;
+	while (contour_curr != NULL) {
+		if (pointer_list_item_get(paths, contour_curr)) {
+			fprintf(stderr, "Duplicate path!\n");
+			err |= 1;
+		} else {
+			paths = pointer_list_item_add(paths, contour_curr);
+		}
+		SplinePoint *point_curr = contour_curr->first;
+		int point_local_cnt = 0;
+		while (point_curr != NULL) {
+			if (pointer_list_item_get(points, point_curr)) {
+				fprintf(stderr, "Duplicate point!\n");
+				err |= 1;
+			} else {
+				points = pointer_list_item_add(points, point_curr);
+			}
+			if (point_curr->next == NULL || point_curr->next->to == contour_curr->last) break;
+			point_curr = point_curr->next->to;
+		}
+		contour_curr = contour_curr->next;
+	}
+	pointer_list_item_free_chain(points);
+	pointer_list_item_free_chain(paths);
+	return err;
+}
+#endif // 0
+
 static SplineSet *SSRemoveBackForthLine(SplineSet *contours) {
     /* Similar to the above. If we have a stem which is exactly 2*radius wide */
     /*  then we will have a line running down the middle of the stem which */
     /*  encloses no area. Get rid of it. More complicated cases can occur (a */
     /*  plus sign where each stem is 2*radius, ... */
     SplineSet *prev, *next, *cur, *ret;
+		SplineSet *cur_tmp;
 
     prev = NULL;
     for ( cur=contours; cur!=NULL; cur=next ) {
 	next = cur->next;
-	ret = RemoveBackForthLine(cur);
+	// ret = RemoveBackForthLine(cur);
+	// In order to use SplineSetRemoveOverlap, we need to break the SplineSet down into paths.
+	// Otherwise, all of them get merged.
+	cur_tmp = calloc(1, sizeof(SplineSet));
+	cur_tmp->next = NULL;
+	cur_tmp->first = cur->first;
+	cur_tmp->last = cur->last;
+	ret = SplineSetRemoveOverlap(NULL, cur_tmp, over_remove);
 	if ( ret==NULL ) {
 	    if ( prev==NULL )
 		contours = next;
@@ -3254,7 +3350,7 @@ return( end_pos-start_pos );
 	}
 	for ( i=0; i<5; ++i ) {
 	    c->tpt[i].x = me.x + slope.x*(i+1);
-	    c->tpt[i].x = me.y + slope.y*(i+1);
+	    c->tpt[i].y = me.y + slope.y*(i+1);
 	    c->tpt[i].t = (i+1)/6.0;
 	}
 return( 5 );
@@ -3629,7 +3725,7 @@ return( first );
 
 SplineSet *SplineSetStroke(SplineSet *ss,StrokeInfo *si, int order2) {
     StrokeContext c;
-    SplineSet *first, *last, *cur, *ret, *active, *anext;
+    SplineSet *first, *last, *cur, *ret, *active = NULL, *anext;
     SplinePoint *sp, *nsp;
     int n, max;
     bigreal d2, maxd2, len, maxlen;
@@ -3677,6 +3773,10 @@ SplineSet *SplineSetStroke(SplineSet *ss,StrokeInfo *si, int order2) {
 	}
 	if ( si->resolution==0 && c.resolution>c.radius/3 )
 	    c.resolution = c.radius/3;
+    if (c.resolution == 0) {
+        ff_post_notice(_("Invalid stroke parameters"), _("Stroke resolution is zero"));
+        return SplinePointListCopy(ss);
+    }
 	ret = SplineSets_Stroke(ss,&c,order2);
     } else {
 	first = last = NULL;
@@ -3745,6 +3845,10 @@ return( NULL );				/* That's an error, must be closed */
 	    c.radius2 = maxd2;
 	    if ( si->resolution==0 && c.resolution>c.radius/3 )
 		c.resolution = c.radius/3;
+        if (c.resolution == 0) {
+            ff_post_notice(_("Invalid stroke parameters"), _("Stroke resolution is zero"));
+            return SplinePointListCopy(ss);
+        }
 	    cur = SplineSets_Stroke(ss,&c,order2);
 	    if ( !c.scaled_or_rotated ) {
 		trans[4] = -trans[4]; trans[5] = -trans[5];

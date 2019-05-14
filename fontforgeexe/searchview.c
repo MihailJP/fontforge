@@ -24,7 +24,10 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include "cvundoes.h"
 #include "fontforgeui.h"
+#include "fvfonts.h"
+#include "splineutil.h"
 #include <math.h>
 #include <ustring.h>
 #include <utype.h>
@@ -588,6 +591,7 @@ static SearchView *SVFillup(SearchView *sv, FontView *fv) {
     sv->dummy_sf.glyphs = sv->chars;
     sv->dummy_sf.glyphcnt = sv->dummy_sf.glyphmax = 2;
     sv->dummy_sf.pfminfo.fstype = -1;
+    sv->dummy_sf.pfminfo.stylemap = -1;
     sv->dummy_sf.fontname = sv->dummy_sf.fullname = sv->dummy_sf.familyname = "dummy";
     sv->dummy_sf.weight = "Medium";
     sv->dummy_sf.origname = "dummy";

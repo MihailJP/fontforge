@@ -24,8 +24,14 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "tottfvar.h"
+
 #include "fontforge.h"
+#include "mem.h"
 #include "ttf.h"
+#include "splinesaveafm.h"
+#include "tottf.h"
 #include <math.h>
 #include <ustring.h>
 
@@ -62,6 +68,8 @@ static int AssignPtNumbers(MMSet *mm,int gid) {
 	stillmore = false;
 	for ( i=0; i<=mm->instance_count; ++i )
 	    if ( ss[i]!=NULL ) stillmore = true;
+        free(ss);
+        free(sp);
 	if ( stillmore )
 return( false );
 return( true );
@@ -70,7 +78,11 @@ return( true );
 	for ( i=0; i<=mm->instance_count; ++i )
 	    if ( ss[i]==NULL ) stillmore = false;
 	if ( !stillmore )
+{
+free(ss);
+free(sp);
 return( false );
+}
     }
 	    
     for (;;) {
@@ -498,6 +510,7 @@ static void ttf_dumpcvar(struct alltabs *at, MMSet *mm) {
     uint16 *pts;
 
     deltas = CvtFindDeltas(mm,&ptcnt);
+    if ( deltas == NULL ) return;
     for ( i=cnt=0; i<mm->instance_count; ++i )
 	if ( deltas[i]!=NULL )
 	    ++cnt;

@@ -1,6 +1,6 @@
 #include <chardata.h>
 
-/* This file was generated using the program 'makeutype' */
+/* This file was generated using the program 'makeutype' for Unicode_version 12.1 */
 
 static const unichar_t str_a0[] = { 0x0020, 0 };
 static const unichar_t str_a8[] = { 0x0020, 0x0308, 0 };
@@ -2576,6 +2576,7 @@ static const unichar_t str_32fb[] = { 0x30ef, 0x20dd, 0 };
 static const unichar_t str_32fc[] = { 0x30f0, 0x20dd, 0 };
 static const unichar_t str_32fd[] = { 0x30f1, 0x20dd, 0 };
 static const unichar_t str_32fe[] = { 0x30f2, 0x20dd, 0 };
+static const unichar_t str_32ff[] = { 0x5de6, 0x53f3, 0 };
 static const unichar_t str_3300[] = { 0x30a2, 0x30d1, 0x30fc, 0x30c8, 0 };
 static const unichar_t str_3301[] = { 0x30a2, 0x30eb, 0x30d5, 0x30a1, 0 };
 static const unichar_t str_3302[] = { 0x30a2, 0x30f3, 0x30da, 0x30a2, 0 };
@@ -2832,9 +2833,15 @@ static const unichar_t str_33fc[] = { 0x0032, 0x0039, 0x65e5, 0 };
 static const unichar_t str_33fd[] = { 0x0033, 0x0030, 0x65e5, 0 };
 static const unichar_t str_33fe[] = { 0x0033, 0x0031, 0x65e5, 0 };
 static const unichar_t str_33ff[] = { 0x0067, 0x0061, 0x006c, 0 };
+static const unichar_t str_a69c[] = { 0x044a, 0 };
+static const unichar_t str_a69d[] = { 0x044c, 0 };
 static const unichar_t str_a770[] = { 0xa76f, 0 };
 static const unichar_t str_a7f8[] = { 0x0126, 0 };
 static const unichar_t str_a7f9[] = { 0x0153, 0 };
+static const unichar_t str_ab5c[] = { 0xa727, 0 };
+static const unichar_t str_ab5d[] = { 0xab37, 0 };
+static const unichar_t str_ab5e[] = { 0x026b, 0 };
+static const unichar_t str_ab5f[] = { 0xab52, 0 };
 static const unichar_t str_f900[] = { 0x8c48, 0 };
 static const unichar_t str_f901[] = { 0x66f4, 0 };
 static const unichar_t str_f902[] = { 0x8eca, 0 };
@@ -7060,7 +7067,8 @@ str_32fb,
 str_32fc,
 str_32fd,
 str_32fe,
-0, 0};
+str_32ff,
+0};
 
 static const unichar_t * const tab_33[] = {
 str_3300,
@@ -7321,11 +7329,23 @@ str_33fe,
 str_33ff,
 0};
 
+static const unichar_t * const tab_a6[] = {
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, str_a69c,
+str_a69d,
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
 static const unichar_t * const tab_a7[] = {
 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, str_a770,
 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, str_a7f8,
 str_a7f9,
 0, 0, 0, 0, 0, 0, 0};
+
+static const unichar_t * const tab_ab[] = {
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, str_ab5c,
+str_ab5d,
+str_ab5e,
+str_ab5f,
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 static const unichar_t * const tab_f9[] = {
 str_f900,
@@ -8926,8 +8946,10 @@ tab_30,
 tab_31,
 tab_32,
 tab_33,
-up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, tab_a7,
-up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, tab_f9,
+up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, tab_a6,
+tab_a7,
+up_allzeros, up_allzeros, up_allzeros, tab_ab,
+up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, up_allzeros, tab_f9,
 tab_fa,
 tab_fb,
 tab_fc,

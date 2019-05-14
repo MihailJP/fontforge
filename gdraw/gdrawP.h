@@ -27,6 +27,8 @@
 #ifndef _GDRAWP_H
 #define _GDRAWP_H
 
+#include <basics.h>
+
 #include "gdraw.h"
 
 typedef struct gcol {
@@ -86,6 +88,9 @@ struct gchr_accents {
     unichar_t accent;
     uint32 mask;
 };
+
+enum text_funcs { tf_width, tf_drawit, tf_rect, tf_stopat, tf_stopbefore, tf_stopafter };
+struct tf_arg { GTextBounds size; int width, maxwidth; unichar_t *last; char *utf8_last; int first; int dont_replace; };
 
 struct gwindow {
     GGC *ggc;
@@ -153,6 +158,22 @@ struct gdisplay {
     fd_callback_t fd_callbacks[ gdisplay_fd_callbacks_size ];
     int fd_callbacks_last;
     unsigned int mykeybuild: 1;
+    unsigned int default_visual: 1;
+    unsigned int do_dithering: 1;
+    unsigned int focusfollowsmouse: 1;
+    unsigned int top_offsets_set: 1;
+    unsigned int wm_breaks_raiseabove: 1;
+    unsigned int wm_raiseabove_tested: 1;
+    unsigned int endian_mismatch: 1;
+    unsigned int macosx_cmd: 1;		/* if set then map state=0x20 to control */
+    unsigned int twobmouse_win: 1;	/* if set then map state=0x40 to mouse button 2 */
+    unsigned int devicesinit: 1;	/* the devices structure has been initialized. Else call XListInputDevices */
+    unsigned int expecting_core_event: 1;/* when we move an input extension device we generally get two events, one for the device, one later for the core device. eat the core event */
+    unsigned int has_xkb: 1;		/* we were able to initialize the XKB extension */
+    unsigned int supports_alpha_images: 1;
+    unsigned int supports_alpha_windows: 1;
+    int err_flag;
+    char * err_report;
     /* display specific data */
 };
 #define PointToPixel(points,res)		(((points)*(res)+36)/72)
@@ -171,7 +192,7 @@ struct displayfuncs {
 
     GWindow (*createTopWindow)(GDisplay *, GRect *pos, int (*eh)(GWindow,GEvent *), void *user_data, GWindowAttrs *);
     GWindow (*createSubWindow)(GWindow, GRect *pos, int (*eh)(GWindow,GEvent *), void *user_data, GWindowAttrs *);
-    GWindow (*createPixmap)(GDisplay *, uint16 width, uint16 height);
+    GWindow (*createPixmap)(GDisplay *, GWindow similar, uint16 width, uint16 height);
     GWindow (*createBitmap)(GDisplay *, uint16 width, uint16 height, uint8 *data);
     GCursor (*createCursor)(GWindow src, GWindow mask, Color fg, Color bg, int16 x, int16 y);
     void (*destroyWindow)(GWindow);
@@ -210,6 +231,8 @@ struct displayfuncs {
     void (*pushClip)(GWindow, GRect *rct, GRect *old);
     void (*popClip)(GWindow, GRect *old);
 
+    void (*setDifferenceMode)(GWindow);
+
     void (*clear)(GWindow,GRect *);
     void (*drawLine)(GWindow, int32 x,int32 y, int32 xend,int32 yend, Color col);
     void (*drawArrow)(GWindow, int32 x,int32 y, int32 xend,int32 yend, int16 arrows, Color col); /* arrows&1 => arrow at start, &2 => at end */
@@ -233,6 +256,7 @@ struct displayfuncs {
 
     GIC *(*createInputContext)(GWindow, enum gic_style);
     void (*setGIC)(GWindow, GIC *, int x, int y);
+    int (*keyState)(GWindow w, int keysym);
 
     void (*grabSelection)(GWindow w,enum selnames sel);
     void (*addSelectionType)(GWindow w,enum selnames sel,char *type,
@@ -290,12 +314,23 @@ struct displayfuncs {
     void (*startNewSubPath)(GWindow w);
     int  (*fillRuleSetWinding)(GWindow w);
 
+    int (*doText8)(GWindow w, int32 x, int32 y, const char *text, int32 cnt, Color col, enum text_funcs drawit, struct tf_arg *arg);
+
     void (*PushClipOnly)(GWindow w);
     void (*ClipPreserve)(GWindow w);
     
 };
 
+extern int16 div_tables[257][2]; // in div_tables.c
+
+extern void GDrawIErrorRun(const char *fmt,...);
+extern void GDrawIError(const char *fmt,...);
+
+extern void _GXDraw_DestroyDisplay(GDisplay * gdisp);
 extern GDisplay *_GXDraw_CreateDisplay(char *displayname,char *programname);
+extern void _GGDKDraw_DestroyDisplay(GDisplay *disp);
+extern GDisplay *_GGDKDraw_CreateDisplay(char *displayname, char *programname);
+extern void _GPSDraw_DestroyDisplay(GDisplay *gdisp);
 extern GDisplay *_GPSDraw_CreateDisplay(void);
 extern void _GDraw_InitError(GDisplay *);
 extern void _GDraw_ComposeChars(GDisplay *gdisp,GEvent *gevent);

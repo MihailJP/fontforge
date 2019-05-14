@@ -24,7 +24,24 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "fvimportbdf.h"
+
+#include "bitmapchar.h"
+#include "bvedit.h"
+#include "cvimages.h"
+#include "encoding.h"
 #include "fontforgevw.h"
+#include "fvfonts.h"
+#include "macbinary.h"
+#include "mem.h"
+#include "namelist.h"
+#include "palmfonts.h"
+#include "parsettf.h"
+#include "splinefill.h"
+#include "splineutil.h"
+#include "splineutil2.h"
+#include "winfonts.h"
 #include <gfile.h>
 #include <math.h>
 #include "utype.h"
@@ -1628,7 +1645,7 @@ static void TwoByteSwap(uint8 *bitmap,int sizebitmaps) {
 static void FourByteSwap(uint8 *bitmap,int sizebitmaps) {
     int i, t;
 
-    for ( i=0; i<sizebitmaps-1; i+=2 ) {
+    for ( i=0; i<sizebitmaps-1; i+=4 ) {
 	t = bitmap[i];
 	bitmap[i] = bitmap[i+3];
 	bitmap[i+3] = t;
@@ -1669,7 +1686,7 @@ return( false );
 	/* Nothing to do */;
     else if ( PCF_SCAN_UNIT(format)==2 )
 	TwoByteSwap(bitmap, sizebitmaps);
-    else if ( PCF_SCAN_UNIT(format)==2 )
+    else if ( PCF_SCAN_UNIT(format)==4 )
 	FourByteSwap(bitmap, sizebitmaps);
     if ( PCF_GLYPH_PAD(format)==1 ) {
 	for ( i=0; i<cnt; ++i ) {
@@ -2385,7 +2402,7 @@ int FVImportMult(FontViewBase *fv, char *filename, int toback, int bf) {
 	strikeholder = SFReadTTF(filename,toback?ttf_onlyonestrike|ttf_onlystrikes:ttf_onlystrikes,0);
     else if ( bf == bf_fon )
 	strikeholder = SFReadWinFON(filename,toback);
-    else if ( bf == bf_fon )
+    else if ( bf == bf_palm )
 	strikeholder = SFReadPalmPdb(filename);
     else
 	strikeholder = SFReadMacBinary(filename,toback?ttf_onlyonestrike|ttf_onlystrikes:ttf_onlystrikes,0);

@@ -8,10 +8,13 @@ wget http://unicode.org/Public/UNIDATA/LineBreak.txt
 wget http://unicode.org/Public/UNIDATA/NamesList.txt
 wget http://unicode.org/Public/UNIDATA/PropList.txt
 wget http://unicode.org/Public/UNIDATA/UnicodeData.txt
-make makeutype
+gcc -s -I../inc -o makeutype makeutype.c
 ./makeutype
+gcc -s -I../inc -o makebuildtables makebuildtables.c
+./makebuildtables
 rm *.txt
 mv utype.h ../inc/
+mv gdrawbuildchars.c ../gdraw/
 
 UPDATING FONTFORGE'S ROUTINES FOR RE-ENCODING
 
@@ -20,6 +23,10 @@ external files to work. Here is my best attempt to find these files. You will
 notice that some files are still lacking. I couldn't find them.
 
 Thanks to Jose Da Silva for asking, what's it for. To make use of this, run:
+
+
+NOTE: Some of this is currently done by charset/generate.sh
+TODO: See what got lost with new method, compare outputs
 
 cd Unicode
 wget http://unicode.org/Public/MAPPINGS/ISO8859/8859-1.TXT
@@ -36,19 +43,19 @@ wget http://unicode.org/Public/MAPPINGS/ISO8859/8859-11.TXT
 wget http://unicode.org/Public/MAPPINGS/ISO8859/8859-13.TXT
 wget http://unicode.org/Public/MAPPINGS/ISO8859/8859-14.TXT
 wget http://unicode.org/Public/MAPPINGS/ISO8859/8859-15.TXT
+wget http://unicode.org/Public/MAPPINGS/ISO8859/8859-16.TXT
 wget http://unicode.org/Public/MAPPINGS/VENDORS/MISC/KOI8-R.TXT
-mv KOI8-R.TXT koi8r.TXT
 wget http://unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0201.TXT
-mv JIS0201.TXT JIS0201.txt
 wget http://unicode.org/Public/MAPPINGS/VENDORS/ADOBE/zdingbat.txt
-mv zdingbat.txt zapfding.TXT
 wget http://unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0212.TXT
-wget http://unicode.org/Public/MAPPINGS/VENDORS/MICSFT/MAC/ROMAN.TXT
-mv ROMAN.TXT MacRoman.TXT
+wget http://unicode.org/Public/MAPPINGS/VENDORS/APPLE/ROMAN.TXT
+wget http://unicode.org/Public/MAPPINGS/VENDORS/APPLE/SYMBOL.TXT
+wget http://unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WINDOWS/CP1252.TXT
+wget http://unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WINDOWS/CP950.TXT
 wget http://unicode.org/Public/MAPPINGS/VENDORS/MICSFT/MAC/CYRILLIC.TXT
 mv CYRILLIC.TXT MacCYRILLIC.TXT
 
-gcc -s -o dump dump.c
+gcc -s -I../inc -o dump dump.c
 ./dump
 rm *.txt *.TXT
 

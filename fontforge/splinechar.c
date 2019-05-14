@@ -26,7 +26,19 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "cvundoes.h"
+#include "dumppfa.h"
 #include "fontforgevw.h"
+#include "fvfonts.h"
+#include "lookups.h"
+#include "mem.h"
+#include "parsettf.h"
+#include "spiro.h"
+#include "splineorder2.h"
+#include "splinesaveafm.h"
+#include "splineutil.h"
+#include "splineutil2.h"
+#include "tottf.h"
 #include <math.h>
 #include <locale.h>
 # include <ustring.h>
@@ -36,6 +48,7 @@
 # include <ieeefp.h>		/* Solaris defines isnan in ieeefp rather than math.h */
 #endif
 #include "ttf.h"
+#include "c-strtod.h"
 
 int adjustwidth = true;
 int adjustlbearing = true;
@@ -248,7 +261,7 @@ static int _SCRefNumberPoints2(SplineSet **_rss,SplineChar *sc,int pnum,int laye
 		rsp->nextcpindex = 0xffff;
 	    else
 		rsp->nextcpindex = pnum++;
-	    if ( sp->next==NULL )
+	    if ( sp->next==NULL || rsp->next==NULL )
 	break;
 	    sp = sp->next->to;
 	    rsp = rsp->next->to;
@@ -332,6 +345,9 @@ int SCNumberPoints(SplineChar *sc,int layer) {
     SplineSet *ss;
     SplinePoint *sp;
     RefChar *ref;
+
+    if ( layer<0 || layer>=sc->layer_cnt )
+        return( pnum );
 
     if ( sc->layers[layer].order2 ) {		/* TrueType and its complexities. I ignore svg here */
 	if ( sc->layers[layer].refs!=NULL ) {
@@ -1178,11 +1194,7 @@ static int CheckBluePair(char *blues, char *others, int bluefuzz,
     int bluevals[10+14], cnt, pos=0, maxzoneheight;
     int err = 0;
     char *end;
-    char oldloc[25];
 
-    strncpy( oldloc,setlocale(LC_NUMERIC,NULL),24 );
-    oldloc[24]=0;
-    setlocale(LC_NUMERIC,"C");
     if ( others!=NULL ) {
 	while ( *others==' ' ) ++others;
 	if ( *others=='[' || *others=='{' ) ++others;
@@ -1191,7 +1203,7 @@ static int CheckBluePair(char *blues, char *others, int bluefuzz,
 	    while ( *others==' ' ) ++others;
 	    if ( *others==']' || *others=='}' )
 	break;
-	    temp = strtod(others,&end);
+	    temp = c_strtod(others,&end);
 	    if ( temp!=rint(temp))
 		err |= pds_notintegral;
 	    else if ( end==others ) {
@@ -1215,7 +1227,7 @@ static int CheckBluePair(char *blues, char *others, int bluefuzz,
 	while ( *blues==' ' ) ++blues;
 	if ( *blues==']' || *blues=='}' )
     break;
-	temp = strtod(blues,&end);
+	temp = c_strtod(blues,&end);
 	if ( temp!=rint(temp))
 	    err |= pds_notintegral;
 	else if ( end==blues ) {
@@ -1248,14 +1260,12 @@ static int CheckBluePair(char *blues, char *others, int bluefuzz,
 
     if ( maxzoneheight>0 && (magicpointsize-.49)*maxzoneheight>=240 )
 	err |= pds_toobig;
-    setlocale(LC_NUMERIC,oldloc);
 
 return( err );
 }
 
 static int CheckStdW(struct psdict *dict,char *key ) {
     char *str_val, *end;
-    char oldloc[25];
     bigreal val;
 
     if ( (str_val = PSDictHasEntry(dict,key))==NULL )
@@ -1265,11 +1275,7 @@ return( true );
 return( false );
     ++str_val;
 
-    strncpy( oldloc,setlocale(LC_NUMERIC,NULL),24 );
-    oldloc[24]=0;
-    setlocale(LC_NUMERIC,"C");
-    val = strtod(str_val,&end);
-    setlocale(LC_NUMERIC,oldloc);
+    val = c_strtod(str_val,&end);
     while ( *end==' ' ) ++end;
     if ( *end!=']' && *end!='}' )
 return( false );
@@ -1283,7 +1289,6 @@ return( true );
 
 static int CheckStemSnap(struct psdict *dict,char *snapkey, char *stdkey ) {
     char *str_val, *end;
-    char oldloc[25];
     bigreal std_val = -1;
     bigreal stems[12], temp;
     int cnt, found;
@@ -1292,11 +1297,7 @@ static int CheckStemSnap(struct psdict *dict,char *snapkey, char *stdkey ) {
     if ( (str_val = PSDictHasEntry(dict,stdkey))!=NULL ) {
 	while ( *str_val==' ' ) ++str_val;
 	if ( *str_val=='[' && *str_val!='{' ) ++str_val;
-	strncpy( oldloc,setlocale(LC_NUMERIC,NULL),24 );
-	oldloc[24]=0;
-	setlocale(LC_NUMERIC,"C");
-	std_val = strtod(str_val,&end);
-	setlocale(LC_NUMERIC,oldloc);
+	std_val = c_strtod(str_val,&end);
     }
 
     if ( (str_val = PSDictHasEntry(dict,snapkey))==NULL )
@@ -1311,11 +1312,7 @@ return( false );
 	while ( *str_val==' ' ) ++str_val;
 	if ( *str_val==']' && *str_val!='}' )
     break;
-	strncpy( oldloc,setlocale(LC_NUMERIC,NULL),24 );
-	oldloc[24]=0;
-	setlocale(LC_NUMERIC,"C");
-       temp = strtod(str_val,&end);
-	setlocale(LC_NUMERIC,oldloc);
+	temp = c_strtod(str_val,&end);
 	if ( end==str_val )
 return( false );
 	str_val = end;
@@ -1336,7 +1333,6 @@ return( true );
 int ValidatePrivate(SplineFont *sf) {
     int errs = 0;
     char *blues, *bf, *test, *end;
-    char oldloc[25];
     int fuzz = 1;
     bigreal bluescale = .039625;
     int magicpointsize;
@@ -1351,11 +1347,7 @@ return( pds_missingblue );
     }
 
     if ( (test=PSDictHasEntry(sf->private,"BlueScale"))!=NULL ) {
-	strncpy( oldloc,setlocale(LC_NUMERIC,NULL),24 );
-	oldloc[24]=0;
-	setlocale(LC_NUMERIC,"C");
-        bluescale = strtod(test,&end);
-	setlocale(LC_NUMERIC,oldloc);
+	bluescale = c_strtod(test,&end);
 	if ( *end!='\0' || end==test || bluescale<0 )
 	    errs |= pds_badbluescale;
     }
@@ -1495,14 +1487,14 @@ StemInfo *SCHintOverlapInMask(SplineChar *sc,HintMask *hm) {
 			    end1 = start1+h1->width;
 			} else {
 			    end1 = h1->start;
-			    start1 = start1+h1->width;
+			    start1 = end1+h1->width;
 			}
 			if ( h2->width>0 ) {
 			    start2 = h2->start;
 			    end2 = start2+h2->width;
 			} else {
 			    end2 = h2->start;
-			    start2 = start2+h2->width;
+			    start2 = end2+h2->width;
 			}
 			if ( end1<start2 || start1>end2 )
 			    /* No overlap */;
@@ -1884,6 +1876,8 @@ return( vs_maskttf );
 return( vs_maskps );
     else if ( format==ff_svg )
 return( vs_maskttf );
+    else if ( format==ff_woff2 )
+return( vs_maskttf );
     else
 return( sf->subfontcnt!=0 || sf->cidmaster!=NULL ? vs_maskcid :
 	sf->layers[layer].order2 ? vs_maskttf : vs_maskps );
@@ -1920,6 +1914,7 @@ static SplineSet *UnitCircle(int clockwise) {
     for ( i=0; i<4; ++i )
 	SplineMake3(sps[i], sps[i+1]);
     spl->first = sps[0]; spl->last = sps[4];
+    spl->start_offset = 0;
     if ( !clockwise )
 	SplineSetReverse(spl);
 return( spl );
@@ -1964,6 +1959,7 @@ return(false);
     if ( first ) {
 	spl->first = end;
 	spl->last = end;
+	spl->start_offset = 0;
     } else {
 	spl->last = end;
 	s = end->next;
@@ -2050,6 +2046,7 @@ static int EllipseClockwise(SplinePoint *sp1,SplinePoint *sp2,BasePoint *slope1,
     SplineMake3(e1,e2);
     ss = chunkalloc(sizeof(SplineSet));
     ss->first = ss->last = e1;
+    ss->start_offset = 0;
     ret = SplinePointListIsClockwise(ss);
     SplinePointListFree(ss);
 return( ret );
@@ -2109,6 +2106,7 @@ return( false );
     SplinePointFree(spl->first);
     SplinePointFree(spl->last);
     spl->first = spl->last = NULL;
+    spl->start_offset = 0;
     SplinePointListFree(spl);
 return( true );
 }
@@ -2142,7 +2140,7 @@ static int MakeEllipseWithAxis(CharViewBase *cv,SplinePoint *sp1,SplinePoint *sp
     clockwise = EllipseClockwise(sp1,sp2,&slope1,&slope2);
     dot = slope1.y*slope2.x - slope1.x*slope2.y;
     theta = atan2(-slope1.x,slope1.y);
-    if ( !finite(theta))
+    if ( !isfinite(theta))
 return( false );
     c = cos(theta); s = sin(theta);
     if ( RealNear(dot,0) ) {
@@ -2151,7 +2149,7 @@ return( false );
 	if ( slope1.x*slope2.x + slope1.y*slope2.y > 0 )
 return( false );		/* Point in different directions */
 	temp.x = sp2->me.x - sp1->me.x;
-	temp.y = sp2->me.y - sp2->me.y;
+	temp.y = sp2->me.y - sp1->me.y;
 	if ( !RealNear(slope1.x*temp.x - slope1.y*temp.y,0) )
 return( false );
 	center.x = sp1->me.x + temp.x/2;
