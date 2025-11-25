@@ -1161,8 +1161,8 @@ void FVAutoHint(FontViewBase *fv) {
 void FVAutoHintSubs(FontViewBase *fv) {
     int i, cnt=0, gid;
 
-    if ( fv->sf->mm!=NULL && fv->sf->mm->apple )
-return;
+    if ( fv->sf->mm!=NULL && fv->sf->mm->type == mm_apple )
+	return;
     for ( i=0; i<fv->map->enccount; ++i )
 	if ( fv->selected[i] && (gid = fv->map->map[i])!=-1 &&
 		SCWorthOutputting(fv->sf->glyphs[gid]) )

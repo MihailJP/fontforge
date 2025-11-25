@@ -2939,7 +2939,7 @@ static int SFD_MMDump(FILE *sfd,SplineFont *sf,EncMap *map,EncMap *normal,
     int err = false;
 
     fprintf( sfd, "MMCounts: %d %d %d %d\n", mm->instance_count, mm->axis_count,
-	    mm->apple, mm->named_instance_count );
+	    mm->type, mm->named_instance_count );
     fprintf( sfd, "MMAxis:" );
     for ( i=0; i<mm->axis_count; ++i )
 	fprintf( sfd, " %s", mm->axes[i]);
@@ -7053,8 +7053,8 @@ static void MMInferStuff(MMSet *mm) {
     int i,j;
 
     if ( mm==NULL )
-return;
-    if ( mm->apple ) {
+	return;
+    if ( mm->type == mm_apple ) {
 	for ( i=0; i<mm->axis_count; ++i ) {
 	    for ( j=0; j<mm->axismaps[i].points; ++j ) {
 		real val = mm->axismaps[i].blends[j];
@@ -8819,7 +8819,7 @@ static SplineFont *SFD_GetFont( FILE *sfd,SplineFont *cidmaster,char *tok,
 		ungetc(ch,sfd);
 	    else { int temp;
 		getint(sfd,&temp);
-		mm->apple = temp;
+		mm->type = temp;
 		getint(sfd,&mm->named_instance_count);
 	    }
 	    mm->instances = calloc(mm->instance_count,sizeof(SplineFont *));

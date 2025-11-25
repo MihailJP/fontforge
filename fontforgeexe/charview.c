@@ -12045,7 +12045,7 @@ static void CVMenuReblend(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent *UNUS
     char *err;
     MMSet *mm = cv->b.sc->parent->mm;
 
-    if ( mm==NULL || mm->apple || cv->b.sc->parent!=mm->normal )
+    if ( mm==NULL || mm->type == mm_apple || cv->b.sc->parent!=mm->normal )
 return;
     err = MMBlendChar(mm,cv->b.sc->orig_pos);
     if ( mm->normal->glyphs[cv->b.sc->orig_pos]!=NULL )
@@ -12099,7 +12099,7 @@ static void mmlistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	    mml[i].ti.fg = mml[i].ti.bg = COLOR_DEFAULT;
 	}
     }
-    mml[0].ti.disabled = (mm==NULL || cv->b.sc->parent!=mm->normal || mm->apple);
+    mml[0].ti.disabled = (mm==NULL || cv->b.sc->parent!=mm->normal || mm->type == mm_apple);
     GMenuItemArrayFree(mi->sub);
     mi->sub = GMenuItem2ArrayCopy(mml,NULL);
     if ( mml!=mmlist ) {

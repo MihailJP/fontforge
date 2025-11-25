@@ -5899,7 +5899,7 @@ static void MMFillFromVAR(SplineFont *sf, struct ttfinfo *info) {
 
     sf->mm = mm;
     mm->normal = sf;
-    mm->apple = true;
+    mm->type = mm_apple;
     mm->axis_count = v->axis_count;
     mm->instance_count = v->tuple_count;
     mm->instances = malloc(v->tuple_count*sizeof(SplineFont *));

@@ -1361,6 +1361,12 @@ struct named_instance {	/* For mac */
     struct macname *names;
 };
 
+enum mmtype {
+    mm_adobe,
+    mm_apple,
+    mm_opentype,
+    mm_reserved,
+};
 /* I am going to simplify my life and not encourage intermediate designs */
 /*  this means I can easily calculate ConvertDesignVector, and don't have */
 /*  to bother the user with specifying it. */
@@ -1381,7 +1387,7 @@ typedef struct mmset {
     int named_instance_count;
     struct named_instance *named_instances;
     unsigned int changed: 1;
-    unsigned int apple: 1;
+    enum mmtype type: 2;
 } MMSet;
 
 /* mac styles. Useful idea we'll just steal it */

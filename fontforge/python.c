@@ -17810,8 +17810,10 @@ static PyObject *PyFFFont_Save(PyFF_Font *self, PyObject *args) {
 		strcat(locfilename,"CID");
 	    else if ( sf->mm==NULL )
 		;
-	    else if ( sf->mm->apple )
+	    else if ( sf->mm->type == mm_apple )
 		strcat(locfilename,"Var");
+	    else if ( sf->mm->type == mm_opentype )
+		strcat(locfilename,"VF");
 	    else
 		strcat(locfilename,"MM");
 	    strcat(locfilename,".sfd");

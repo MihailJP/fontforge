@@ -1097,7 +1097,7 @@ static void dumpcomposite(SplineChar *sc, struct glyphinfo *gi) {
     int i, ptcnt, ctcnt, flags, sptcnt, rd;
     SplineSet *ss;
     RefChar *ref;
-    SplineChar *isc = sc->ttf_instrs==NULL && sc->parent->mm!=NULL && sc->parent->mm->apple ?
+    SplineChar *isc = sc->ttf_instrs==NULL && sc->parent->mm!=NULL && sc->parent->mm->type == mm_apple ?
 		sc->parent->mm->normal->glyphs[sc->orig_pos] : sc;
     int arg1, arg2;
 
@@ -1209,7 +1209,7 @@ static void dumpglyph(SplineChar *sc, struct glyphinfo *gi) {
     int contourcnt, ptcnt, origptcnt;
     BasePoint *bp;
     char *fs;
-    SplineChar *isc = sc->ttf_instrs==NULL && sc->parent->mm!=NULL && sc->parent->mm->apple ?
+    SplineChar *isc = sc->ttf_instrs==NULL && sc->parent->mm!=NULL && sc->parent->mm->type == mm_apple ?
 		sc->parent->mm->normal->glyphs[sc->orig_pos] : sc;
 
     /* This must have been an error on my part, can't just remove points */
@@ -5235,7 +5235,7 @@ static void AbortTTF(struct alltabs *at, SplineFont *sf) {
 int SFHasInstructions(SplineFont *sf) {
     int i;
 
-    if ( sf->mm!=NULL && sf->mm->apple )
+    if ( sf->mm!=NULL && sf->mm->type == mm_apple )
 	sf = sf->mm->normal;
 
     if ( sf->subfontcnt!=0 )
@@ -5254,7 +5254,7 @@ static void MaxpFromTable(struct alltabs *at,SplineFont *sf) {
     struct ttf_table *maxp;
 
     maxp = SFFindTable(sf,CHR('m','a','x','p'));
-    if ( maxp==NULL && sf->mm!=NULL && sf->mm->apple )
+    if ( maxp==NULL && sf->mm!=NULL && sf->mm->type == mm_apple )
 	maxp = SFFindTable(sf->mm->normal,CHR('m','a','x','p'));
     if ( maxp==NULL || maxp->len<13*sizeof(uint16_t) )
 return;
@@ -5272,7 +5272,7 @@ static FILE *dumpstoredtable(SplineFont *sf,uint32_t tag,int *len) {
     struct ttf_table *tab = SFFindTable(sf,tag);
     FILE *out;
 
-    if ( tab==NULL && sf->mm!=NULL && sf->mm->apple )
+    if ( tab==NULL && sf->mm!=NULL && sf->mm->type == mm_apple )
 	tab = SFFindTable(sf->mm->normal,tag);
     if ( tab==NULL ) {
 	*len = 0;
@@ -6136,7 +6136,7 @@ static void ATinit(struct alltabs *at,SplineFont *sf,EncMap *map,int flags, int 
     at->isotf = format==ff_otf || format==ff_otfcid;
     at->format = format;
     at->next_strid = 256;
-    if ( at->applemode && sf->mm!=NULL && sf->mm->apple &&
+    if ( at->applemode && sf->mm!=NULL && sf->mm->type == mm_apple &&
 	    (format==ff_ttf || format==ff_ttfsym ||  format==ff_ttfmacbin ||
 			format==ff_ttfdfont) &&
 	    MMValid(sf->mm,false)) {

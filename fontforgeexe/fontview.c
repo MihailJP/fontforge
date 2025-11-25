@@ -676,7 +676,7 @@ int _FVMenuSaveAs(FontView *fv) {
 	    strcat(temp,"CID");
 	else if ( sf->mm==NULL )
 	    ;
-	else if ( sf->mm->apple )
+	else if ( sf->mm->type == mm_apple )
 	    strcat(temp,"Var");
 	else
 	    strcat(temp,"MM");
@@ -896,7 +896,7 @@ return( true );
 	    if ( sf->mm->instances[i]->changed )
 return( true );
 	/* Changes to the blended font aren't real (for adobe fonts) */
-	if ( mm->apple && mm->normal->changed )
+	if ( mm->type == mm_apple && mm->normal->changed )
 return( true );
 
 return( false );
@@ -4168,7 +4168,7 @@ static void FVMenuChangeMMBlend(GWindow gw, struct gmenuitem *UNUSED(mi), GEvent
     FontView *fv = (FontView *) GDrawGetUserData(gw);
     MMSet *mm = fv->b.sf->mm;
 
-    if ( mm==NULL || mm->apple )
+    if ( mm==NULL || mm->type == mm_apple )
 return;
     MMChangeBlend(mm,fv,false);
 }
@@ -4218,7 +4218,7 @@ static void htlistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	  break;
 	  case MID_HintSubsPt:
 	    mi->ti.disabled = fv->b.sf->layers[fv->b.active_layer].order2 || anychars==-1 || multilayer;
-	    if ( fv->b.sf->mm!=NULL && fv->b.sf->mm->apple )
+	    if ( fv->b.sf->mm!=NULL && fv->b.sf->mm->type == mm_apple )
 		mi->ti.disabled = true;
 	  break;
 	  case MID_AutoCounter: case MID_DontAutoHint:
@@ -5697,7 +5697,7 @@ static void mmlistcheck(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e)) {
 	    mi->ti.disabled = mm==NULL;
 	  break;
 	  case MID_ChangeMMBlend:
-	    mi->ti.disabled = mm==NULL || mm->apple;
+	    mi->ti.disabled = mm==NULL || mm->type == mm_apple;
 	  break;
 	}
     }

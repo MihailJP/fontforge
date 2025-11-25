@@ -861,7 +861,7 @@ void SCEditInstructions(SplineChar *sc) {
     /* In a multiple master font, the instructions for all glyphs reside in */
     /*  the "normal" instance of the font. The instructions are the same for */
     /*  all instances (the cvt table might be different) */
-    if ( sc->parent->mm!=NULL && sc->parent->mm->apple )
+    if ( sc->parent->mm!=NULL && sc->parent->mm->type == mm_apple )
 	sc = sc->parent->mm->normal->glyphs[sc->orig_pos];
 
     for ( id = sc->parent->instr_dlgs; id!=NULL && id->sc!=sc; id=id->next );
@@ -1390,7 +1390,7 @@ static void cvtCreateEditor(struct ttf_table *tab,SplineFont *sf,uint32_t tag) {
     sf->cvt_dlg = sv;
     sv->tag = tag;
 
-    if ( tab==NULL && sf->mm!=NULL && sf->mm->apple )
+    if ( tab==NULL && sf->mm!=NULL && sf->mm->type == mm_apple )
 	tab = SFFindTable(sf->mm->normal,tag);
     if ( tab!=NULL ) {
 	sv->len = tab->len;
@@ -1709,7 +1709,7 @@ static void maxpCreateEditor(struct ttf_table *tab,SplineFont *sf,uint32_t tag) 
     char buffer[6][20];
     int k, hv;
 
-    if ( tab==NULL && sf->mm!=NULL && sf->mm->apple ) {
+    if ( tab==NULL && sf->mm!=NULL && sf->mm->type == mm_apple ) {
 	sf = sf->mm->normal;
 	tab = SFFindTable(sf,tag);
     }
@@ -1933,7 +1933,7 @@ void SFEditTable(SplineFont *sf, uint32_t tag) {
     /*  normal instance of the font. The other instances must share it */
     /* On the other hand, everyone can have their own cvt table */
     if ( tag!=CHR('c','v','t',' ') )
-	if ( sf->mm!=NULL && sf->mm->apple )
+	if ( sf->mm!=NULL && sf->mm->type == mm_apple )
 	    sf = sf->mm->normal;
 
     tab = SFFindTable(sf,tag);

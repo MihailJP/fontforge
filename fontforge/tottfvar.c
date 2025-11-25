@@ -255,11 +255,11 @@ int ContourPtNumMatch(MMSet *mm, int gid) {
     SplineFont *sf;
     int i;
 
-    if ( !mm->apple )
-return( false );
+    if ( mm->type == mm_adobe )
+	return( false );
 
     if ( gid>=mm->normal->glyphcnt )
-return( false );
+	return( false );
     if ( !SCWorthOutputting(mm->normal->glyphs[gid] ) ) {
 	for ( i=0; i<mm->instance_count; ++i ) {
 	    if ( gid>=mm->instances[i]->glyphcnt )

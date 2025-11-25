@@ -609,7 +609,7 @@ return;
     wattrs.utf8_window_title = tonew ? _("Blend to New Font"):_("MM Change Def Weights");
     pos.x = pos.y = 0;
 
-    if ( !mm->apple ) {
+    if ( mm->type != mm_apple ) {
 	pt = buffer;
 	for ( i=0; i<mm->instance_count; ++i ) {
 	    sprintf( pt, "%g ", (double) mm->defweights[i]);
@@ -882,6 +882,7 @@ typedef struct mmw {
 #define CID_MasterCount	2002
 #define CID_Adobe	2003
 #define CID_Apple	2004
+#define CID_OpenType	2005
 
 #define CID_WhichAxis			3000
 #define CID_AxisType			3001	/* +[0,3]*100 */
@@ -1097,7 +1098,8 @@ static void SetMasterToAxis(MMW *mmw, int initial) {
 
     cnt = GGadgetGetFirstListSelectedItem(GWidgetGetControl(mmw->subwins[mmw_counts],CID_AxisCount))
 	    +1;
-    isadobe = GGadgetIsChecked(GWidgetGetControl(mmw->subwins[mmw_counts],CID_Adobe));
+    isadobe = GGadgetIsChecked(GWidgetGetControl(mmw->subwins[mmw_counts],CID_Adobe)) ||
+	GGadgetIsChecked(GWidgetGetControl(mmw->subwins[mmw_counts],CID_OpenType));
     if ( cnt!=mmw->old_axis_count || isadobe!=mmw->old_adobe ) {
 	GGadget *list = GWidgetGetControl(mmw->subwins[mmw_counts],CID_MasterCount);
 	int32_t len;
@@ -1618,8 +1620,8 @@ static GTextInfo *NamedDesigns(MMW *mmw) {
     char buffer[120], *pt;
     char *ustyle;
 
-    if ( !mmw->mm->apple || mmw->old==NULL )
-return( NULL );
+    if ( mmw->mm->type == mm_adobe || mmw->old==NULL )
+	return( NULL );
 
     cnt = mmw->old->named_instance_count;
     ti = calloc((cnt+1),sizeof(GTextInfo));
@@ -1659,7 +1661,7 @@ static GTextInfo **FontList(MMW *mmw, int instance, int *sel) {
     cnt = 0;
     if ( mmw->old!=NULL ) {
 	cnt = mmw->old->instance_count;
-	if ( mmw->old->apple )
+	if ( mmw->old->type == mm_apple )
 	    ++cnt;
     }
     for ( fv=fv_list; fv!=NULL; fv=(FontView *) (fv->b.next) ) {
@@ -1679,7 +1681,7 @@ static GTextInfo **FontList(MMW *mmw, int instance, int *sel) {
 	    if ( mmw->old->instances[i]==mmw->mm->instances[instance] ) pos = cnt;
 	    ti[cnt++] = TiFromFont(mmw->old->instances[i]);
 	}
-	if ( mmw->old->apple ) {
+	if ( mmw->old->type == mm_apple ) {
 	    if ( mmw->old->normal==mmw->mm->instances[instance] ) pos = cnt;
 	    ti[cnt++] = TiFromFont(mmw->old->normal);
 	}
@@ -1769,17 +1771,18 @@ static void MMW_DoOK(MMW *mmw) {
     MMSet *setto, *dlgmm;
     FontView *fv = NULL;
     int isapple = GGadgetIsChecked(GWidgetGetControl(mmw->subwins[mmw_counts],CID_Apple));
+    int isopentype = GGadgetIsChecked(GWidgetGetControl(mmw->subwins[mmw_counts],CID_OpenType));
     int defpos;
     struct psdict *oldprivate = NULL;
     Encoding *enc = NULL;
 
-    if ( !isapple ) {
+    if ( !isapple && !isopentype ) {
 	if ( !GetWeights(mmw->gw, weights, mmw->mm, mmw->instance_count, mmw->axis_count))
-return;
+	    return;
 	fbt = GetReal8(mmw->subwins[mmw_others],CID_ForceBoldThreshold,
 			_("Force Bold Threshold:"),&err);
 	if ( err )
-return;
+	    return;
     }
 
     familyname = cu_copy(_GGadgetGetTitle(GWidgetGetControl(mmw->subwins[mmw_counts],CID_FamilyName)));
@@ -1788,12 +1791,12 @@ return;
 	free(familyname);
 	for ( i=0; i<mmw->instance_count; ++i )
 	    if ( mmw->mm->instances[i]==NULL )
-	break;
+		break;
 	    else
 		fn = mmw->mm->instances[i]->familyname;
 	if ( i!=mmw->instance_count ) {
 	    ff_post_error(_("Bad Multiple Master Font"),_("A Font Family name is required"));
-return;
+	    return;
 	}
 	familyname = copy(fn);
     }
@@ -1805,7 +1808,7 @@ return;
 		fv = (FontView *) mmw->old->instances[j]->fv;
 		origname = copy(mmw->old->instances[j]->origname);
 		enc = fv->b.map->enc;
-	break;
+		break;
 	    }
     }
 
@@ -1817,21 +1820,21 @@ return;
 	if ( mmw->old!=NULL ) {
 	    for ( j=0; j<mmw->old->instance_count; ++j )
 		if ( mmw->mm->instances[i]==mmw->old->instances[j] )
-	    break;
+		    break;
 	    if ( j!=mmw->old->instance_count ) {
 		mmw->old->instances[j] = NULL;
-    continue;
+		continue;
 	    } else if ( mmw->old->normal==mmw->mm->instances[i] ) {
 		mmw->old->normal = NULL;
-    continue;
+		continue;
 	    }
 	}
 	for ( j=0; j<mmw->lcnt; ++j )
 	    if ( mmw->mm->instances[i]==mmw->loaded[j] )
-	break;
+		break;
 	if ( j!=mmw->lcnt ) {
 	    mmw->loaded[j] = NULL;
-continue;
+	    continue;
 	}
 	if ( enc==NULL && mmw->mm->instances[i]->fv!=NULL )
 	    enc = mmw->mm->instances[i]->fv->map->enc;
@@ -1864,7 +1867,7 @@ continue;
 	memset(setto,0,sizeof(MMSet));
     } else
 	setto = chunkalloc(sizeof(MMSet));
-    setto->apple = isapple;
+    setto->type = isopentype ? mm_opentype : isapple ? mm_apple : mm_adobe;
     setto->axis_count = mmw->axis_count;
     setto->instance_count = mmw->instance_count;
     defpos = mmw->instance_count;
@@ -1872,9 +1875,9 @@ continue;
 	for ( defpos=0; defpos<mmw->instance_count; ++defpos ) {
 	    for ( j=0; j<mmw->axis_count; ++j )
 		if ( dlgmm->positions[defpos*dlgmm->axis_count+j]!=0 )
-	    break;
+		    break;
 	    if ( j==mmw->axis_count )
-	break;
+		break;
 	}
 	if ( defpos==mmw->instance_count )
 	    --defpos;
@@ -1949,7 +1952,7 @@ continue;
     if ( fv!=NULL ) {
 	for ( i=0; i<setto->instance_count; ++i )
 	    if ( fv->b.sf==setto->instances[i])
-	break;
+		break;
 	if ( i==setto->instance_count ) {
 	    SplineFont *sf = setto->normal;
 	    BDFFont *bdf;
@@ -1990,11 +1993,12 @@ static void MMW_DoNext(MMW *mmw) {
     real start, end, def, *designs, *norm;
     int n, n2;
     int isapple = GGadgetIsChecked(GWidgetGetControl(mmw->subwins[mmw_counts],CID_Apple));
+    int isopentype = GGadgetIsChecked(GWidgetGetControl(mmw->subwins[mmw_counts],CID_OpenType));
     char *yesno[3];
     yesno[0] = _("_Yes"); yesno[1] = _("_No"); yesno[2] = NULL;
 
     if ( mmw->state==mmw_others )
-return;
+	return;
 
     if ( mmw->state==mmw_counts ) {
 	mmw->axis_count = GGadgetGetFirstListSelectedItem(GWidgetGetControl(mmw->subwins[mmw_counts],CID_AxisCount))+1;
@@ -2048,7 +2052,7 @@ return;
 		GTabSetSetSel(GWidgetGetControl(mmw->subwins[mmw_axes],CID_WhichAxis),
 			i);
 		ff_post_error(_("Bad Axis"),_("Please set the Axis Type field"));
-return;		/* Failure */
+		return;		/* Failure */
 	    }
 	    /* Don't free the current value. If it is non-null then it just */
 	    /*  points into the data structure that the Names gadgets manipulate */
@@ -2063,7 +2067,7 @@ return;		/* Failure */
 		    GTabSetSetSel(GWidgetGetControl(mmw->subwins[mmw_axes],CID_WhichAxis),
 			    i);
 		    ff_post_error(_("Bad Axis"),_("When building an Apple distortable font, you must specify at least one name for the axis"));
-return;		    /* Failure */
+		    return;		    /* Failure */
 		}
 	    }
 	    err = false;
@@ -2082,7 +2086,7 @@ return;		    /* Failure */
 		GTabSetSetSel(GWidgetGetControl(mmw->subwins[mmw_axes],CID_WhichAxis),
 			i);
 		ff_post_error(_("Bad Axis"),_("Axis range not valid"));
-return;		/* Failure */
+		return;		/* Failure */
 	    }
 	    n = ParseList(mmw->subwins[mmw_axes],CID_IntermediateDesign+i*100,
 		    _("Design Settings:"),&err,start,def,end,&designs,CID_WhichAxis,i,isapple);
@@ -2095,7 +2099,7 @@ return;		/* Failure */
 		if ( !err )
 		    ff_post_error(_("Bad Axis"),_("The number of entries in the design settings must match the number in normalized settings"));
 		free(designs); free(norm);
-return;		/* Failure */
+		return;		/* Failure */
 	    }
 	    mmw->mm->axismaps[i].points = n;
 	    free(mmw->mm->axismaps[i].blends); free(mmw->mm->axismaps[i].designs);
@@ -2117,7 +2121,7 @@ return;		/* Failure */
 	    if ( !ParseWeights(mmw->subwins[mmw_designs],CID_AxisWeights+i*DesignScaleFactor,
 		    _("Normalized position of this design along each axis"),positions[i],mmw->axis_count,
 		    CID_WhichDesign,i))
-return;
+	    return;
 	    if ( isapple ) {
 		mask = 0; mul = 1;
 		for ( j=0; j<mmw->axis_count; ++j ) {
@@ -2153,7 +2157,7 @@ return;
 		    ff_post_error(_("Bad Multiple Master Font"),_("The set of positions, %.30s, is used more than once"),
 			    temp = GGadgetGetTitle8(GWidgetGetControl(mmw->subwins[mmw_designs],CID_AxisWeights+i*DesignScaleFactor)));
 		    free(temp);
-return;
+		    return;
 		}
 	    }
 	    ti = GGadgetGetListItemSelected(GWidgetGetControl(mmw->subwins[mmw_designs],CID_DesignFonts+i*DesignScaleFactor));
@@ -2163,7 +2167,7 @@ return;
 		    if ( sfs[i]==sfs[j] ) {
 			GTabSetSetSel(GWidgetGetControl(mmw->subwins[mmw_designs],CID_WhichDesign),i);
 			ff_post_error(_("Bad Multiple Master Font"),_("The font %.30s is assigned to two master designs"),sfs[i]->fontname);
-return;
+			return;
 		    }
 	    }
 	}
@@ -2175,10 +2179,10 @@ return;
 	    }
 	    if ( !isapple ) {
 		ff_post_error(_("Bad Multiple Master Font"),_("The set of positions, %.30s, is not specified in any design (and should be)"), buffer );
-return;
+		return;
 	    } else {
 		if ( gwwv_ask(_("Bad Multiple Master Font"),(const char **) yesno,0,1,_("The set of positions, %.30s, is not specified in any design.\nIs that what you want?"),buffer)==1 )
-return;
+		    return;
 	    }
 	}
 	memcpy(mmw->mm->positions,positions,sizeof(positions));
@@ -2198,20 +2202,20 @@ return;
 	else if ( !isapple && (mmw->instance_count==(1<<mmw->axis_count) ||
 		mmw->axis_count==1 )) {
 	    if ( gwwv_ask(_("Disordered designs"),(const char **) yesno,0,1,_("The master designs are not positioned in the expected order. FontForge will be unable to suggest a ConvertDesignVector for you. Is this what you want?"))==1 )
-return;
+		return;
 	}
     } else if ( mmw->state==mmw_funcs ) {
 	if ( *_GGadgetGetTitle(GWidgetGetControl(mmw->subwins[mmw_funcs],CID_NDV))=='\0' ||
 		*_GGadgetGetTitle(GWidgetGetControl(mmw->subwins[mmw_funcs],CID_CDV))=='\0' ) {
 	    ff_post_error(_("Bad PostScript function"),_("Bad PostScript function"));
-return;
+	    return;
 	}
 	free(mmw->mm->ndv); free(mmw->mm->cdv);
 	mmw->mm->ndv = cu_copy( _GGadgetGetTitle(GWidgetGetControl(mmw->subwins[mmw_funcs],CID_NDV)));
 	mmw->mm->cdv = cu_copy( _GGadgetGetTitle(GWidgetGetControl(mmw->subwins[mmw_funcs],CID_CDV)));
     }
 
-    if ( mmw->state==mmw_designs && !isapple )
+    if ( mmw->state==mmw_designs && !isapple && !isopentype )
 	mmw->state += 2;
     else
 	++mmw->state;
@@ -2462,14 +2466,14 @@ static MMSet *MMCopy(MMSet *orig) {
     /*  lose data when they shrink and then restore a value */
 
     mm = chunkalloc(sizeof(MMSet));
-    mm->apple = orig->apple;
+    mm->type = orig->type;
     mm->instance_count = AppleMmMax+1;
     mm->axis_count = 4;
     for ( i=0; i<orig->axis_count; ++i )
 	mm->axes[i] = copy(orig->axes[i]);
     mm->instances = calloc(AppleMmMax+1,sizeof(SplineFont *));
     memcpy(mm->instances,orig->instances,orig->instance_count*sizeof(SplineFont *));
-    if ( mm->apple )
+    if ( mm->type == mm_apple )
 	mm->instances[orig->instance_count] = orig->normal;
     mm->positions = calloc((AppleMmMax+1)*4,sizeof(real));
     for ( i=0; i<orig->instance_count; ++i )
@@ -2506,7 +2510,8 @@ void MMWizard(MMSet *mm) {
     char *normalized[4], *designs[4];
     char *pt, *freeme;
     int i,k;
-    int isadobe = mm==NULL || !mm->apple;
+    int isadobe = mm==NULL || mm->type == mm_adobe;
+    int isopentype = mm!=NULL && mm->type == mm_opentype;
     int space,blen= GIntGetResource(_NUM_Buttonsize)*100/GGadgetScale(100);
     static char *designtablab[] = { "1", "2", "3", "4", "5", "6", "7", "8",
 	    "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19",
@@ -2522,7 +2527,7 @@ void MMWizard(MMSet *mm) {
 	mmw.mm = MMCopy(mm);
 	mmw.axis_count = mm->axis_count;
 	mmw.instance_count = mm->instance_count;
-	if ( mm->apple )
+	if ( mm->type == mm_apple )
 	    ++mmw.instance_count;		/* Normal (default) design is a master in the mac format */
     } else {
 	mmw.mm = chunkalloc(sizeof(MMSet));
@@ -2640,9 +2645,19 @@ void MMWizard(MMSet *mm) {
     cntlabel[k].text_is_1byte = true;
     cntgcd[k].gd.label = &cntlabel[k];
     cntgcd[k].gd.pos.x = 70; cntgcd[k].gd.pos.y = cntgcd[k-1].gd.pos.y;
-    cntgcd[k].gd.flags = !isadobe ? (gg_visible | gg_enabled | gg_cb_on) :
+    cntgcd[k].gd.flags = (!isadobe && !isopentype) ? (gg_visible | gg_enabled | gg_cb_on) :
 	    ( gg_visible | gg_enabled );
     cntgcd[k].gd.cid = CID_Apple;
+    cntgcd[k].gd.handle_controlevent = MMW_TypeChanged;
+    cntgcd[k++].creator = GRadioCreate;
+
+    cntlabel[k].text = (unichar_t *) _("OpenType");
+    cntlabel[k].text_is_1byte = true;
+    cntgcd[k].gd.label = &cntlabel[k];
+    cntgcd[k].gd.pos.x = 140; cntgcd[k].gd.pos.y = cntgcd[k-1].gd.pos.y;
+    cntgcd[k].gd.flags = isopentype ? (gg_visible | gg_enabled | gg_cb_on) :
+	    ( gg_visible | gg_enabled );
+    cntgcd[k].gd.cid = CID_OpenType;
     cntgcd[k].gd.handle_controlevent = MMW_TypeChanged;
     cntgcd[k++].creator = GRadioCreate;
 
@@ -2745,7 +2760,7 @@ void MMWizard(MMSet *mm) {
 	} else {
 	    sprintf(axisbegins[i],"%.4g", (double) mmw.mm->axismaps[i].designs[0]);
 	    sprintf(axisends[i],"%.4g", (double) mmw.mm->axismaps[i].designs[mmw.mm->axismaps[i].points-1]);
-	    if ( mmw.mm->apple )
+	    if ( mmw.mm->type == mm_apple )
 		sprintf(axisdefs[i],"%.4g", (double) mmw.mm->axismaps[i].def );
 	    else
 		sprintf(axisdefs[i],"%g", (double) (mmw.mm->axismaps[i].designs[0]+
@@ -2772,7 +2787,7 @@ void MMWizard(MMSet *mm) {
 	axislabel[i][k].text_is_1byte = true;
 	axisgcd[i][k].gd.label = &axislabel[i][k];
 	axisgcd[i][k].gd.pos.x = 110; axisgcd[i][k].gd.pos.y = axisgcd[i][k-2].gd.pos.y;
-	axisgcd[i][k].gd.flags = mmw.mm->apple ? (gg_visible | gg_enabled) : gg_visible;
+	axisgcd[i][k].gd.flags = mmw.mm->type == mm_apple ? (gg_visible | gg_enabled) : gg_visible;
 	axisgcd[i][k].gd.cid = CID_AxisDefaultLabel+i*100;
 	axisgcd[i][k++].creator = GLabelCreate;
 
@@ -2781,7 +2796,7 @@ void MMWizard(MMSet *mm) {
 	axisgcd[i][k].gd.label = &axislabel[i][k];
 	axisgcd[i][k].gd.pos.x = 148; axisgcd[i][k].gd.pos.y = axisgcd[i][k-2].gd.pos.y;
 	axisgcd[i][k].gd.pos.width=50;
-	axisgcd[i][k].gd.flags = mmw.mm->apple ? (gg_visible | gg_enabled) : gg_visible;
+	axisgcd[i][k].gd.flags = mmw.mm->type == mm_apple ? (gg_visible | gg_enabled) : gg_visible;
 	axisgcd[i][k].gd.cid = CID_AxisDefault+i*100;
 	axisgcd[i][k++].creator = GTextFieldCreate;
 
@@ -2810,14 +2825,14 @@ void MMWizard(MMSet *mm) {
 
 	normalized[i]=NULL;
 	designs[i]=NULL;
-	if ( mmw.mm->axismaps[i].points>2+mmw.mm->apple ) {
+	if ( mmw.mm->axismaps[i].points>2+(mmw.mm->type == mm_apple ? 1 : 0) ) {
 	    int l,j,len1, len2;
 	    char buffer[30];
 	    len1 = len2 = 0;
 	    for ( l=0; l<2; ++l ) {
 		for ( j=1; j<mmw.mm->axismaps[i].points-1; ++j ) {
-		    if ( mmw.mm->apple && mmw.mm->axismaps[i].designs[j]==mmw.mm->axismaps[i].def )
-		continue;
+		    if ( mmw.mm->type == mm_apple && mmw.mm->axismaps[i].designs[j]==mmw.mm->axismaps[i].def )
+			continue;
 		    /* I wanted to separate things with commas, but that isn't*/
 		    /*  a good idea in Europe (comma==decimal point) */
 		    sprintf(buffer,"%g ",(double) mmw.mm->axismaps[i].designs[j]);
